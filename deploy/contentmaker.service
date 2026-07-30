@@ -1,0 +1,19 @@
+# systemd-юнит Контентщика (Шаг 1). Скопировать в /etc/systemd/system/, затем:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now contentmaker
+# Правь User/WorkingDirectory при необходимости.
+[Unit]
+Description=Fabrika Contentmaker bot (@neurostrategy)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fabrika
+WorkingDirectory=/opt/agents-for-content
+EnvironmentFile=/opt/agents-for-content/.env
+ExecStart=/opt/agents-for-content/.venv/bin/python -m agents.contentmaker
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

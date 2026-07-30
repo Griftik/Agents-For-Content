@@ -1,0 +1,26 @@
+# ─── Секреты — НИКОГДА не коммитим ───
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+service-account*.json
+rclone.conf
+.rclone.conf
+*.session
+
+# ─── Рабочие данные (живут на сервере + Google Drive, не в git) ───
+data/*
+!data/.gitkeep
+
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ─── Логи и временное ───
+*.log
+.DS_Store

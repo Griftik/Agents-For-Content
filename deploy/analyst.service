@@ -1,0 +1,13 @@
+# Аналитик (Шаг 2): разовый прогон обновления базы. Запускается таймером.
+# Скопировать в /etc/systemd/system/ вместе с analyst.timer.
+[Unit]
+Description=Fabrika Analyst — update posts DB
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=fabrika
+WorkingDirectory=/opt/agents-for-content
+EnvironmentFile=/opt/agents-for-content/.env
+ExecStart=/opt/agents-for-content/.venv/bin/python -m agents.analyst
