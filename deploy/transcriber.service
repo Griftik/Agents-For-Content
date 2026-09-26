@@ -1,0 +1,19 @@
+# Транскрибатор в watch-режиме: следит за папкой, аудио → документ.
+# Скопировать в /etc/systemd/system/, затем:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now transcriber
+[Unit]
+Description=Fabrika Transcriber (meeting audio -> markdown)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fabrika
+WorkingDirectory=/opt/agents-for-content
+EnvironmentFile=/opt/agents-for-content/.env
+ExecStart=/opt/agents-for-content/.venv/bin/python -m agents.transcriber --watch
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
