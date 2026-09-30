@@ -1,0 +1,34 @@
+# Скоринг и сегментация (раздел 4 ТЗ). Меняется без деплоя: правка файла + /reload.
+# Бюджет в скоринге не участвует — он выясняется на разборе.
+
+hot_threshold: 7          # порог «горячего» (HOT_THRESHOLD из блока «0. Параметры»)
+
+# Баллы за ответы. Вопрос, которого нет в списке, баллов не даёт. Максимум 13.
+points:
+  role:         { owner: 3, ceo: 3, top: 2, hr_dev: 1, other: 1, consultant: 0 }
+  team_size:    { lt15: 0, 15_50: 1, 50_150: 2, 150_500: 3, 500_plus: 3 }
+  timeline:     { month: 3, quarter: 2, year: 1, exploring: 0 }
+  participants: { me_partners: 1, top_5_10: 2, extended_10_30: 2, unknown: 0 }
+  revenue:      { lt100m: 0, 100_500m: 1, 500m_2b: 2, gt2b: 2, skip: 0 }
+
+# Правила проверяются сверху вниз, срабатывает первое подходящее.
+#   when:      {вопрос: [коды]} — ответ должен быть одним из кодов (все условия одновременно)
+#   when_not:  {вопрос: [коды]} — ответ НЕ должен быть одним из кодов
+#   min_score: hot_threshold | число
+# Правило без условий — «иначе».
+segments:
+  - segment: specialist
+    when: { role: [consultant] }
+
+  - segment: hot
+    when: { role: [owner, ceo, top], timeline: [month, quarter] }
+    when_not: { team_size: [lt15] }
+    min_score: hot_threshold
+
+  - segment: warm_initiator          # вместо warm_intro — initiator_intro, в карточке флаг
+    when: { role: [hr_dev, other], team_size: [50_150, 150_500, 500_plus], timeline: [month, quarter] }
+
+  - segment: warm
+    when: { role: [owner, ceo, top] }
+
+  - segment: specialist               # иначе

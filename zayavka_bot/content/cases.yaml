@@ -1,0 +1,16 @@
+# Библиотека кейсов для разбора (раздел 6.1 ТЗ). В MVP бот её не читает: документ
+# делается вручную по prompts/report_system.md, кейсы для него — в блоке «КЕЙСЫ» того файла.
+# В полной версии отсюда подбираются 1–2 кейса по типу сессии и отрасли.
+#
+# TODO(Евгений): 5–8 анонимных кейсов, по одному-два на каждый тип сессии.
+# Коды типов: goal | transformation | revenue | sync | productivity
+# Коды отраслей: как в questions.yaml (manufacturing, trade_distribution, b2b_services, ...)
+
+cases: []
+#  - id: prod_120
+#    session_type: productivity
+#    industry: manufacturing
+#    team_size: "120 человек"
+#    before: "проекты после двух сессий не пошли"
+#    what_we_did: "TODO(Евгений)"
+#    after_3_6m: "TODO(Евгений)"

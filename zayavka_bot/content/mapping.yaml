@@ -1,0 +1,31 @@
+# Ответы → тип сессии (раздел 5 ТЗ). Приоритет сверху вниз.
+# Основной тип — первое сработавшее правило, дополнительный — второе (другого типа).
+# any: правило срабатывает, если выполнено хотя бы одно условие из списка.
+
+labels:
+  goal: "определение цели"
+  transformation: "трансформация компании"
+  revenue: "увеличение выручки и прибыли"
+  sync: "синхронизация команды"
+  productivity: "рост производительности"
+
+rules:
+  - type: goal
+    any:
+      - { pain: [strategy_on_paper] }
+      - { strategy_state: [none, in_my_head] }
+  - type: sync
+    any:
+      - { pain: [partners_disagree] }
+      - { decisions: [chaotic, partners_2_3] }
+  - type: revenue
+    any:
+      - { pain: [revenue_no_profit] }
+      - { outcome_6m: [profit_growth] }
+  - type: transformation
+    any:
+      - { pain: [scale_unknown] }
+      - { outcome_6m: [tech_ai] }
+  - type: productivity
+    any:
+      - { pain: [projects_not_done, no_initiative, no_time_ops] }

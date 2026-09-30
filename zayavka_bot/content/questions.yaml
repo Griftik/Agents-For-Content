@@ -1,0 +1,123 @@
+# Заявка на разбор: 11 вопросов. Файл читается ботом, менять можно без деплоя (/reload).
+# Коды вариантов стабильные: на них завязаны скоринг, маппинг типа сессии и тизеры.
+
+progress_template: "Вопрос {n} из 11"
+
+questions:
+  - code: role
+    text: "Кто вы в компании?"
+    options:
+      - { code: owner,      text: "Собственник" }
+      - { code: ceo,        text: "Генеральный директор" }
+      - { code: top,        text: "Топ-менеджер, директор направления" }
+      - { code: hr_dev,     text: "HR / директор по развитию" }
+      - { code: consultant, text: "Консультант, фасилитатор" }
+      - { code: other,      text: "Другое" }
+    branch:
+      consultant: specialist_need     # после этого вопроса консультант уходит в свою ветку
+
+  - code: pain
+    text: "Что сейчас мешает сильнее всего? Одно главное."
+    options:
+      - { code: projects_not_done, text: "Проекты со стратсессий не реализуются" }
+      - { code: revenue_no_profit, text: "Выручка растёт, прибыль нет" }
+      - { code: no_initiative,     text: "Команда не проявляет инициативу" }
+      - { code: no_time_ops,       text: "Тону в операционке, на стратегию нет времени" }
+      - { code: scale_unknown,     text: "Хочу масштабироваться текущей командой, не знаю как" }
+      - { code: partners_disagree, text: "Партнёры или топы не договорятся о приоритетах" }
+      - { code: strategy_on_paper, text: "Стратегия есть на бумаге, в неё никто не заглядывает" }
+
+  - code: outcome_6m
+    text: "Что должно измениться через 6 месяцев, чтобы вы сказали «сработало»?"
+    options:
+      - { code: team_drives,   text: "Команда сама двигает проекты развития" }
+      - { code: profit_growth, text: "Растёт прибыль, а не только выручка" }
+      - { code: clear_plan,    text: "Есть понятный план и приоритеты на год" }
+      - { code: tops_aligned,  text: "Топы договорились и работают согласованно" }
+      - { code: faster_change, text: "Изменения внедряются быстрее" }
+      - { code: tech_ai,       text: "Внедрили новые технологии и ИИ" }
+
+  - code: strategy_state
+    text: "Есть ли у компании сформулированная стратегия или цели на год?"
+    options:
+      - { code: team_knows,      text: "Да, и команда её знает" }
+      - { code: in_my_head,      text: "Есть, но в основном у меня в голове" }
+      - { code: doc_not_working, text: "Есть документ, но он не работает" }
+      - { code: none,            text: "Нет" }
+
+  - code: decisions
+    text: "Как принимаются ключевые решения?"
+    options:
+      - { code: alone,                text: "Решаю сам" }
+      - { code: partners_2_3,         text: "Обсуждаем с 2–3 партнёрами" }
+      - { code: regular_top_meetings, text: "Есть регулярные встречи топ-команды" }
+      - { code: chaotic,              text: "По ситуации, без системы" }
+
+  - code: tried
+    text: "Что уже пробовали?"
+    options:
+      - { code: diy_session,          text: "Стратсессию своими силами" }
+      - { code: external_facilitator, text: "Стратсессию с внешним ведущим" }
+      - { code: consultants_trackers, text: "Консультантов или трекеров" }
+      - { code: training,             text: "Обучение команды" }
+      - { code: nothing,              text: "Пока ничего" }
+
+  - code: participants
+    text: "Кто должен участвовать в работе над стратегией?"
+    options:
+      - { code: me_partners,    text: "Я и партнёры" }
+      - { code: top_5_10,       text: "Топ-команда, 5–10 человек" }
+      - { code: extended_10_30, text: "Расширенная команда, 10–30 человек" }
+      - { code: unknown,        text: "Пока не знаю" }
+
+  - code: industry
+    text: "Сфера компании"
+    options:
+      - { code: manufacturing,      text: "Производство" }
+      - { code: trade_distribution, text: "Торговля, дистрибуция" }
+      - { code: b2b_services,       text: "Услуги для бизнеса" }
+      - { code: it_digital,         text: "IT, digital" }
+      - { code: retail_horeca,      text: "Розница, HoReCa" }
+      - { code: construction_dev,   text: "Строительство, девелопмент" }
+      - { code: other,              text: "Другое" }
+
+  - code: team_size
+    text: "Сколько человек в компании?"
+    options:
+      - { code: lt15,     text: "До 15" }
+      - { code: 15_50,    text: "15–50" }
+      - { code: 50_150,   text: "50–150" }
+      - { code: 150_500,  text: "150–500" }
+      - { code: 500_plus, text: "Больше 500" }
+
+  - code: revenue
+    text: "Годовая выручка. Можно пропустить."
+    skippable: true
+    options:
+      - { code: lt100m,   text: "До 100 млн ₽" }
+      - { code: 100_500m, text: "100–500 млн" }
+      - { code: 500m_2b,  text: "500 млн – 2 млрд" }
+      - { code: gt2b,     text: "Больше 2 млрд" }
+      - { code: skip,     text: "Пропустить" }
+
+  - code: timeline
+    text: "Когда это нужно решить?"
+    options:
+      - { code: month,     text: "В ближайший месяц" }
+      - { code: quarter,   text: "В течение квартала" }
+      - { code: year,      text: "В этом году" }
+      - { code: exploring, text: "Пока изучаю" }
+
+# Ветка для консультантов и фасилитаторов: один вопрос вместо остальных десяти
+specialist_need:
+  code: specialist_need
+  text: "Что вам полезнее?"
+  options:
+    - { code: docs,     text: "Документы по подготовке сессии" }
+    - { code: cases,    text: "Разборы кейсов" }
+    - { code: training, text: "Обучение фасилитации" }
+
+# После заявки: опциональное поле текстом
+company:
+  text: "Как называется компания? Можно пропустить."
+  skip_button: "Пропустить"

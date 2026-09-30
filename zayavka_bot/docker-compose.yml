@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./storage:/app/storage          # БД SQLite
+      - ./content:/app/content          # тексты/вопросы правятся на сервере, затем /reload
+      - ./prompts:/app/prompts
+      - ./secrets:/app/secrets:ro       # service-account.json для Google Sheets

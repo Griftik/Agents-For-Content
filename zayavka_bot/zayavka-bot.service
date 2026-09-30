@@ -1,0 +1,17 @@
+# systemd-юнит (альтернатива Docker). Скопировать в /etc/systemd/system/, затем:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now zayavka-bot
+[Unit]
+Description=Telegram bot «Заявка на разбор»
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fabrika
+WorkingDirectory=/opt/agents-for-content/zayavka_bot
+ExecStart=/opt/agents-for-content/zayavka_bot/.venv/bin/python -m bot.main
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
