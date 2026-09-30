@@ -21,6 +21,7 @@ class Funnel:
     booking: set[int] = field(default_factory=set)
     contacted: set[int] = field(default_factory=set)
     specialists: set[int] = field(default_factory=set)
+    nurture: set[int] = field(default_factory=set)
 
     def line(self) -> str:
         n = len(self.starts)
@@ -33,14 +34,14 @@ class Funnel:
             f" | телефон {pct(self.phone, n)}\n"
             f"разбор отправлен {len(self.report)} | горячие {pct(self.hot, len(self.phone))} от контактов"
             f" | перешли к записи {len(self.booking)} | связался {len(self.contacted)}"
-            f" | специалисты {len(self.specialists)}"
+            f" | специалисты {len(self.specialists)} | получали серию {len(self.nurture)}"
         )
 
 
 EVENT_BUCKET = {
     "start": "starts", "app_started": "began", "app_completed": "completed",
     "contact_shared": "phone", "report_sent": "report", "booking_link_clicked": "booking",
-    "specialist_docs_sent": "specialists",
+    "specialist_docs_sent": "specialists", "nurture_sent": "nurture",
 }
 
 

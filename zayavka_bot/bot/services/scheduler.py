@@ -1,7 +1,7 @@
 """Отложенные задания из таблицы scheduled_jobs. Переживают рестарт (п. 13).
 
-В MVP три вида: таймаут контакта (10 минут, п. 3.4) и два напоминания горячим (п. 3.7).
-Серия для тёплых и напоминания о слотах — полная версия.
+Виды: таймаут контакта (10 минут, п. 3.4), два напоминания горячим (п. 3.7),
+шаги серии для тёплых (раздел 8). Напоминания о слотах — полная версия.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from bot.content import get_content
 from bot.db import repo
 from bot.db.models import ScheduledJob
 from bot.keyboards import kb
-from bot.services import flow, leadflow
+from bot.services import flow, leadflow, nurture
 
 log = logging.getLogger(__name__)
 TICK_SEC = 20
@@ -44,8 +44,11 @@ async def handle(bot: Bot, job: ScheduledJob) -> None:
             return
         await bot.send_message(uid, c.t(job.kind), reply_markup=kb.book(c.t("hot_button")))
         if job.kind == "hot_reminder_72h":
-            # дальше — серия тёплых (полная версия); в MVP только помечаем статус
-            await repo.update_lead(uid, status="hot_to_warm")
+            await nurture.start(uid)  # не записался за 72 часа — дальше серия тёплых
+        return
+
+    if job.kind == nurture.KIND:
+        await nurture.send_step(bot, uid, str((job.payload or {}).get("step", "")))
         return
 
     log.warning("неизвестный вид задания %s", job.kind)

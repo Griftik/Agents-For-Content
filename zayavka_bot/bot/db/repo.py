@@ -142,6 +142,19 @@ async def schedule(user_id: int | None, kind: str, delay: timedelta, **payload: 
         await s.commit()
 
 
+async def schedule_at(user_id: int | None, kind: str, run_at: datetime, **payload: Any) -> None:
+    async with session() as s:
+        s.add(ScheduledJob(user_id=user_id, kind=kind, run_at=run_at, payload=payload))
+        await s.commit()
+
+
+async def pending_jobs(user_id: int, kind: str) -> list[ScheduledJob]:
+    async with session() as s:
+        return list((await s.execute(select(ScheduledJob).where(
+            ScheduledJob.user_id == user_id, ScheduledJob.kind == kind, ScheduledJob.status == "pending",
+        ).order_by(ScheduledJob.run_at))).scalars())
+
+
 async def cancel_jobs(user_id: int, kinds: list[str]) -> None:
     async with session() as s:
         await s.execute(update(ScheduledJob).where(

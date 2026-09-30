@@ -46,7 +46,7 @@ async def begin(bot: Bot, user_id: int, edit: Message | None = None) -> None:
     """Начать заявку с первого вопроса. Старые ответы стираются (заявка заново)."""
     c = get_content()
     await repo.delete_answers(user_id)
-    await repo.cancel_jobs(user_id, ["contact_timeout", *leadflow.HOT_REMINDERS])
+    await repo.cancel_jobs(user_id, ["contact_timeout", *leadflow.HOT_REMINDERS, "nurture"])
     await repo.log_event(user_id, "app_started")
     await leadflow.show_question(bot, user_id, c.order[0], edit=edit)
 

@@ -1,0 +1,66 @@
+# Серия для тёплых (раздел 8 ТЗ). Бот рассылает её сам, меняется без деплоя: правка + /reload.
+#
+# Когда стартует: сразу после отправки разбора тёплому (warm, warm_initiator)
+# и для горячего, который не записался за 72 часа. delay_days — дни от старта.
+# Отправка только в рабочее время по Москве; ночью — переносится на утро.
+#
+# Серия останавливается, если человек: нажал «Отметить: связался» у вас в карточке
+# (нажимайте и когда увидели запись в Calendly), написал боту текстом, выключил
+# сообщения в /menu или удалил данные.
+#
+# Содержимое шага (любое сочетание):
+#   text: текст сообщения; можно {name} и {pain_text} — боль словами клиента
+#   file: путь к файлу от папки content/ (PDF, картинка, видео) — уходит вместе с текстом
+# Варианты: by_session_type (goal|transformation|revenue|sync|productivity) и by_pain
+# (коды из questions.yaml). Бот берёт вариант по типу сессии лида, потом по боли, потом default.
+# Шаг без текста и файла пропускается, вам приходит предупреждение — так в рассылку
+# не уйдёт пустое сообщение, пока тексты не написаны.
+#
+# button: booking — «Записаться на разбор», booking_time — «Выбрать время», none — без кнопки.
+
+work_hours: { start: 10, end: 19 }   # МСК
+
+steps:
+  - id: d3_case
+    delay_days: 3
+    button: booking
+    # кейс «было → стало» по типу сессии лида
+    by_session_type:
+      goal:           { text: "" }   # TODO(Евгений)
+      transformation: { text: "" }   # TODO(Евгений)
+      revenue:        { text: "" }   # TODO(Евгений)
+      sync:           { text: "" }   # TODO(Евгений)
+      productivity:   { text: "" }   # TODO(Евгений)
+    default: { text: "" }            # TODO(Евгений)
+
+  - id: d8_material
+    delay_days: 8
+    button: booking
+    # материал по боли лида: чек-лист или короткое видео с сессии (file: nurture/...)
+    by_pain:
+      projects_not_done: { text: "" }   # TODO(Евгений)
+      revenue_no_profit: { text: "" }   # TODO(Евгений)
+      no_initiative:     { text: "" }   # TODO(Евгений)
+      no_time_ops:       { text: "" }   # TODO(Евгений)
+      scale_unknown:     { text: "" }   # TODO(Евгений)
+      partners_disagree: { text: "" }   # TODO(Евгений)
+      strategy_on_paper: { text: "" }   # TODO(Евгений)
+    default: { text: "" }               # TODO(Евгений)
+
+  - id: d14_objection
+    delay_days: 14
+    button: booking
+    # ответ на возражение «сделаем сами»: чем отличается работа с ведущим
+    default: { text: "" }               # TODO(Евгений)
+
+  - id: d21_personal
+    delay_days: 21
+    button: booking_time
+    # личное сообщение, с упоминанием боли из заявки: {pain_text}
+    default: { text: "" }               # TODO(Евгений)
+
+  - id: d45_check
+    delay_days: 45
+    button: none
+    # «как дела?» одной строкой, ответ текстом; после этого шага — статус dormant
+    default: { text: "" }               # TODO(Евгений)

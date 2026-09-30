@@ -15,7 +15,7 @@ from bot.content import get_content
 from bot.db import repo
 from bot.db.models import utcnow
 from bot.keyboards import kb
-from bot.services import crm, flow, insights, mapping, notify, scoring
+from bot.services import crm, flow, insights, mapping, notify, nurture, scoring
 from bot.services.cards import admin_card, pain_text
 
 log = logging.getLogger(__name__)
@@ -225,6 +225,8 @@ async def deliver_report(
     lead = await repo.update_lead(user_id, status="report_sent", verdict="manual", **fields)
     await repo.log_event(user_id, "report_sent", verdict="manual")
     crm.push(user_id)
+    if lead.segment in ("warm", "warm_initiator") and not lead.contacted_at:
+        await nurture.start(user_id)  # серия считается от момента отправки разбора
     if not lead.phone:
         # разбор не держим в заложниках, но после него один раз просим контакт снова
         await ask_contact(bot, user_id, with_later=False)

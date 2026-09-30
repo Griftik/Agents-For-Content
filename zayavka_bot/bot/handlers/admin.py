@@ -11,7 +11,7 @@ from bot.config import get_settings
 from bot.content import ContentError, get_content, reload_content
 from bot.db import repo
 from bot.db.models import utcnow
-from bot.services import analytics, crm, leadflow
+from bot.services import analytics, crm, leadflow, nurture
 
 log = logging.getLogger(__name__)
 router = Router(name="admin")
@@ -105,6 +105,7 @@ async def cb_admin(cb: CallbackQuery) -> None:
     if action == "contacted":
         await repo.update_lead(uid, contacted_at=utcnow(), status="contacted")
         await repo.cancel_jobs(uid, leadflow.HOT_REMINDERS)
+        await nurture.stop(uid)
         await repo.log_event(uid, "contacted", by=cb.from_user.id)
         crm.push(uid)
         await cb.answer("Отмечено: связался")

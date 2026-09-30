@@ -22,15 +22,15 @@ class Settings(BaseSettings):
     )
 
     bot_token: str = Field(..., description="токен от @BotFather")
-    bot_name: str = "strategy_diag_bot"
+    bot_name: str = "GrigorevStratagy_bot"
     owner_name: str = "Евгений Григорьев"
     channel_username: str = "neurostrategy"
-    admin_ids: list[int] = Field(default_factory=list)
+    admin_ids: list[int] = Field(default_factory=lambda: [291136301])
 
     database_url: str = f"sqlite+aiosqlite:///{BASE_DIR / 'storage' / 'bot.db'}"
 
     booking_mode: str = "url"  # url | slots (slots — полная версия)
-    booking_url: str = ""
+    booking_url: str = "https://calendly.com/egrigorev/30min"
     privacy_url: str = ""
 
     crm_sync: CrmSync = CrmSync.none
