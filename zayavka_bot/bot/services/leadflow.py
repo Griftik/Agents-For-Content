@@ -15,7 +15,7 @@ from bot.content import get_content
 from bot.db import repo
 from bot.db.models import utcnow
 from bot.keyboards import kb
-from bot.services import crm, flow, insights, mapping, notify, nurture, scoring
+from bot.services import crm, flow, insights, mapping, notify, scoring
 from bot.services.cards import admin_card, pain_text
 
 log = logging.getLogger(__name__)
@@ -39,7 +39,8 @@ async def send_welcome(bot: Bot, chat_id: int) -> None:
                 _video_note_id = msg.video_note.file_id
         except TelegramBadRequest as e:
             log.warning("кружок не отправлен: %s", e)
-    await bot.send_message(chat_id, c.t("welcome"), reply_markup=kb.start(c))
+    u = await repo.get_user(chat_id)
+    await bot.send_message(chat_id, c.t("welcome"), reply_markup=kb.welcome(c, bool(u and u.consent_at)))
 
 
 # --- вопросы ----------------------------------------------------------------
@@ -85,10 +86,9 @@ async def finish_questions(bot: Bot, user_id: int) -> None:
 
 
 async def ask_contact(bot: Bot, user_id: int, with_later: bool) -> None:
+    """Согласие уже дано галочкой на первом экране — здесь только просьба и кнопка."""
     c = get_content()
-    privacy = get_settings().privacy_url or "TODO(Евгений): PRIVACY_URL"
-    text = f"{c.t('ask_contact')}\n\n{c.t('consent_line', privacy_url=privacy)}"
-    await bot.send_message(user_id, text, reply_markup=kb.contact(c, with_later), disable_web_page_preview=True)
+    await bot.send_message(user_id, c.t("ask_contact"), reply_markup=kb.contact(c, with_later))
 
 
 async def remove_reply_keyboard(bot: Bot, chat_id: int) -> None:
@@ -108,8 +108,9 @@ async def ask_company(bot: Bot, user_id: int) -> None:
 
 
 async def save_contact(bot: Bot, user_id: int, phone: str) -> None:
-    """Нажатие кнопки = согласие (п. 3.4): consent_at фиксируем вместе с телефоном."""
-    await repo.update_lead(user_id, phone=phone, consent_at=utcnow())
+    """Согласие дано галочкой до заявки; в лиде фиксируем его время (или момент телефона)."""
+    u = await repo.get_user(user_id)
+    await repo.update_lead(user_id, phone=phone, consent_at=(u.consent_at if u and u.consent_at else utcnow()))
     await repo.log_event(user_id, "contact_shared")
     crm.push(user_id)
 
@@ -225,8 +226,6 @@ async def deliver_report(
     lead = await repo.update_lead(user_id, status="report_sent", verdict="manual", **fields)
     await repo.log_event(user_id, "report_sent", verdict="manual")
     crm.push(user_id)
-    if lead.segment in ("warm", "warm_initiator") and not lead.contacted_at:
-        await nurture.start(user_id)  # серия считается от момента отправки разбора
     if not lead.phone:
         # разбор не держим в заложниках, но после него один раз просим контакт снова
         await ask_contact(bot, user_id, with_later=False)
@@ -266,3 +265,14 @@ async def send_booking_link(bot: Bot, user_id: int) -> None:
     await bot.send_message(user_id, c.t("hot_booking_url_text"), reply_markup=markup)
     u = await repo.get_user(user_id)
     await notify.to_admins(bot, f"Лид {u.first_name if u else ''} ({user_id}) открыл ссылку записи на разбор.")
+
+
+async def menu_markup(user_id: int):
+    """Меню /menu: кнопка подписки появляется, только когда задана цена."""
+    from bot.services import subscription
+
+    c = get_content()
+    u = await repo.get_user(user_id)
+    lead = await repo.get_lead(user_id)
+    subs = subscription.t("menu_button") if subscription.current_offer() else None
+    return kb.menu(c, bool(u and u.nurture_enabled), bool(lead and lead.report_path), subs)

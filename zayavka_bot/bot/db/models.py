@@ -3,6 +3,7 @@
 Отступление от ТЗ: в users добавлено поле stage — этап заявки хранится в БД,
 а не в памяти FSM, поэтому рестарт не теряет, на каком вопросе человек.
 Таблицы slots и bookings созданы сразу, используются в полной версии.
+Миграция 0002: согласие галочкой, платная подписка, рассылки.
 """
 from __future__ import annotations
 
@@ -41,7 +42,8 @@ class User(Base):
     stage: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    nurture_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    nurture_enabled: Mapped[bool] = mapped_column(Boolean, default=True)  # «Сообщения от меня» в /menu
+    consent_at: Mapped[datetime | None] = mapped_column(DateTime)  # галочка согласия на обработку ПД
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
@@ -117,3 +119,43 @@ class ScheduledJob(Base):
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending|done|cancelled|failed
     note: Mapped[str | None] = mapped_column(Text)
+
+
+class Subscription(Base):
+    """Платная подписка на бизнес-новости. Одна строка на человека, продление сдвигает paid_until."""
+    __tablename__ = "subscriptions"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)
+    paid_until: Mapped[datetime] = mapped_column(DateTime, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    amount: Mapped[int] = mapped_column(Integer)  # в минимальных единицах: копейки или звёзды
+    currency: Mapped[str] = mapped_column(String(8))
+    days: Mapped[int] = mapped_column(Integer)
+    telegram_charge_id: Mapped[str] = mapped_column(String(128), unique=True)
+    provider_charge_id: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class Broadcast(Base):
+    """Рассылка: важный пост канала (digest) или новость для подписчиков (news)."""
+    __tablename__ = "broadcasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))  # digest | news
+    from_chat_id: Mapped[int] = mapped_column(BigInteger)
+    message_id: Mapped[int] = mapped_column(Integer)
+    post_url: Mapped[str | None] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(16), default="draft")  # draft|sending|sent|cancelled
+    audience: Mapped[str | None] = mapped_column(String(16))
+    sent: Mapped[int] = mapped_column(Integer, default=0)
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[int | None] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

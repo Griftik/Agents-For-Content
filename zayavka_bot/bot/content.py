@@ -21,7 +21,8 @@ REQUIRED_TEXTS = [
     "specialist_channel_button", "specialist_training_ask", "yes_button", "no_button",
     "text_forwarded", "notify_on", "notify_off", "notify_toggled", "delete_confirm",
     "delete_done", "error_generic", "admin_card", "admin_buttons", "segment_labels",
-    "segment_icons",
+    "segment_icons", "consent_off", "consent_on", "consent_policy_button", "consent_needed",
+    "digest_channel_button",
 ]
 SEGMENTS = {"hot", "warm", "warm_initiator", "specialist"}
 
@@ -53,7 +54,7 @@ class Content:
     insights: dict[str, Any]
     scoring: dict[str, Any]
     mapping: dict[str, Any]
-    nurture: dict[str, Any] = field(default_factory=lambda: {"steps": []})
+    subscription: dict[str, Any] = field(default_factory=dict)
     company_text: str = ""
     company_skip: str = ""
 
@@ -129,7 +130,7 @@ def load_content(content_dir: Path) -> Content:
         insights=_read(content_dir / "insights.yaml"),
         scoring=_normalize_scoring(_read(content_dir / "scoring.yaml")),
         mapping=_read(content_dir / "mapping.yaml"),
-        nurture=_read(content_dir / "nurture.yaml") if (content_dir / "nurture.yaml").exists() else {"steps": []},
+        subscription=_read(content_dir / "subscription.yaml") if (content_dir / "subscription.yaml").exists() else {},
         company_text=str((qraw.get("company") or {}).get("text", "")),
         company_skip=str((qraw.get("company") or {}).get("skip_button", "")),
     )
@@ -213,43 +214,31 @@ def validate(c: Content) -> None:
         for cond in rule.get("any") or []:
             check(f"mapping.yaml rules[{i}]", _codes_in(cond))
 
-    _validate_nurture(c, errors)
+    _validate_subscription(c, errors)
 
     if errors:
         raise ContentError("\n".join(errors))
 
 
-NURTURE_BUTTONS = {"booking", "booking_time", "none"}
+SUBSCRIPTION_TEXTS = ["menu_button", "pitch", "buy_button", "active", "renew_button", "paid",
+                      "expiring", "expired", "price_changed", "unavailable", "offer_line"]
 
 
-def _validate_nurture(c: Content, errors: list[str]) -> None:
-    n = c.nurture or {}
-    wh = n.get("work_hours") or {"start": 10, "end": 19}
-    if not (isinstance(wh.get("start"), int) and isinstance(wh.get("end"), int) and 0 <= wh["start"] < wh["end"] <= 24):
-        errors.append("nurture.yaml: work_hours должны быть числами, start < end")
-    types = set((c.mapping.get("labels") or {}).keys())
-    pain = c.question("pain")
-    ids: set[str] = set()
-    last = -1.0
-    for i, st in enumerate(n.get("steps") or []):
-        where = f"nurture.yaml steps[{i}]"
-        sid = st.get("id")
-        if not sid or sid in ids:
-            errors.append(f"{where}: нужен уникальный id")
-        ids.add(str(sid))
-        d = st.get("delay_days")
-        if not isinstance(d, (int, float)) or d < 0 or d < last:
-            errors.append(f"{where}: delay_days — число, не меньше, чем у предыдущего шага")
-        else:
-            last = float(d)
-        if st.get("button", "booking") not in NURTURE_BUTTONS:
-            errors.append(f"{where}: button — booking | booking_time | none")
-        for t in (st.get("by_session_type") or {}):
-            if t not in types:
-                errors.append(f"{where}: неизвестный тип сессии {t}")
-        for a in (st.get("by_pain") or {}):
-            if pain is None or pain.label(str(a)) is None:
-                errors.append(f"{where}: у вопроса pain нет варианта {a}")
+def _validate_subscription(c: Content, errors: list[str]) -> None:
+    sc = c.subscription
+    if not sc:
+        return
+    for k in ("price_rub", "price_stars", "days", "remind_before_days"):
+        if not isinstance(sc.get(k, 0), int) or sc.get(k, 0) < 0:
+            errors.append(f"subscription.yaml: {k} должен быть целым числом ≥ 0")
+    if int(sc.get("days") or 0) < 1:
+        errors.append("subscription.yaml: days должен быть ≥ 1")
+    texts = sc.get("texts") or {}
+    for k in SUBSCRIPTION_TEXTS:
+        if k not in texts:
+            errors.append(f"subscription.yaml: нет texts.{k}")
+    if len(str(sc.get("title") or "")) > 32:
+        errors.append("subscription.yaml: title длиннее 32 символов (лимит счёта Telegram)")
 
 
 # --- глобальный держатель -------------------------------------------------

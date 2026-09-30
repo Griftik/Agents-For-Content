@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy import delete, select, update
 
-from bot.db.models import Answer, Event, Lead, ScheduledJob, User, utcnow
+from bot.db.models import Answer, Broadcast, Event, Lead, Payment, ScheduledJob, Subscription, User, utcnow
 from bot.db.session import session
 
 
@@ -40,6 +40,12 @@ async def upsert_user(
 async def set_stage(user_id: int, stage: str | None) -> None:
     async with session() as s:
         await s.execute(update(User).where(User.id == user_id).values(stage=stage, last_seen_at=utcnow()))
+        await s.commit()
+
+
+async def set_consent(user_id: int, given: bool) -> None:
+    async with session() as s:
+        await s.execute(update(User).where(User.id == user_id).values(consent_at=utcnow() if given else None))
         await s.commit()
 
 
@@ -107,7 +113,8 @@ async def forget_user(user_id: int) -> None:
             status="deleted", updated_at=utcnow(),
         ))
         await s.execute(update(User).where(User.id == user_id).values(
-            username=None, first_name=None, stage=None, nurture_enabled=False, deleted_at=utcnow(),
+            username=None, first_name=None, stage=None, nurture_enabled=False, consent_at=None,
+            deleted_at=utcnow(),
         ))
         await s.execute(update(ScheduledJob).where(
             ScheduledJob.user_id == user_id, ScheduledJob.status == "pending"
@@ -222,3 +229,84 @@ async def _first_event_ts(user_id: int, name: str) -> datetime | None:
 
 def _fmt(dt: datetime | None) -> str | None:
     return (dt + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M") if dt else None  # МСК для таблицы
+
+
+# --- аудитории рассылок -----------------------------------------------------
+async def audience(kind: str) -> list[int]:
+    """all — все, кто дал согласие и не выключил сообщения; leads — только лиды продаж;
+    subs — действующие платные подписчики (им новости идут независимо от переключателя)."""
+    async with session() as s:
+        if kind == "subs":
+            q = select(Subscription.user_id).join(User, User.id == Subscription.user_id).where(
+                Subscription.paid_until > utcnow(), User.deleted_at.is_(None))
+        else:
+            q = select(User.id).where(
+                User.deleted_at.is_(None), User.nurture_enabled.is_(True), User.consent_at.is_not(None))
+            if kind == "leads":
+                q = q.join(Lead, Lead.user_id == User.id).where(
+                    Lead.segment.in_(["hot", "warm", "warm_initiator"]))
+        return [int(x) for x in (await s.execute(q)).scalars()]
+
+
+# --- рассылки ---------------------------------------------------------------
+async def create_broadcast(kind: str, from_chat_id: int, message_id: int,
+                           post_url: str | None, created_by: int | None) -> Broadcast:
+    async with session() as s:
+        b = Broadcast(kind=kind, from_chat_id=from_chat_id, message_id=message_id,
+                      post_url=post_url, created_by=created_by)
+        s.add(b)
+        await s.commit()
+        return b
+
+
+async def get_broadcast(bid: int) -> Broadcast | None:
+    async with session() as s:
+        return await s.get(Broadcast, bid)
+
+
+async def claim_broadcast(bid: int, audience_kind: str) -> bool:
+    """draft → sending. False, если уже рассылается/разослана/отменена (защита от двойного нажатия)."""
+    async with session() as s:
+        r = await s.execute(update(Broadcast).where(Broadcast.id == bid, Broadcast.status == "draft")
+                            .values(status="sending", audience=audience_kind))
+        await s.commit()
+        return r.rowcount == 1
+
+
+async def finish_broadcast(bid: int, status: str, sent: int = 0, failed: int = 0) -> None:
+    async with session() as s:
+        await s.execute(update(Broadcast).where(Broadcast.id == bid).values(status=status, sent=sent, failed=failed))
+        await s.commit()
+
+
+# --- подписка ---------------------------------------------------------------
+async def get_subscription(user_id: int) -> Subscription | None:
+    async with session() as s:
+        return await s.get(Subscription, user_id)
+
+
+async def record_payment(user_id: int, amount: int, currency: str, days: int,
+                         telegram_charge_id: str, provider_charge_id: str | None) -> datetime | None:
+    """Записать оплату и продлить подписку. Повтор того же платежа ничего не меняет → None."""
+    async with session() as s:
+        dup = (await s.execute(select(Payment.id).where(Payment.telegram_charge_id == telegram_charge_id))).first()
+        if dup:
+            return None
+        s.add(Payment(user_id=user_id, amount=amount, currency=currency, days=days,
+                      telegram_charge_id=telegram_charge_id, provider_charge_id=provider_charge_id))
+        sub = await s.get(Subscription, user_id)
+        now = utcnow()
+        if sub is None:
+            sub = Subscription(user_id=user_id, paid_until=now + timedelta(days=days), started_at=now)
+            s.add(sub)
+        else:
+            # продление: от конца оплаченного срока, если он ещё не прошёл
+            sub.paid_until = max(sub.paid_until, now) + timedelta(days=days)
+            sub.updated_at = now
+        await s.commit()
+        return sub.paid_until
+
+
+async def payments_since(since: datetime) -> list[Payment]:
+    async with session() as s:
+        return list((await s.execute(select(Payment).where(Payment.created_at >= since))).scalars())

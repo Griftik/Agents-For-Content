@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     google_sheet_tab: str = "leads"
     amocrm_webhook_url: str = ""
 
+    # Важное из канала: бот — админ канала, пост с этим тегом предлагается к рассылке
+    digest_tag: str = "#важное"
+
+    # Платная подписка на бизнес-новости (цена и тексты — content/subscription.yaml)
+    payment_provider_token: str = ""  # ЮKassa через @BotFather → Payments; пусто — оплата в Stars
+    payment_receipts: bool = True     # чек по 54-ФЗ через ЮKassa (email покупателя уходит в ЮKassa)
+    payment_vat_code: int = 1         # 1 — без НДС (самозанятый / УСН)
+    offer_url: str = ""               # публичная оферта на подписку
+
     contact_timeout_min: int = 10  # через сколько минут без телефона заявка уходит без него
     content_dir: Path = BASE_DIR / "content"
     prompts_dir: Path = BASE_DIR / "prompts"

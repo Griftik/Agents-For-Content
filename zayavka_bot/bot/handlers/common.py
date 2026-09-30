@@ -10,7 +10,7 @@ from bot.content import get_content
 from bot.db import repo
 from bot.handlers.start import begin
 from bot.keyboards import kb
-from bot.services import crm, flow, leadflow, notify, nurture
+from bot.services import crm, flow, leadflow, notify
 
 router = Router(name="common")
 fallback_router = Router(name="fallback")  # подключается последним
@@ -20,11 +20,7 @@ def _msg(cb: CallbackQuery) -> Message | None:
     return cb.message if isinstance(cb.message, Message) else None
 
 
-async def _menu_markup(user_id: int):
-    c = get_content()
-    u = await repo.get_user(user_id)
-    lead = await repo.get_lead(user_id)
-    return kb.menu(c, bool(u and u.nurture_enabled), bool(lead and lead.report_path))
+_menu_markup = leadflow.menu_markup
 
 
 @router.message(Command("menu"))
@@ -60,7 +56,6 @@ async def cb_menu(cb: CallbackQuery, bot: Bot) -> None:
         await repo.set_nurture(uid, enabled)
         if not enabled:
             await repo.cancel_jobs(uid, leadflow.HOT_REMINDERS)
-            await nurture.stop(uid)
             await repo.log_event(uid, "unsubscribed")
         state = c.t("notify_on") if enabled else c.t("notify_off")
         await bot.send_message(uid, c.t("notify_toggled", state=state))
@@ -147,9 +142,7 @@ async def on_anything(message: Message, bot: Bot) -> None:
         return
     c = get_content()
     await repo.upsert_user(tg.id, tg.username, tg.first_name)
-    # написал сам — дальше Евгений лично: напоминания и серия останавливаются
-    await repo.cancel_jobs(tg.id, leadflow.HOT_REMINDERS)
-    await nurture.stop(tg.id)
+    await repo.cancel_jobs(tg.id, leadflow.HOT_REMINDERS)  # написал сам — дальше лично
     await repo.log_event(tg.id, "text_received")
     lead = await repo.get_lead(tg.id)
     if lead and lead.segment:

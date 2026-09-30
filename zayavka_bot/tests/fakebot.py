@@ -29,6 +29,7 @@ class RecordingSession(BaseSession):
     def __init__(self) -> None:
         super().__init__()
         self.calls: list[TelegramMethod] = []
+        self.blocked: set[int] = set()  # эти пользователи «заблокировали бота»
 
     async def close(self) -> None:  # noqa: D401
         pass
@@ -38,6 +39,10 @@ class RecordingSession(BaseSession):
 
     async def make_request(self, bot: Bot, method: TelegramMethod, timeout: int | None = None) -> Any:
         self.calls.append(method)
+        if getattr(method, "chat_id", None) in self.blocked:
+            from aiogram.exceptions import TelegramForbiddenError
+
+            raise TelegramForbiddenError(method=method, message="Forbidden: bot was blocked by the user")
         ret = method.__returning__
         types = typing.get_args(ret) or (ret,)
         chat_id = getattr(method, "chat_id", 0) or 0
@@ -101,3 +106,34 @@ class FakeTelegram:
         cb = CallbackQuery(id=str(next(self._uid)), from_user=self._user(uid), chat_instance="x",
                            data=data, message=msg)
         await self.dp.feed_update(self.bot, Update(update_id=next(self._uid), callback_query=cb))
+
+
+async def channel_post(ft: FakeTelegram, channel: str, text: str, message_id: int = 77) -> None:
+    msg = Message(message_id=message_id, date=datetime.now(timezone.utc),
+                  chat=Chat(id=-100500, type="channel", username=channel), text=text)
+    await ft.dp.feed_update(ft.bot, Update(update_id=next(ft._uid), channel_post=msg))
+
+
+async def forward_from_channel(ft: FakeTelegram, uid: int, channel: str, post_id: int) -> None:
+    from aiogram.types import MessageOriginChannel
+
+    origin = MessageOriginChannel(type="channel", date=datetime.now(timezone.utc),
+                                  chat=Chat(id=-100500, type="channel", username=channel), message_id=post_id)
+    await ft.dp.feed_update(ft.bot, Update(update_id=next(ft._uid), message=ft._msg(
+        uid, text="пост", forward_origin=origin)))
+
+
+async def pre_checkout(ft: FakeTelegram, uid: int, payload: str, amount: int, currency: str = "XTR") -> None:
+    from aiogram.types import PreCheckoutQuery
+
+    q = PreCheckoutQuery(id=str(next(ft._uid)), from_user=ft._user(uid), currency=currency,
+                         total_amount=amount, invoice_payload=payload)
+    await ft.dp.feed_update(ft.bot, Update(update_id=next(ft._uid), pre_checkout_query=q))
+
+
+async def paid(ft: FakeTelegram, uid: int, payload: str, amount: int, charge: str, currency: str = "XTR") -> None:
+    from aiogram.types import SuccessfulPayment
+
+    sp = SuccessfulPayment(currency=currency, total_amount=amount, invoice_payload=payload,
+                           telegram_payment_charge_id=charge, provider_payment_charge_id="p-" + charge)
+    await ft.dp.feed_update(ft.bot, Update(update_id=next(ft._uid), message=ft._msg(uid, successful_payment=sp)))

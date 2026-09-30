@@ -11,7 +11,7 @@ from bot.config import get_settings
 from bot.content import get_content
 from bot.db.migrate import upgrade_head
 from bot.db.session import init_engine
-from bot.handlers import admin, application, common, contact, start
+from bot.handlers import admin, application, channel, common, contact, start, subscription
 from bot.logging_setup import setup_logging
 from bot.services import crm, scheduler
 
@@ -21,8 +21,8 @@ log = logging.getLogger("bot")
 def build_dispatcher() -> Dispatcher:
     dp = Dispatcher()
     # порядок важен: админ → команды → заявка → контакт → всё остальное
-    dp.include_routers(admin.router, start.router, common.router, application.router,
-                       contact.router, common.fallback_router)
+    dp.include_routers(channel.router, admin.router, subscription.router, start.router, common.router,
+                       application.router, contact.router, common.fallback_router)
     return dp
 
 
@@ -31,6 +31,7 @@ async def set_commands(bot: Bot) -> None:
     await bot.set_my_commands(
         [BotCommand(command="start", description="Заявка на разбор"),
          BotCommand(command="menu", description="Меню"),
+         BotCommand(command="subscribe", description="Бизнес-новости по подписке"),
          BotCommand(command="delete_me", description="Удалить мои данные")],
         scope=BotCommandScopeDefault(),
     )
@@ -39,8 +40,9 @@ async def set_commands(bot: Bot) -> None:
             await bot.set_my_commands(
                 [BotCommand(command="send", description="Отправить разбор: /send <user_id>"),
                  BotCommand(command="stats", description="Воронка: /stats 7"),
+                 BotCommand(command="news", description="Новость подписчикам"),
                  BotCommand(command="reload", description="Перечитать content/"),
-                 BotCommand(command="cancel", description="Отменить /send"),
+                 BotCommand(command="cancel", description="Отменить /send или /news"),
                  BotCommand(command="menu", description="Меню пользователя"),
                  BotCommand(command="help", description="Команды админа")],
                 scope=BotCommandScopeChat(chat_id=admin_id),
@@ -51,7 +53,8 @@ async def set_commands(bot: Bot) -> None:
 
 def check_settings() -> None:
     s = get_settings()
-    for name, val in [("ADMIN_IDS", s.admin_ids), ("BOOKING_URL", s.booking_url), ("PRIVACY_URL", s.privacy_url)]:
+    for name, val in [("ADMIN_IDS", s.admin_ids), ("BOOKING_URL", s.booking_url), ("PRIVACY_URL", s.privacy_url),
+                      ("OFFER_URL", s.offer_url)]:
         if not val:
             log.warning("TODO(Евгений): не задан %s в .env", name)
 

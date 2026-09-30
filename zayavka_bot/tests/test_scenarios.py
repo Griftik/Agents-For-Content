@@ -45,6 +45,9 @@ async def tg(db):
 
 
 async def fill(tg: FakeTelegram, uid: int, answers: dict[str, str]) -> None:
+    u = await repo.get_user(uid)
+    if u is None or u.consent_at is None:
+        await tg.press(uid, "consent:toggle")
     await tg.press(uid, "app:start")
     for q in get_content().order:
         await tg.press(uid, f"a:{q}:{answers[q]}")
@@ -60,7 +63,7 @@ async def test_hot_lead_full_path(tg):
     await fill(tg, uid, HOT)
     texts = "\n".join(tg.texts(uid))
     assert "Два наблюдения" in texts and "Проекты не доходят до реализации" in texts
-    assert "https://example.com/privacy" in texts  # строка согласия с PRIVACY_URL
+    assert "Нажимая кнопку" not in texts  # согласие уже дано галочкой, без строки с URL
     assert (await repo.get_user(uid)).stage == "contact"
 
     await tg.contact(uid, "+7 916 123-45-67")
@@ -109,6 +112,7 @@ async def test_consultant_gets_docs_after_two_questions(tg, tmp_path, monkeypatc
 
     uid = 502
     await tg.text(uid, "/start tg")
+    await tg.press(uid, "consent:toggle")
     await tg.press(uid, "app:start")
     await tg.press(uid, "a:role:consultant")
     assert (await repo.get_user(uid)).stage == "q:specialist_need"
@@ -126,6 +130,7 @@ async def test_consultant_gets_docs_after_two_questions(tg, tmp_path, monkeypatc
 async def test_back_and_skip(tg):
     uid = 503
     await tg.text(uid, "/start")
+    await tg.press(uid, "consent:toggle")
     await tg.press(uid, "app:start")
     await tg.press(uid, "a:role:owner")
     await tg.press(uid, "a:pain:no_time_ops")
@@ -225,6 +230,7 @@ async def test_stats_and_reload(tg, tmp_path, monkeypatch):
         await tg.press(uid, "company:skip")
     # бросил на вопросе 3
     await tg.text(610, "/start tg")
+    await tg.press(610, "consent:toggle")
     await tg.press(610, "app:start")
     await tg.press(610, "a:role:owner")
     await tg.press(610, "a:pain:no_time_ops")

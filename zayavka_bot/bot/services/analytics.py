@@ -21,7 +21,6 @@ class Funnel:
     booking: set[int] = field(default_factory=set)
     contacted: set[int] = field(default_factory=set)
     specialists: set[int] = field(default_factory=set)
-    nurture: set[int] = field(default_factory=set)
 
     def line(self) -> str:
         n = len(self.starts)
@@ -34,14 +33,14 @@ class Funnel:
             f" | телефон {pct(self.phone, n)}\n"
             f"разбор отправлен {len(self.report)} | горячие {pct(self.hot, len(self.phone))} от контактов"
             f" | перешли к записи {len(self.booking)} | связался {len(self.contacted)}"
-            f" | специалисты {len(self.specialists)} | получали серию {len(self.nurture)}"
+            f" | специалисты {len(self.specialists)}"
         )
 
 
 EVENT_BUCKET = {
     "start": "starts", "app_started": "began", "app_completed": "completed",
     "contact_shared": "phone", "report_sent": "report", "booking_link_clicked": "booking",
-    "specialist_docs_sent": "specialists", "nurture_sent": "nurture",
+    "specialist_docs_sent": "specialists",
 }
 
 
@@ -87,6 +86,8 @@ async def stats_text(c: Content, days: int) -> str:
     for src, f in sorted(by_src.items(), key=lambda kv: -len(kv[1].starts)):
         lines += [f"— {src}", f.line()]
     lines.append("")
+    lines.append(await _money_line(since))
+    lines.append("")
     if drop:
         lines.append("Где бросают заявку:")
         for q, n in drop.most_common():
@@ -96,3 +97,16 @@ async def stats_text(c: Content, days: int) -> str:
     else:
         lines.append("Брошенных заявок нет.")
     return "\n".join(lines)
+
+
+async def _money_line(since) -> str:
+    """Подписка и рассылки за период."""
+    subs = len(await repo.audience("subs"))
+    pays = await repo.payments_since(since)
+    rub = sum(p.amount for p in pays if p.currency == "RUB") // 100
+    stars = sum(p.amount for p in pays if p.currency == "XTR")
+    money = f"{rub} ₽" + (f" + {stars} ⭐" if stars else "")
+    digests = [e for e in await repo.events_since(since) if e.name == "digest_broadcast"]
+    reached = sum(int((e.payload or {}).get("sent", 0)) for e in digests)
+    return (f"Подписка: активных {subs} | оплат за период {len(pays)} на {money}\n"
+            f"Важное из канала: рассылок {len(digests)}, доставлено {reached}")

@@ -32,11 +32,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot) -> None:
     elif stage == flow.STAGE_COMPANY:
         await leadflow.ask_company(bot, tg.id)
     elif stage in (flow.STAGE_DONE, flow.STAGE_TRAINING):
-        lead = await repo.get_lead(tg.id)
-        await message.answer(
-            c.t("already_done"),
-            reply_markup=kb.menu(c, u.nurture_enabled, bool(lead and lead.report_path)),
-        )
+        await message.answer(c.t("already_done"), reply_markup=await leadflow.menu_markup(tg.id))
     else:
         await repo.set_stage(tg.id, flow.STAGE_WELCOME)
         await leadflow.send_welcome(bot, tg.id)
@@ -46,17 +42,39 @@ async def begin(bot: Bot, user_id: int, edit: Message | None = None) -> None:
     """Начать заявку с первого вопроса. Старые ответы стираются (заявка заново)."""
     c = get_content()
     await repo.delete_answers(user_id)
-    await repo.cancel_jobs(user_id, ["contact_timeout", *leadflow.HOT_REMINDERS, "nurture"])
+    await repo.cancel_jobs(user_id, ["contact_timeout", *leadflow.HOT_REMINDERS])
     await repo.log_event(user_id, "app_started")
     await leadflow.show_question(bot, user_id, c.order[0], edit=edit)
 
 
-@router.callback_query(F.data == "app:start")
-async def cb_start(cb: CallbackQuery, bot: Bot) -> None:
-    await cb.answer()
+@router.callback_query(F.data == "consent:toggle")
+async def cb_consent(cb: CallbackQuery) -> None:
+    """Галочка согласия: отметить или снять. Сообщение не шлём — только меняем кнопку."""
+    c = get_content()
     u = await repo.get_user(cb.from_user.id)
     if u is None:
         u, _ = await repo.upsert_user(cb.from_user.id, cb.from_user.username, cb.from_user.first_name)
+    given = u.consent_at is None
+    await repo.set_consent(u.id, given)
+    await repo.log_event(u.id, "consent_given" if given else "consent_revoked")
+    await cb.answer()
+    if isinstance(cb.message, Message):
+        try:
+            await cb.message.edit_reply_markup(reply_markup=kb.welcome_checked(c) if given else kb.welcome(c, False))
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@router.callback_query(F.data == "app:start")
+async def cb_start(cb: CallbackQuery, bot: Bot) -> None:
+    u = await repo.get_user(cb.from_user.id)
+    if u is None:
+        u, _ = await repo.upsert_user(cb.from_user.id, cb.from_user.username, cb.from_user.first_name)
+    if u.consent_at is None:
+        # ненавязчиво: всплывающая подсказка над чатом, без нового сообщения
+        await cb.answer(get_content().t("consent_needed"))
+        return
+    await cb.answer()
     q = flow.stage_question(u.stage)
     if q:  # уже в процессе — старая кнопка приветствия не сбрасывает ответы
         await leadflow.show_question(bot, u.id, q)
