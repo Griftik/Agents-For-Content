@@ -58,6 +58,17 @@ LLM-отчёт, PDF и слоты подключаются, когда выпо�
 
 ## Запуск
 
+**Проще всего — одной командой** на чистом сервере Ubuntu (в веб-консоли хостинга):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Griftik/Agents-For-Content/claude/mvp-section-16-2rcya3/zayavka_bot/deploy/install.sh | sudo bash
+```
+
+Скрипт ставит Docker, скачивает код в `/opt/zayavka_bot`, скрыто спрашивает токен бота и
+запускает. Та же команда позже — обновление: `.env`, база и `secrets/` не трогаются.
+
+Вручную:
+
 ```bash
 cd zayavka_bot
 cp .env.example .env && nano .env          # заполнить параметры из п. 1
