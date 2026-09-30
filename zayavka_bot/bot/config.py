@@ -31,7 +31,8 @@ class Settings(BaseSettings):
 
     booking_mode: str = "url"  # url | slots (slots — полная версия)
     booking_url: str = "https://calendly.com/egrigorev/30min"
-    privacy_url: str = ""
+    privacy_url: str = "https://telegra.ph/Politika-obrabotki-personalnyh-dannyh-09-30-7"
+    consent_url: str = "https://telegra.ph/Soglasie-na-obrabotku-personalnyh-dannyh-09-30-113"  # отдельный документ согласия (152-ФЗ с 01.09.2025), ссылается на политику
 
     crm_sync: CrmSync = CrmSync.none
     google_service_account_json: Path | None = None
@@ -42,7 +43,7 @@ class Settings(BaseSettings):
     # Важное из канала: бот — админ канала, пост с этим тегом предлагается к рассылке
     digest_tag: str = "#важное"
 
-    # Платная подписка на бизнес-новости (цена и тексты — content/subscription.yaml)
+    # Платная подписка на бизнес-аналитику (цена и тексты — content/subscription.yaml)
     payment_provider_token: str = ""  # ЮKassa через @BotFather → Payments; пусто — оплата в Stars
     payment_receipts: bool = True     # чек по 54-ФЗ через ЮKassa (email покупателя уходит в ЮKassa)
     payment_vat_code: int = 1         # 1 — без НДС (самозанятый / УСН)

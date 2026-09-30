@@ -31,7 +31,7 @@ async def set_commands(bot: Bot) -> None:
     await bot.set_my_commands(
         [BotCommand(command="start", description="Заявка на разбор"),
          BotCommand(command="menu", description="Меню"),
-         BotCommand(command="subscribe", description="Бизнес-новости по подписке"),
+         BotCommand(command="subscribe", description="Бизнес-аналитика по подписке"),
          BotCommand(command="delete_me", description="Удалить мои данные")],
         scope=BotCommandScopeDefault(),
     )
@@ -53,7 +53,7 @@ async def set_commands(bot: Bot) -> None:
 
 def check_settings() -> None:
     s = get_settings()
-    for name, val in [("ADMIN_IDS", s.admin_ids), ("BOOKING_URL", s.booking_url), ("PRIVACY_URL", s.privacy_url),
+    for name, val in [("ADMIN_IDS", s.admin_ids), ("BOOKING_URL", s.booking_url), ("PRIVACY_URL", s.privacy_url), ("CONSENT_URL", s.consent_url),
                       ("OFFER_URL", s.offer_url)]:
         if not val:
             log.warning("TODO(Евгений): не задан %s в .env", name)

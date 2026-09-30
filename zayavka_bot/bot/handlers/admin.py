@@ -19,7 +19,7 @@ router = Router(name="admin")
 # admin_id → user_id, кому уйдёт следующее сообщение админа как разбор.
 # В памяти: после рестарта достаточно повторить /send.
 pending_send: dict[int, int] = {}
-# админы, от которых ждём текст бизнес-новости после /news
+# админы, от которых ждём текст бизнес-аналитику после /news
 pending_news: set[int] = set()
 
 
@@ -39,7 +39,7 @@ def help_text() -> str:
         "/cancel — отменить /send или /news\n"
         "Перешлите сюда пост канала — предложу разослать его в бот (или отметьте пост тегом "
         f"{get_settings().digest_tag} в канале, когда бот — админ канала)\n"
-        "/news — следующее сообщение уйдёт платным подписчикам бизнес-новостей\n"
+        "/news — следующее сообщение уйдёт платным подписчикам бизнес-аналитики\n"
         "/stats [7|30] — воронка и точка отвала по вопросам\n"
         "/reload — перечитать YAML из content/ без рестарта\n"
         "Промт для разбора — prompts/report_system.md (вставьте карточку лида в блок «ОТВЕТЫ»)."
@@ -89,7 +89,7 @@ async def cmd_news(message: Message) -> None:
     pending_news.add(message.from_user.id)  # type: ignore[union-attr]
     pending_send.pop(message.from_user.id, None)  # type: ignore[union-attr]
     n = len(await repo.audience("subs"))
-    await message.answer(f"Пришлите новость следующим сообщением (текст, фото, файл). "
+    await message.answer(f"Пришлите материал следующим сообщением (текст, фото, файл). "
                          f"Покажу превью перед отправкой. Подписчиков сейчас: {n}. /cancel — отмена.")
 
 
@@ -115,7 +115,7 @@ class HasPendingNews(BaseFilter):
 async def on_pending_news(message: Message, bot: Bot) -> None:
     pending_news.discard(message.from_user.id)  # type: ignore[union-attr]
     b = await repo.create_broadcast("news", message.chat.id, message.message_id, None, message.from_user.id)  # type: ignore[union-attr]
-    await broadcast.offer_to_admins(bot, b, "Бизнес-новость для подписчиков. Отправить?")
+    await broadcast.offer_to_admins(bot, b, "Материал аналитики для подписчиков. Отправить?")
 
 
 @router.message(F.forward_origin.type == "channel")

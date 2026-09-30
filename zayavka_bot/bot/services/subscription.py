@@ -1,4 +1,4 @@
-"""Платная подписка на бизнес-новости: счёт, оплата, продление, напоминания об окончании.
+"""Платная подписка на бизнес-аналитику: счёт, оплата, продление, напоминания об окончании.
 
 Рубли — через платёжного провайдера Telegram (ЮKassa, токен от @BotFather), с чеком по 54-ФЗ.
 Звёзды (XTR) — без провайдера. Автосписания нет: за {remind_before_days} дня до конца бот
@@ -139,7 +139,7 @@ async def on_paid(bot: Bot, user_id: int, payload: str, total_amount: int, curre
     u = await repo.get_user(user_id)
     who = f"@{u.username}" if u and u.username else f"id {user_id}"
     price = f"{total_amount // 100} ₽" if currency == "RUB" else f"{total_amount} ⭐"
-    await notify.to_admins(bot, f"💳 Подписка на бизнес-новости: {u.first_name if u else ''} ({who}), "
+    await notify.to_admins(bot, f"💳 Подписка на бизнес-аналитику: {u.first_name if u else ''} ({who}), "
                                 f"{price}, до {fmt_date(until)}")
 
 

@@ -66,7 +66,7 @@ async def test_stars_purchase_flow(tg):  # noqa: F811
     assert len(await repo.pending_jobs(uid, sub.JOB_EXPIRED)) == 1  # старые напоминания сняты
 
     await tg.press(uid, "menu:subs")
-    assert tg.texts(uid)[-1].startswith("Подписка на бизнес-новости действует до")
+    assert tg.texts(uid)[-1].startswith("Подписка на бизнес-аналитику действует до")
 
 
 async def test_price_changed_before_payment(tg):  # noqa: F811
@@ -103,8 +103,8 @@ async def test_expiry_reminders_and_news_only_for_active(tg, monkeypatch):  # no
     tg.clear()
     for job in await repo.take_due_jobs():
         await scheduler.handle(tg.bot, job)
-    assert any(t.startswith("Подписка на бизнес-новости заканчивается") for t in tg.texts(1005))
-    assert any(t.startswith("Подписка на бизнес-новости закончилась") for t in tg.texts(1006))
+    assert any(t.startswith("Подписка на бизнес-аналитику заканчивается") for t in tg.texts(1005))
+    assert any(t.startswith("Подписка на бизнес-аналитику закончилась") for t in tg.texts(1006))
     renew = tg.sent(1006)[-1].reply_markup.inline_keyboard[0][0]
     assert renew.callback_data == "sub:buy"
 

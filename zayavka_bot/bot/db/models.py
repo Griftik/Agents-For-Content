@@ -122,7 +122,7 @@ class ScheduledJob(Base):
 
 
 class Subscription(Base):
-    """Платная подписка на бизнес-новости. Одна строка на человека, продление сдвигает paid_until."""
+    """Платная подписка на бизнес-аналитику. Одна строка на человека, продление сдвигает paid_until."""
     __tablename__ = "subscriptions"
 
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)

@@ -1,4 +1,4 @@
-"""Платная подписка на бизнес-новости: /subscribe, счёт, подтверждение и приём оплаты."""
+"""Платная подписка на бизнес-аналитику: /subscribe, счёт, подтверждение и приём оплаты."""
 from __future__ import annotations
 
 from aiogram import Bot, F, Router

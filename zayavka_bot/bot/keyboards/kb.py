@@ -24,7 +24,7 @@ def welcome(c: Content, consented: bool) -> InlineKeyboardMarkup:
     rows: list[list[IB]] = []
     if not consented:
         row = [IB(text=c.t("consent_off"), callback_data="consent:toggle")]
-        url = get_settings().privacy_url
+        url = get_settings().consent_url or get_settings().privacy_url
         if url:
             row.append(IB(text=c.t("consent_policy_button"), url=url))
         rows.append(row)
@@ -35,7 +35,7 @@ def welcome(c: Content, consented: bool) -> InlineKeyboardMarkup:
 def welcome_checked(c: Content) -> InlineKeyboardMarkup:
     """После нажатия галочки: отмечена, её можно снять."""
     row = [IB(text=c.t("consent_on"), callback_data="consent:toggle")]
-    url = get_settings().privacy_url
+    url = get_settings().consent_url or get_settings().privacy_url
     if url:
         row.append(IB(text=c.t("consent_policy_button"), url=url))
     return _ikb([row, [IB(text=c.t("start_button"), callback_data="app:start")]])

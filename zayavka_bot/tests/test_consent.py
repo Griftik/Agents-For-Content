@@ -15,7 +15,7 @@ async def test_welcome_has_unchecked_box_and_policy_link(tg):  # noqa: F811
     rows = _welcome(tg, 801).reply_markup.inline_keyboard
     c = get_content()
     assert rows[0][0].text == c.t("consent_off") and rows[0][0].callback_data == "consent:toggle"
-    assert rows[0][1].url == "https://example.com/privacy"
+    assert rows[0][1].url == "https://example.com/consent"
     assert rows[1][0].callback_data == "app:start"
 
 
