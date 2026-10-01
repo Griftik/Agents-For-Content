@@ -90,15 +90,15 @@ async def show(bot: Bot, user_id: int) -> None:
     await repo.log_event(user_id, "subscription_offer_shown")
 
 
-async def send_invoice(bot: Bot, user_id: int) -> None:
-    offer = current_offer()
-    if offer is None:
-        await bot.send_message(user_id, t("unavailable"))
-        return
+def invoice_params(offer: Offer) -> dict[str, Any]:
+    """Параметры счёта — общие для счёта в чате и для оплаты внутри мини-приложения."""
     sc, s = cfg(), get_settings()
     title = str(sc.get("title") or "Подписка")[:32]
     description = str(sc.get("invoice_description") or title).format(days=offer.days)[:255]
-    kw: dict[str, Any] = {}
+    kw: dict[str, Any] = dict(
+        title=title, description=description, payload=offer.payload, currency=offer.currency,
+        prices=[LabeledPrice(label=title, amount=offer.amount)],
+    )
     if offer.currency == "RUB":
         kw["provider_token"] = s.payment_provider_token
         if s.payment_receipts:
@@ -111,11 +111,27 @@ async def send_invoice(bot: Bot, user_id: int) -> None:
                     "payment_subject": "service",
                 }]}
             }, ensure_ascii=False))
-    await bot.send_invoice(
-        user_id, title=title, description=description, payload=offer.payload,
-        currency=offer.currency, prices=[LabeledPrice(label=title, amount=offer.amount)], **kw,
-    )
+    return kw
+
+
+async def send_invoice(bot: Bot, user_id: int) -> None:
+    """Счёт сообщением в чат (кнопка продления в напоминании)."""
+    offer = current_offer()
+    if offer is None:
+        await bot.send_message(user_id, t("unavailable"))
+        return
+    await bot.send_invoice(user_id, **invoice_params(offer))
     await repo.log_event(user_id, "subscription_invoice", currency=offer.currency, amount=offer.amount)
+
+
+async def invoice_link(bot: Bot, user_id: int) -> str | None:
+    """Ссылка на счёт для Telegram.WebApp.openInvoice — оплата не выходя из приложения."""
+    offer = current_offer()
+    if offer is None:
+        return None
+    link = await bot.create_invoice_link(**invoice_params(offer))
+    await repo.log_event(user_id, "subscription_invoice", currency=offer.currency, amount=offer.amount, via="app")
+    return link
 
 
 def check_payload(payload: str) -> bool:

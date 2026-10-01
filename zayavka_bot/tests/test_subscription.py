@@ -17,7 +17,7 @@ from bot.services import broadcast, scheduler
 from bot.services import subscription as sub
 from tests.conftest import ADMIN
 from tests.fakebot import paid, pre_checkout
-from tests.test_scenarios import tg  # noqa: F401
+from tests.test_scenarios import WARM, lead, tg  # noqa: F401
 
 
 def _price(stars: int = 0, rub: int = 0) -> None:
@@ -27,19 +27,21 @@ def _price(stars: int = 0, rub: int = 0) -> None:
 async def test_hidden_without_price(tg):  # noqa: F811
     await tg.text(1001, "/subscribe")
     assert tg.texts(1001)[-1] == sub.t("unavailable")
-    await tg.text(1001, "/menu")
-    rows = tg.sent(1001)[-1].reply_markup.inline_keyboard
-    assert all(b.callback_data != "menu:subs" for r in rows for b in r)
+    await lead(tg, 1001, WARM)
+    assert (await tg.app.state(1001))["subscription"] is None
 
 
 async def test_stars_purchase_flow(tg):  # noqa: F811
     _price(stars=150)
     uid = 1002
-    await tg.text(uid, "/menu")
-    rows = tg.sent(uid)[-1].reply_markup.inline_keyboard
-    assert any(b.callback_data == "menu:subs" for r in rows for b in r)
+    await lead(tg, uid, WARM)
+    st = (await tg.app.state(uid))["subscription"]
+    assert "150 ⭐ за 30 дней" in st["pitch"] and st["button"] == "Оформить за 150 ⭐"
+    r = await tg.app.act(uid, "invoice")
+    link = tg.sent(None, "CreateInvoiceLink")[-1]
+    assert (link.currency, link.prices[0].amount) == ("XTR", 150) and "invoice" in r
 
-    await tg.press(uid, "menu:subs")
+    await tg.text(uid, "/subscribe")
     assert "150 ⭐ за 30 дней" in tg.texts(uid)[-1]
     await tg.press(uid, "sub:buy")
     inv = tg.sent(uid, "SendInvoice")[-1]
@@ -65,7 +67,9 @@ async def test_stars_purchase_flow(tg):  # noqa: F811
     assert (await repo.get_subscription(uid)).paid_until - s.paid_until == timedelta(days=30)
     assert len(await repo.pending_jobs(uid, sub.JOB_EXPIRED)) == 1  # старые напоминания сняты
 
-    await tg.press(uid, "menu:subs")
+    st = (await tg.app.state(uid))["subscription"]
+    assert st["active"].startswith("Подписка до") and st["pitch"] is None
+    await tg.text(uid, "/subscribe")
     assert tg.texts(uid)[-1].startswith("Подписка на бизнес-аналитику действует до")
 
 

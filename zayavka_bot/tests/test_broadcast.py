@@ -9,7 +9,7 @@ from bot.db import repo
 from bot.services import broadcast
 from tests.conftest import ADMIN
 from tests.fakebot import channel_post, forward_from_channel
-from tests.test_scenarios import HOT, WARM, fill, tg  # noqa: F401
+from tests.test_scenarios import HOT, WARM, lead, tg  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
@@ -22,21 +22,14 @@ async def _finish_broadcasts() -> None:
     await asyncio.gather(*tasks)
 
 
-async def _lead(tg, uid, answers):
-    await tg.text(uid, "/start")
-    await fill(tg, uid, answers)
-    await tg.contact(uid, f"+7916{uid:07d}")
-    await tg.press(uid, "company:skip")
-
-
 async def _people(tg):
-    await _lead(tg, 901, WARM)
-    await _lead(tg, 902, HOT)
+    await lead(tg, 901, WARM, phone="+79160000901")
+    await lead(tg, 902, HOT, phone="+79160000902")
     await tg.text(903, "/start")               # дал согласие, заявку не закончил
-    await tg.press(903, "consent:toggle")
+    await tg.app.act(903, "consent", value=True)
     await tg.text(904, "/start")               # без согласия — не получает ничего
-    await _lead(tg, 905, WARM)
-    await tg.press(905, "menu:notify")         # выключил сообщения
+    await lead(tg, 905, WARM, phone="+79160000905")
+    await tg.app.act(905, "notify", value=False)  # выключил сообщения
 
 
 def _bc_buttons(tg):

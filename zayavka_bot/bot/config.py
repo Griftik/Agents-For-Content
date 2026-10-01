@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     google_sheet_tab: str = "leads"
     amocrm_webhook_url: str = ""
 
+    # Мини-приложение: адрес https (без домена — <ip-через-дефисы>.sslip.io, ставит установщик)
+    webapp_url: str = ""
+    webapp_port: int = 8080
+    initdata_max_age_sec: int = 24 * 3600
+
     # Важное из канала: бот — админ канала, пост с этим тегом предлагается к рассылке
     digest_tag: str = "#важное"
 

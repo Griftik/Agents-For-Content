@@ -22,7 +22,9 @@ REQUIRED_TEXTS = [
     "text_forwarded", "notify_on", "notify_off", "notify_toggled", "delete_confirm",
     "delete_done", "error_generic", "admin_card", "admin_buttons", "segment_labels",
     "segment_icons", "consent_off", "consent_on", "consent_policy_button", "consent_needed",
-    "digest_channel_button",
+    "digest_channel_button", "menu_open_button", "app_next_button", "app_close_button",
+    "app_docs_sent", "app_report_in_chat", "app_contact_wait", "app_company_placeholder",
+    "app_subscription_active", "app_policy_links",
 ]
 SEGMENTS = {"hot", "warm", "warm_initiator", "specialist"}
 

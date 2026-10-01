@@ -1,9 +1,12 @@
-"""/start с deep link, приветствие, продолжение и перезапуск заявки (п. 3.1–3.2)."""
+"""/start с deep link: источник, кружок, приветствие с кнопкой мини-приложения (п. 3.1–3.2).
+
+Сама заявка, согласие, меню и подписка — в мини-приложении (bot/webapp).
+"""
 from __future__ import annotations
 
-from aiogram import Bot, F, Router
-from aiogram.filters import CommandObject, CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram import Bot, Router
+from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.types import Message
 
 from bot.content import get_content
 from bot.db import repo
@@ -25,76 +28,20 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot) -> None:
     stage = u.stage
     q = flow.stage_question(stage)
     if q:
-        n = flow.question_number(c, q)
-        await message.answer(c.t("resume", n=n), reply_markup=kb.resume(c))
-    elif stage == flow.STAGE_CONTACT:
-        await leadflow.ask_contact(bot, tg.id, with_later=True)
-    elif stage == flow.STAGE_COMPANY:
-        await leadflow.ask_company(bot, tg.id)
+        await message.answer(c.t("resume", n=flow.question_number(c, q)), reply_markup=kb.open_app(c.t("resume_button")))
+    elif stage in (flow.STAGE_CONTACT, flow.STAGE_COMPANY):
+        await message.answer(c.t("resume", n=len(c.order)), reply_markup=kb.open_app(c.t("resume_button")))
     elif stage in (flow.STAGE_DONE, flow.STAGE_TRAINING):
-        await message.answer(c.t("already_done"), reply_markup=await leadflow.menu_markup(tg.id))
+        await message.answer(c.t("already_done"), reply_markup=kb.open_app(c.t("menu_open_button")))
     else:
         await repo.set_stage(tg.id, flow.STAGE_WELCOME)
         await leadflow.send_welcome(bot, tg.id)
 
 
-async def begin(bot: Bot, user_id: int, edit: Message | None = None) -> None:
-    """Начать заявку с первого вопроса. Старые ответы стираются (заявка заново)."""
+@router.message(Command("menu"))
+async def cmd_menu(message: Message) -> None:
     c = get_content()
-    await repo.delete_answers(user_id)
-    await repo.cancel_jobs(user_id, ["contact_timeout", *leadflow.HOT_REMINDERS])
-    await repo.log_event(user_id, "app_started")
-    await leadflow.show_question(bot, user_id, c.order[0], edit=edit)
-
-
-@router.callback_query(F.data == "consent:toggle")
-async def cb_consent(cb: CallbackQuery) -> None:
-    """Галочка согласия: отметить или снять. Сообщение не шлём — только меняем кнопку."""
-    c = get_content()
-    u = await repo.get_user(cb.from_user.id)
-    if u is None:
-        u, _ = await repo.upsert_user(cb.from_user.id, cb.from_user.username, cb.from_user.first_name)
-    given = u.consent_at is None
-    await repo.set_consent(u.id, given)
-    await repo.log_event(u.id, "consent_given" if given else "consent_revoked")
-    await cb.answer()
-    if isinstance(cb.message, Message):
-        try:
-            await cb.message.edit_reply_markup(reply_markup=kb.welcome_checked(c) if given else kb.welcome(c, False))
-        except Exception:  # noqa: BLE001
-            pass
-
-
-@router.callback_query(F.data == "app:start")
-async def cb_start(cb: CallbackQuery, bot: Bot) -> None:
-    u = await repo.get_user(cb.from_user.id)
-    if u is None:
-        u, _ = await repo.upsert_user(cb.from_user.id, cb.from_user.username, cb.from_user.first_name)
-    if u.consent_at is None:
-        # ненавязчиво: всплывающая подсказка над чатом, без нового сообщения
-        await cb.answer(get_content().t("consent_needed"))
-        return
-    await cb.answer()
-    q = flow.stage_question(u.stage)
-    if q:  # уже в процессе — старая кнопка приветствия не сбрасывает ответы
-        await leadflow.show_question(bot, u.id, q)
-        return
-    # кнопку приветствия не редактируем: под ней может быть кружок, а текст приветствия полезно оставить
-    await begin(bot, u.id)
-
-
-@router.callback_query(F.data == "app:resume")
-async def cb_resume(cb: CallbackQuery, bot: Bot) -> None:
-    await cb.answer()
-    u = await repo.get_user(cb.from_user.id)
-    q = flow.stage_question(u.stage if u else None)
-    if q:
-        await leadflow.show_question(bot, cb.from_user.id, q, edit=cb.message if isinstance(cb.message, Message) else None)
-    else:
-        await begin(bot, cb.from_user.id)
-
-
-@router.callback_query(F.data == "app:restart")
-async def cb_restart(cb: CallbackQuery, bot: Bot) -> None:
-    await cb.answer()
-    await begin(bot, cb.from_user.id, edit=cb.message if isinstance(cb.message, Message) else None)
+    tg = message.from_user
+    assert tg is not None
+    await repo.upsert_user(tg.id, tg.username, tg.first_name)
+    await message.answer(c.t("already_done"), reply_markup=kb.open_app(c.t("menu_open_button")))

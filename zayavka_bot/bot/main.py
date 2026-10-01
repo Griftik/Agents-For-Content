@@ -1,19 +1,20 @@
-"""Точка входа: миграции → бот → планировщик → CRM-синк → long polling (или webhook)."""
+"""Точка входа: миграции → бот → сервер мини-приложения → планировщик → CRM-синк → long polling."""
 from __future__ import annotations
 
 import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
-from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault
+from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefault, MenuButtonWebApp, WebAppInfo
 
 from bot.config import get_settings
 from bot.content import get_content
 from bot.db.migrate import upgrade_head
 from bot.db.session import init_engine
-from bot.handlers import admin, application, channel, common, contact, start, subscription
+from bot.handlers import admin, channel, common, contact, start, subscription
 from bot.logging_setup import setup_logging
 from bot.services import crm, scheduler
+from bot.webapp import server as webapp_server
 
 log = logging.getLogger("bot")
 
@@ -22,7 +23,7 @@ def build_dispatcher() -> Dispatcher:
     dp = Dispatcher()
     # порядок важен: админ → команды → заявка → контакт → всё остальное
     dp.include_routers(channel.router, admin.router, subscription.router, start.router, common.router,
-                       application.router, contact.router, common.fallback_router)
+                       contact.router, common.fallback_router)
     return dp
 
 
@@ -30,7 +31,7 @@ async def set_commands(bot: Bot) -> None:
     s = get_settings()
     await bot.set_my_commands(
         [BotCommand(command="start", description="Заявка на разбор"),
-         BotCommand(command="menu", description="Меню"),
+         BotCommand(command="menu", description="Открыть меню"),
          BotCommand(command="subscribe", description="Бизнес-аналитика по подписке"),
          BotCommand(command="delete_me", description="Удалить мои данные")],
         scope=BotCommandScopeDefault(),
@@ -54,9 +55,16 @@ async def set_commands(bot: Bot) -> None:
 def check_settings() -> None:
     s = get_settings()
     for name, val in [("ADMIN_IDS", s.admin_ids), ("BOOKING_URL", s.booking_url), ("PRIVACY_URL", s.privacy_url), ("CONSENT_URL", s.consent_url),
-                      ("OFFER_URL", s.offer_url)]:
+                      ("OFFER_URL", s.offer_url), ("WEBAPP_URL", s.webapp_url)]:
         if not val:
             log.warning("TODO(Евгений): не задан %s в .env", name)
+
+
+async def set_menu_button(bot: Bot) -> None:
+    """Кнопка приложения слева от поля ввода во всех чатах с ботом."""
+    url = get_settings().webapp_url
+    if url:
+        await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="Открыть", web_app=WebAppInfo(url=url)))
 
 
 async def run() -> None:
@@ -68,13 +76,16 @@ async def run() -> None:
     syncer = crm.init(bot)
     syncer.start()
     sched = asyncio.create_task(scheduler.run(bot), name="scheduler")
+    web = await webapp_server.start(bot, s.webapp_port)
     try:
         me = await bot.get_me()
         await set_commands(bot)
+        await set_menu_button(bot)
         log.info("бот @%s запущен, CRM_SYNC=%s", me.username, s.crm_sync.value)
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         sched.cancel()
+        await web.cleanup()
         await syncer.stop()
         await bot.session.close()
 

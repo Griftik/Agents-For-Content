@@ -1,5 +1,7 @@
-"""Шаги сценария, общие для хендлеров и планировщика: вопросы, тизер, контакт, финал заявки,
-ветка специалиста, доставка разбора, карточка админу."""
+"""Шаги сценария, общие для мини-приложения, чата и планировщика: старт и завершение заявки,
+контакт, финал (сегмент, карточка админу), ветка специалиста, доставка разбора, запись.
+
+Заявка проходит в мини-приложении (bot/webapp); здесь — то, что меняет состояние и пишет в чат."""
 from __future__ import annotations
 
 import logging
@@ -8,14 +10,14 @@ from pathlib import Path
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import FSInputFile, Message, ReplyKeyboardRemove
+from aiogram.types import FSInputFile, ReplyKeyboardRemove
 
 from bot.config import get_settings
 from bot.content import get_content
 from bot.db import repo
 from bot.db.models import utcnow
 from bot.keyboards import kb
-from bot.services import crm, flow, insights, mapping, notify, scoring
+from bot.services import crm, flow, mapping, notify, scoring
 from bot.services.cards import admin_card, pain_text
 
 log = logging.getLogger(__name__)
@@ -39,47 +41,22 @@ async def send_welcome(bot: Bot, chat_id: int) -> None:
                 _video_note_id = msg.video_note.file_id
         except TelegramBadRequest as e:
             log.warning("кружок не отправлен: %s", e)
-    u = await repo.get_user(chat_id)
-    await bot.send_message(chat_id, c.t("welcome"), reply_markup=kb.welcome(c, bool(u and u.consent_at)))
+    await bot.send_message(chat_id, c.t("welcome"), reply_markup=kb.open_app(c.t("start_button")))
 
 
-# --- вопросы ----------------------------------------------------------------
-def question_text(q_code: str) -> str:
+# --- заявка ----------------------------------------------------------------
+async def start_application(user_id: int) -> None:
+    """Начать заявку с первого вопроса. Старые ответы стираются (заявка заново)."""
     c = get_content()
-    q = c.question(q_code)
-    assert q is not None
-    if q_code == c.specialist_need.code:
-        return q.text
-    return f"{c.t('progress', n=flow.question_number(c, q_code))}\n\n{q.text}"
+    await repo.delete_answers(user_id)
+    await repo.cancel_jobs(user_id, ["contact_timeout", *HOT_REMINDERS])
+    await repo.log_event(user_id, "app_started")
+    await repo.set_stage(user_id, flow.q_stage(c.order[0]))
 
 
-def question_markup(q_code: str):
-    c = get_content()
-    q = c.question(q_code)
-    assert q is not None
-    return kb.question(c, q, with_back=flow.question_number(c, q_code) > 1)
-
-
-async def show_question(bot: Bot, user_id: int, q_code: str, edit: Message | None = None) -> None:
-    await repo.set_stage(user_id, flow.q_stage(q_code))
-    text, markup = question_text(q_code), question_markup(q_code)
-    if edit is not None:
-        try:
-            await edit.edit_text(text, reply_markup=markup)
-            return
-        except TelegramBadRequest:
-            pass  # сообщение слишком старое или не изменилось — шлём новое
-    await bot.send_message(user_id, text, reply_markup=markup)
-
-
-# --- после 11-го вопроса: тизер и контакт -----------------------------------
-async def finish_questions(bot: Bot, user_id: int) -> None:
-    c = get_content()
-    answers = await repo.get_answers(user_id)
+async def complete_questions(user_id: int) -> None:
+    """После 11-го вопроса: тизер и телефон показывает приложение; тут — этап и таймаут контакта."""
     await repo.log_event(user_id, "app_completed")
-    first, second = insights.pick(answers, c.insights)
-    await bot.send_message(user_id, f"{c.t('teaser_intro')}\n\n{first}\n\n{second}")
-    await ask_contact(bot, user_id, with_later=True)
     await repo.set_stage(user_id, flow.STAGE_CONTACT)
     await repo.cancel_jobs(user_id, ["contact_timeout"])
     await repo.schedule(user_id, "contact_timeout", timedelta(minutes=get_settings().contact_timeout_min))
@@ -98,13 +75,6 @@ async def remove_reply_keyboard(bot: Bot, chat_id: int) -> None:
         await bot.delete_message(chat_id, m.message_id)
     except TelegramBadRequest:
         pass
-
-
-async def ask_company(bot: Bot, user_id: int) -> None:
-    c = get_content()
-    await remove_reply_keyboard(bot, user_id)
-    await repo.set_stage(user_id, flow.STAGE_COMPANY)
-    await bot.send_message(user_id, c.company_text or c.t("ask_company"), reply_markup=kb.company_skip(c))
 
 
 async def save_contact(bot: Bot, user_id: int, phone: str) -> None:
@@ -135,7 +105,6 @@ async def finalize(bot: Bot, user_id: int) -> None:
     await send_admin_card(bot, user_id)
     crm.push(user_id)
 
-    await remove_reply_keyboard(bot, user_id)
     if seg == "hot":
         # горячим сначала время разбора, документ вторым (п. 3.7)
         await bot.send_message(
@@ -202,8 +171,7 @@ async def run_specialist(bot: Bot, user_id: int) -> None:
     await repo.log_event(user_id, "specialist_docs_sent", need=need, files=len(files))
     await repo.log_event(user_id, "segment_assigned", segment="specialist", score=0)
 
-    await bot.send_message(user_id, c.t("specialist_channel"), reply_markup=kb.channel(c))
-    await bot.send_message(user_id, c.t("specialist_training_ask"), reply_markup=kb.yes_no(c, "train"))
+    # канал и вопрос про обучение — на экране приложения
     await send_admin_card(bot, user_id)
     crm.push(user_id)
 
@@ -251,28 +219,25 @@ async def resend_report(bot: Bot, user_id: int) -> bool:
 
 
 # --- запись по ссылке (п. 3.7, BOOKING_MODE=url) ----------------------------
-async def send_booking_link(bot: Bot, user_id: int) -> None:
-    c = get_content()
+async def booking_clicked(bot: Bot, user_id: int) -> None:
+    """Человек пошёл записываться: событие, стоп напоминаний, уведомление админу."""
     await repo.log_event(user_id, "booking_link_clicked")
     await repo.cancel_jobs(user_id, HOT_REMINDERS)
     crm.push(user_id)
+    u = await repo.get_user(user_id)
+    if get_settings().booking_url:
+        await notify.to_admins(bot, f"Лид {u.first_name if u else ''} ({user_id}) открыл ссылку записи на разбор.")
+    else:
+        await notify.to_admins(bot, f"Лид {user_id} хочет записаться на разбор, а BOOKING_URL не задан. Свяжитесь вручную.")
+
+
+async def send_booking_link(bot: Bot, user_id: int) -> None:
+    """Из чата (кнопка под постом, напоминание, «Что дальше»): ссылка на запись сообщением."""
+    c = get_content()
+    await booking_clicked(bot, user_id)
     markup = kb.booking_url(c.t("hot_button"))
     if markup is None:
         # BOOKING_URL не задан: человек не должен упереться в пустую кнопку
         await bot.send_message(user_id, c.t("text_forwarded"))
-        await notify.to_admins(bot, f"Лид {user_id} хочет записаться на разбор, а BOOKING_URL не задан. Свяжитесь вручную.")
         return
     await bot.send_message(user_id, c.t("hot_booking_url_text"), reply_markup=markup)
-    u = await repo.get_user(user_id)
-    await notify.to_admins(bot, f"Лид {u.first_name if u else ''} ({user_id}) открыл ссылку записи на разбор.")
-
-
-async def menu_markup(user_id: int):
-    """Меню /menu: кнопка подписки появляется, только когда задана цена."""
-    from bot.services import subscription
-
-    c = get_content()
-    u = await repo.get_user(user_id)
-    lead = await repo.get_lead(user_id)
-    subs = subscription.t("menu_button") if subscription.current_offer() else None
-    return kb.menu(c, bool(u and u.nurture_enabled), bool(lead and lead.report_path), subs)

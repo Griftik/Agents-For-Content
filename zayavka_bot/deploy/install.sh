@@ -3,7 +3,8 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Griftik/Agents-For-Content/claude/mvp-section-16-2rcya3/zayavka_bot/deploy/install.sh | sudo bash
 #
-# Первый запуск: ставит Docker, скачивает код, спрашивает токен бота (ввод скрыт), запускает.
+# Первый запуск: ставит Docker, скачивает код, спрашивает токен бота (ввод скрыт), настраивает
+# https-адрес мини-приложения (IP.sslip.io, домен не нужен), запускает бот и приложение.
 # Повторный запуск той же командой = обновление: код и content/ обновляются,
 # .env, база (storage/) и secrets/ остаются как были.
 set -euo pipefail
@@ -45,13 +46,41 @@ if ! grep -qE '^BOT_TOKEN=.+' .env; then
   [ -n "$TOKEN" ] || { echo "Токен пустой — запустите команду ещё раз"; exit 1; }
   sed -i "s|^BOT_TOKEN=.*|BOT_TOKEN=$TOKEN|" .env
 fi
+# адрес мини-приложения: свой домен (WEBAPP_HOST=… перед командой) или IP.sslip.io
+grep -q '^WEBAPP_HOST=' .env || echo 'WEBAPP_HOST=' >> .env
+grep -q '^WEBAPP_URL=' .env || echo 'WEBAPP_URL=' >> .env
+if ! grep -qE '^WEBAPP_HOST=.+' .env; then
+  HOST="${WEBAPP_HOST:-}"
+  if [ -z "$HOST" ]; then
+    IP="$(curl -4 -fsS https://api.ipify.org || curl -4 -fsS https://ifconfig.me)"
+    HOST="${IP//./-}.sslip.io"
+  fi
+  sed -i "s|^WEBAPP_HOST=.*|WEBAPP_HOST=$HOST|; s|^WEBAPP_URL=.*|WEBAPP_URL=https://$HOST|" .env
+fi
+WEBAPP_URL="$(grep -E '^WEBAPP_URL=' .env | cut -d= -f2-)"
 chmod 600 .env
 
 say "4/4 Запускаю…"
 docker compose up -d --build
-sleep 8
+sleep 10
 if docker compose logs --tail=50 bot | grep -q "запущен"; then
-  say "Готово: бот работает. Напишите ему /start."
+  for i in $(seq 1 30); do   # сертификат выпускается за 10–60 секунд
+    curl -fsS -o /dev/null "$WEBAPP_URL/health" && break
+    sleep 3
+  done
+  if curl -fsS -o /dev/null "$WEBAPP_URL/health"; then
+    say "Готово: бот и приложение работают."
+  else
+    say "Бот работает, но https для приложения ещё не готов — проверьте, что открыты порты 80 и 443."
+  fi
+  cat <<MSG
+
+Адрес мини-приложения: $WEBAPP_URL
+
+Последний шаг — кнопка «Открыть» в профиле бота (как у @invites_tgbot):
+  @BotFather → /mybots → бот → Bot Settings → Configure Mini App → Enable Mini App
+  → пришлите адрес: $WEBAPP_URL
+MSG
 else
   docker compose logs --tail=30 bot
   say "Бот не запустился — пришлите Claude текст выше."

@@ -30,7 +30,7 @@ async def db(tmp_path):
     set_settings(Settings(
         bot_token="123456:TEST", admin_ids=[ADMIN], database_url=url,
         booking_url="https://example.com/book", privacy_url="https://example.com/privacy",
-        consent_url="https://example.com/consent",
+        consent_url="https://example.com/consent", webapp_url="https://app.example",
         content_dir=ROOT / "content", _env_file=None,
     ))
     reload_content(ROOT / "content")

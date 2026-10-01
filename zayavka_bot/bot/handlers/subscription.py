@@ -19,12 +19,6 @@ async def cmd_subscribe(message: Message, bot: Bot) -> None:
     await sub.show(bot, tg.id)
 
 
-@router.callback_query(F.data == "menu:subs")
-async def cb_show(cb: CallbackQuery, bot: Bot) -> None:
-    await cb.answer()
-    await sub.show(bot, cb.from_user.id)
-
-
 @router.callback_query(F.data == "sub:buy")
 async def cb_buy(cb: CallbackQuery, bot: Bot) -> None:
     await cb.answer()

@@ -3,8 +3,29 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    expose:
+      - "8080"                          # сервер мини-приложения, снаружи — только через Caddy
     volumes:
       - ./storage:/app/storage          # БД SQLite
       - ./content:/app/content          # тексты/вопросы правятся на сервере, затем /reload
       - ./prompts:/app/prompts
       - ./secrets:/app/secrets:ro       # service-account.json для Google Sheets
+
+  # https для мини-приложения: сертификат Let's Encrypt выпускается и продлевается сам.
+  # WEBAPP_HOST — домен или <ip-через-дефисы>.sslip.io (без покупки домена), задаёт установщик.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from ${WEBAPP_HOST:?WEBAPP_HOST не задан в .env} --to bot:8080
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - bot
+
+volumes:
+  caddy_data:
+  caddy_config:
