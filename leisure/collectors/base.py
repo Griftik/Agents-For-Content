@@ -12,11 +12,14 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import date
 from typing import NamedTuple
 
+from leisure import settings
 from leisure.normalize.schema import RawEvent
 
 log = logging.getLogger(__name__)
 
 REGISTRY: dict[str, type["Collector"]] = {}
+DISABLED_ERROR = "источник отключён (COLLECTORS_DISABLED)"
+_warned_unknown: set[str] = set()  # имена из флага, о которых уже предупредили: одно предупреждение на имя за процесс
 
 
 class CollectorError(RuntimeError):
@@ -76,12 +79,22 @@ def collect_all(
     """
     events: list[RawEvent] = []
     reports: list[SourceReport] = []
+    disabled = settings.collectors_disabled()
+    for unknown in sorted(n for n in disabled if n not in REGISTRY and n not in _warned_unknown):
+        _warned_unknown.add(unknown)
+        log.warning("COLLECTORS_DISABLED: неизвестный источник «%s» (есть: %s)", unknown, ", ".join(sorted(REGISTRY)) or "ни одного")
     for name in names or []:
         if name not in REGISTRY:
             reports.append(SourceReport(name, False, error="источник не зарегистрирован (вызван ли load_collectors()?)"))
             log.error("collect_all: источник «%s» не зарегистрирован", name)
+        elif name.lower() in disabled:
+            reports.append(SourceReport(name, False, error=DISABLED_ERROR))
+            log.warning("collect_all: источник «%s» запрошен, но отключён (COLLECTORS_DISABLED)", name)
     for name, cls in REGISTRY.items():
         if names and name not in names:
+            continue
+        if name.lower() in disabled:
+            log.info("collect_all: источник «%s» отключён (COLLECTORS_DISABLED), пропускаем", name)
             continue
         if city not in cls.cities:
             if names:

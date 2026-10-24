@@ -54,7 +54,15 @@ API_KEY = _opt("API_KEY", "")
 # от 24.10.2026: на MVP агрегаторы (KudaGo и др.) собираем бесплатно, проверяя спрос, поэтому по умолчанию 0.
 # Ссылка на первоисточник в каждой карточке обязательна; технические блокировки (403) не обходим.
 COLLECTORS_RESPECT_ROBOTS = _opt("COLLECTORS_RESPECT_ROBOTS", "0") == "1"
+# Рубильник источников: имена коллекторов через запятую (регистр и пробелы не важны), например "afisha, mosbilet".
+# Отключённый источник collect_all не запускает; по умолчанию пусто. Читается при каждом сборе (collectors_disabled).
+COLLECTORS_DISABLED = _opt("COLLECTORS_DISABLED", "")
 DEV_OPEN_API = _opt("LEISURE_DEV_OPEN_API", "0") == "1"
+
+
+def collectors_disabled() -> frozenset[str]:
+    """Имена отключённых коллекторов из COLLECTORS_DISABLED (в нижнем регистре), актуальные на момент вызова."""
+    return frozenset(n.strip().lower() for n in _opt("COLLECTORS_DISABLED").split(",") if n.strip())
 
 
 # ─── Секреты (лениво) ───
