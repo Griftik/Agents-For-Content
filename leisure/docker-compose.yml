@@ -1,0 +1,58 @@
+# MVP на одном VPS (п. 5 спеки). Запуск из папки leisure/:  docker compose up -d --build
+# Секреты — в leisure/.env (см. .env.example). Для контейнеров DATABASE_URL указывает на сервис db.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: leisure
+      POSTGRES_USER: leisure
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leisure}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U leisure -d leisure"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: leisure/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://leisure:${POSTGRES_PASSWORD:-leisure}@db:5432/leisure
+      REDIS_URL: redis://redis:6379/0
+    command: sh -c "alembic -c leisure/alembic.ini upgrade head && uvicorn leisure.api.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: leisure/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://leisure:${POSTGRES_PASSWORD:-leisure}@db:5432/leisure
+      REDIS_URL: redis://redis:6379/0
+    command: python -m leisure.worker.schedules
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  # bot:  — появится на шаге «Бот и рассылка» (недели 3–4): python -m leisure.bot.main
+
+volumes:
+  pgdata:

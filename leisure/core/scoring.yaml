@@ -1,0 +1,62 @@
+# Веса скоринга и обучения. Числа перенесены из прототипа «Уикенд в Москве» один в один (п. 6.4–6.5 спеки).
+# Калибруются без релиза: файл читается при старте, путь переопределяется переменной SCORING_CONFIG.
+
+interest:
+  per_level: 9            # интерес к категории 0–3 → 0–27 баллов
+  default_level: 2        # категория не упомянута в профиле
+  off_multiplier: 0.35    # интерес = 0 → итог × 0.35 (и событие не попадает в дайджест)
+
+values:
+  multiplier: 6           # средневзвешенный вес ценностей по тегам 0–5 → 0–30
+  empty_average: 2.5      # у события нет ценностных тегов
+
+aesthetics:
+  required: 4             # params.aesthetics = true → aesthetics 1–5 × 4 (до 20)
+  optional: 2.5
+  default_level: 3
+
+novelty:
+  multiplier: 2           # novelty × (values[Инновации/новизна] / 5) × 2 → до 10
+  default_level: 3
+  value_default: 3        # ценность не задана в профиле
+
+audience:
+  plus30_bonus: 4         # событие для 30+
+  adults30_penalty: -12   # событие не для 30+, а в профиле adults30 = true
+
+budget:
+  over_penalty: -12       # budget > 0 и price_from > budget
+
+confidence:
+  check_penalty: -4       # confidence = «нужно проверить»
+
+time:
+  match_bonus: 3          # слот события ∈ params.times
+
+learning:                 # п. 6.5
+  decision_weights: {"иду": 1.0, "интересно": 0.9, "может": 0.4, "мимо": -1.0, "пропуск": null}
+  reason_weights: {"не в это время": -0.2, "далеко": -0.2, "уже был": 0.5, "дорого": -0.1, "не та компания": -0.3}
+  rating_scale: 1.5       # w += (rating − 3) / 2 × rating_scale
+  tag_multiplier: 3       # avg(affinity.tag по тегам) × 3
+  category_multiplier: 2.5
+  clamp: 12               # итог в [−12, +12]
+
+why:                      # объяснение «почему тебе»
+  value_min_weight: 4     # ценности с весом ≥ 4, задетые тегами
+  max_values: 3
+  aesthetics_min: 5       # «эстетика 5/5»
+  novelty_min: 4          # «нетривиально»
+  learn_threshold: 3      # ±3 → «похоже на то, что ты выбирал» / «похоже на отклонённое»
+  max_total: 4            # в карточке дайджеста — до 4 причин, негативные не отбрасываются
+
+promotion:                # п. 9: платное продвижение
+  bonus: 8
+  min_base_score: 55      # ниже — продвижение не действует
+  max_per_digest: 1
+
+recommend:                # п. 8
+  kind_bonus: {"событие": 6, "выставка": 3, "место": 0}
+  slots: [[0, "вечер"], [1, "день"], [1, "вечер"], [2, "день"], [2, "вечер"]]   # [индекс дня в уикенде, слот]
+  horizon_max: 2
+  horizon_min_score: 70
+  digests_without_reaction: 3   # показано в стольких дайджестах без реакции → больше не показываем

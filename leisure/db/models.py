@@ -1,0 +1,193 @@
+"""Модели БД (п. 6 спеки): Event, Profile, Decision, Digest, Organizer. SQLAlchemy 2.0, PostgreSQL 16.
+
+Отличия от текста спеки — только добавления: Event.note и Event.rating (были в прототипе и нужны куратору),
+Event.lat/lon вместо point (без PostGIS), Decision.event_slug в снимке, Profile.name/username/consent_at (152-ФЗ).
+Эмбеддинги (pgvector) — второй этап, колонка добавится отдельной миграцией.
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import date, datetime, time
+
+from sqlalchemy import (BigInteger, Boolean, Date, DateTime, Enum, Float, ForeignKey, Index, Integer, SmallInteger,
+                        String, Text, Time, UniqueConstraint, func)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import Uuid
+
+from leisure.core.catalog import CONFIDENCE, CROWD, DECISION_STATUSES, EVENT_STATUSES, KINDS, PLANS
+
+from .types import DateList, JSONType, TextList
+
+
+def _enum(values: list[str], name: str) -> Enum:
+    # VARCHAR + CHECK вместо нативного enum: справочники меняются без ALTER TYPE.
+    return Enum(*values, name=name, native_enum=False, create_constraint=True, validate_strings=True, length=24)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class TimestampMixin:
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class Organizer(Base, TimestampMixin):
+    __tablename__ = "organizers"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    contact: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    events: Mapped[list["Event"]] = relationship(back_populates="organizer")
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Event(Base, TimestampMixin):
+    __tablename__ = "events"
+    __table_args__ = (
+        Index("ix_events_status_city", "status", "city"),
+        Index("ix_events_dates_gin", "dates", postgresql_using="gin"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    subcategory: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    kind: Mapped[str] = mapped_column(_enum(KINDS, "event_kind"), default="событие", nullable=False)
+    city: Mapped[str] = mapped_column(String(80), default="Москва", nullable=False)
+    dates: Mapped[list[date]] = mapped_column(DateList, nullable=False)
+    time_text: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    start_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    end_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    duration_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    venue: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    address: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    metro: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    price_from: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0 = бесплатно
+    price_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    why_fit_hint: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    note: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    tags: Mapped[list[str]] = mapped_column(TextList, default=list, nullable=False)
+    aesthetics: Mapped[int] = mapped_column(SmallInteger, default=3, nullable=False)
+    novelty: Mapped[int] = mapped_column(SmallInteger, default=3, nullable=False)
+    crowd: Mapped[str] = mapped_column(_enum(CROWD, "event_crowd"), default="камерно", nullable=False)
+    audience_30plus: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    audience_kids: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    url: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    sources: Mapped[list[str]] = mapped_column(TextList, default=list, nullable=False)
+    rating: Mapped[dict | None] = mapped_column(JSONType, nullable=True)
+    confidence: Mapped[str] = mapped_column(_enum(CONFIDENCE, "event_confidence"), default="вероятно", nullable=False)
+    status: Mapped[str] = mapped_column(_enum(EVENT_STATUSES, "event_status"), default="draft", index=True, nullable=False)
+    organizer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizers.id", ondelete="SET NULL"), nullable=True)
+    promoted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    organizer: Mapped[Organizer | None] = relationship(back_populates="events")
+
+    CORE_FIELDS = (
+        "slug", "title", "category", "subcategory", "kind", "city", "time_text", "duration_min", "venue", "address",
+        "metro", "lat", "lon", "price_from", "price_text", "description", "why_fit_hint", "note", "tags", "aesthetics",
+        "novelty", "crowd", "audience_30plus", "audience_kids", "url", "sources", "rating", "confidence", "status",
+    )
+
+    def as_core(self) -> dict:
+        """Словарь для ядра: id — строковый uuid, даты — ISO."""
+        d = {k: getattr(self, k) for k in self.CORE_FIELDS}
+        d["id"] = str(self.id)
+        d["dates"] = [x.isoformat() for x in (self.dates or [])]
+        d["start_time"] = self.start_time.isoformat(timespec="minutes") if self.start_time else None
+        d["end_time"] = self.end_time.isoformat(timespec="minutes") if self.end_time else None
+        d["promoted_until"] = self.promoted_until.isoformat() if self.promoted_until else None
+        d["organizer_id"] = str(self.organizer_id) if self.organizer_id else None
+        return d
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class Profile(Base, TimestampMixin):
+    __tablename__ = "profiles"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)  # Telegram id
+    name: Mapped[str] = mapped_column(String(200), default="", nullable=False)
+    username: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    city: Mapped[str] = mapped_column(String(80), default="Москва", nullable=False)
+    values: Mapped[dict] = mapped_column(JSONType, default=dict, nullable=False)       # {ценность: 0–5}
+    interests: Mapped[dict] = mapped_column(JSONType, default=dict, nullable=False)    # {категория: 0–3}
+    params: Mapped[dict] = mapped_column(JSONType, default=dict, nullable=False)       # aesthetics, adults30, kids, budget, company, times[], areas[]
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    tz: Mapped[str] = mapped_column(String(64), default="Europe/Moscow", nullable=False)
+    digest_day: Mapped[int] = mapped_column(SmallInteger, default=4, nullable=False)   # ISO-день недели: 4 = четверг
+    digest_hour: Mapped[int] = mapped_column(SmallInteger, default=19, nullable=False)
+    plan: Mapped[str] = mapped_column(_enum(PLANS, "profile_plan"), default="free", nullable=False)
+    affinity: Mapped[dict] = mapped_column(JSONType, default=lambda: {"tag": {}, "cat": {}, "n": 0}, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    decisions: Mapped[list["Decision"]] = relationship(back_populates="profile", cascade="all, delete-orphan")
+    digests: Mapped[list["Digest"]] = relationship(back_populates="profile", cascade="all, delete-orphan")
+
+    def as_core(self) -> dict:
+        return {
+            "user_id": self.user_id, "city": self.city, "values": dict(self.values or {}),
+            "interests": dict(self.interests or {}), "params": dict(self.params or {}), "notes": self.notes,
+            "tz": self.tz, "plan": self.plan, "affinity": dict(self.affinity or {}),
+        }
+
+    def __str__(self) -> str:
+        return f"{self.name or self.username or self.user_id}"
+
+
+class Decision(Base, TimestampMixin):
+    __tablename__ = "decisions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "event_id", name="uq_decisions_user_event"),
+        Index("ix_decisions_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("profiles.user_id", ondelete="CASCADE"), index=True, nullable=False)
+    event_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("events.id", ondelete="SET NULL"), index=True, nullable=True)
+    status: Mapped[str] = mapped_column(_enum(DECISION_STATUSES, "decision_status"), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rating: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    # снимок события — обучение переживает удаление события
+    event_slug: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    event_category: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    event_tags: Mapped[list[str]] = mapped_column(TextList, default=list, nullable=False)
+
+    profile: Mapped[Profile] = relationship(back_populates="decisions")
+    event: Mapped[Event | None] = relationship()
+
+    def as_core(self) -> dict:
+        return {
+            "event_id": str(self.event_id) if self.event_id else self.event_slug, "status": self.status,
+            "reason": self.reason or "", "day": self.day.isoformat() if self.day else "", "rating": self.rating or 0,
+            "event_category": self.event_category, "event_tags": list(self.event_tags or []),
+        }
+
+
+class Digest(Base):
+    __tablename__ = "digests"
+    __table_args__ = (UniqueConstraint("user_id", "weekend_start", name="uq_digests_user_weekend"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("profiles.user_id", ondelete="CASCADE"), index=True, nullable=False)
+    weekend_start: Mapped[date] = mapped_column(Date, nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    items: Mapped[list] = mapped_column(JSONType, default=list, nullable=False)  # [{event_id, slug, score, why[], slot, day}]
+    opened: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    decisions_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    profile: Mapped[Profile] = relationship(back_populates="digests")
