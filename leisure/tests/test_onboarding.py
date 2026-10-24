@@ -1,5 +1,7 @@
 """Онбординг v2 (web/FLOW-ONBOARDING.md) через настоящий диспетчер: пути «ничего не меняю» (9 нажатий) и «типичный» (12),
 черновик в профиле, режим профиля, меню «Уточнить под себя», /reset. Нужны БД с seed; тестовый профиль с id от pid (tests/ids.py)."""
+from datetime import date
+
 import pytest
 from sqlalchemy import select, text
 
@@ -69,7 +71,7 @@ def test_values_screen_has_19_buttons_in_four_clusters():
     assert all(len(b["callback_data"].encode()) <= 64 for r in five for b in r if "callback_data" in b)
 
 
-def test_path_nothing_changes_is_9_presses(db):
+def test_path_nothing_changes_is_10_presses(db):
     chat = Chat()
     mid = _start_and_pick_five(chat)
     assert "Выбрано 5 из 5: Творчество, Дружба, Развитие, Эстетика, Покой. Нажми «Дальше»." in chat.world.get(UID, mid).text
@@ -78,12 +80,18 @@ def test_path_nothing_changes_is_9_presses(db):
     p = _profile(db)
     assert p.onboarded_at is None                                   # готов только после подборки
     levels = _levels(p)
-    assert sorted(levels.values(), reverse=True)[:6] == [3, 3, 2, 2, 2, 2] and sum(1 for v in levels.values() if v == 1) == 13
+    assert sorted(levels.values(), reverse=True)[:8] == [3] * 5 + [2] * 3 and sum(1 for v in levels.values() if v == 1) == 11
     assert not any(v == 0 for v in levels.values())                 # ноль ставит только человек
+    assert "Бюджет на одно событие: более дорогое окажется ниже в подборке." in chat.world.get(UID, mid).text
+    assert [b for r in chat.rows(mid) for b in r if "₽" in b or "важно" in b] == ["до 1 000 ₽", "до 2 500 ₽", "● Не важно"]
+    assert chat.tap(mid, "до 2 500 ₽") == ""                         # бюджет: одно нажатие, без тоста, экран остаётся
+    assert chat.world.get(UID, mid).text.startswith("Шаг 2 из 2") and "● до 2 500 ₽" in [b for r in chat.rows(mid) for b in r]
+    assert _profile(db).params["budget"] == 2500
     assert p.values["Творчество"] == 5 and p.values["Природа"] == 2 and p.params["aesthetics"] is True
     toast = chat.tap(mid, "Показать подборку")
-    assert toast == "Собираю подборку." and chat.presses() == 9
+    assert toast == "Собираю подборку." and chat.presses() == 10      # было 9 + нажатие на бюджет
     assert chat.world.get(UID, mid).text.startswith("Профиль сохранён.\nГлавные ценности: ")
+    assert "Бюджет: до 2 500 ₽." in chat.world.get(UID, mid).text
     assert chat.world.get(UID, mid).rows is None
     p = _profile(db)
     assert p.onboarded_at is not None and p.consent_at is not None
@@ -94,24 +102,37 @@ def test_path_nothing_changes_is_9_presses(db):
     assert len(chat.texts()) <= 2 + 7                               # экран онбординга + заголовок и до шести карточек
 
 
-def test_typical_path_is_12_presses(db):
+def test_budget_row_repeat_tap_is_silent_and_default_is_not_important(db):
     chat = Chat()
     mid = _start_and_pick_five(chat)
     chat.tap(mid, "Дальше →")
-    shown = [b for r in chat.rows(mid)[:-3] for b in r]
-    first = shown[2]                                                # третье из шести — уровень 2 («✓ …»)
+    assert _profile(db).params["budget"] == 0 and "● Не важно" in [b for r in chat.rows(mid) for b in r]
+    assert chat.tap(mid, "до 1 000 ₽") == "" and chat.tap(mid, "до 1 000 ₽") == ""                 # повторное нажатие тихое
+    assert _profile(db).params["budget"] == 1000 and "● до 1 000 ₽" in [b for r in chat.rows(mid) for b in r]
+    chat.tap(mid, "Не важно")
+    assert _profile(db).params["budget"] == 0 and not chat.world.violations
+
+
+def test_typical_path_is_13_presses(db):
+    chat = Chat()
+    mid = _start_and_pick_five(chat)
+    chat.tap(mid, "Дальше →")
+    shown = [b for r in chat.rows(mid)[:-4] for b in r]
+    assert len(shown) == 8
+    first = shown[5]                                                # шестое из восьми — уровень 2 («✓ …»)
     assert first.startswith("✓ ")
-    chat.tap(mid, first[2:])                                        # убрал направление (9)
+    chat.tap(mid, "до 2 500 ₽")                                     # выставил бюджет (9)
+    chat.tap(mid, first[2:])                                        # убрал направление (10)
     p = _profile(db)
     removed = [c for c in ALL_CATS if int(p.interests[c]) == 0]
     assert len(removed) == 1
-    chat.tap(mid, "Все направления")                                # (10)
+    chat.tap(mid, "Все направления")                                # (11)
     assert chat.world.get(UID, mid).text.startswith("Все направления") and any("● Интересно" == b for r in chat.rows(mid) for b in r)
     other = next(b for r in chat.rows(mid) for b in r if b not in ("● Интересно",) and b.split(" ", 1)[-1] in ALL_CATS + ["Совр. искусство"]
                  and not b.startswith(("✓", "—")))
-    chat.tap(mid, other)                                            # добавил направление (11)
-    chat.tap(mid, "Показать подборку")                              # (12)
-    assert chat.presses() == 12 and _profile(db).onboarded_at is not None
+    chat.tap(mid, other)                                            # добавил направление (12)
+    chat.tap(mid, "Показать подборку")                              # (13)
+    assert chat.presses() == 13 and _profile(db).onboarded_at is not None
 
 
 def test_draft_survives_bot_restart_and_brush_sets_level(db):
@@ -137,7 +158,7 @@ def test_changing_values_recomputes_interests_and_says_so(db):
     chat.tap(mid, "Дальше →")
     chat.tap(mid, "Все направления")
     chat.press(mid, "ob:cs:0:0")                                    # ручная правка
-    chat.tap(mid, "← К шести")
+    chat.tap(mid, "← К восьми")
     chat.tap(mid, "← Назад")
     assert chat.world.get(UID, mid).text.startswith("Шаг 1 из 2")
     chat.tap(mid, "Покой")                                          # снял Покой
@@ -182,18 +203,27 @@ def test_menu_setup_budget_times_kids_note_and_redo(db):
     chat.tap(menu, "Да, с детьми")
     p = _profile(db)
     assert p.params["company"] == "с детьми" and p.params["kids"] is True
-    chat.tap(menu, "Заметка")
-    assert chat.world.get(UID, menu).text.startswith("Что надоело и что хочется попробовать")
-    chat.say("Надоели бары, хочу в стеклодувную мастерскую")
-    assert "Записал в профиль." in chat.texts()[-2] and chat.last_text().startswith("Уточнить под себя")
-    assert _profile(db).notes.startswith("Надоели бары") and chat.state() is None
-    new_menu = chat.last_mid()
-    assert "Заметка · есть" in [b for r in chat.rows(new_menu) for b in r]
+    assert not any("Заметка" in b for r in chat.rows(menu) for b in r)  # пункта «Заметка» в меню нет: она ни на что не влияет
     before = len(chat.world.chats[UID])
-    assert chat.tap(new_menu, "Пересобрать подборку") == "Собираю подборку."
+    assert chat.tap(menu, "Пересобрать подборку") == "Собираю подборку."
     assert len(chat.world.chats[UID]) > before + 1                    # пришла подборка
-    chat.tap(new_menu, "Готово")
-    assert chat.world.get(UID, new_menu).text == "Сохранил. Поменять ответы можно в любой момент: /profile."
+    chat.tap(menu, "Готово")
+    assert chat.world.get(UID, menu).text == "Сохранил. Поменять ответы можно в любой момент: /profile."
+
+
+def test_old_note_button_still_saves_the_note(db):
+    """Поле и обработчик остаются (API пишет заметку), в меню и в /profile кнопки больше нет."""
+    chat = Chat()
+    mid = _start_and_pick_five(chat)
+    chat.tap(mid, "Дальше →")
+    chat.tap(mid, "Показать подборку")
+    chat.say("/profile")
+    assert not any("Заметка" in b for r in chat.rows(chat.last_mid()) for b in r)
+    old = chat.send("старое меню", [[{"text": "Заметка · нет", "callback_data": "ob:go:n"}]])
+    chat.press(old, "ob:go:n")
+    assert chat.world.get(UID, old).text.startswith("Что надоело и что хочется попробовать")
+    chat.say("Надоели бары, хочу в стеклодувную мастерскую")
+    assert "Записал в профиль." in chat.texts()[-2] and _profile(db).notes.startswith("Надоели бары") and chat.state() is None
 
 
 def test_profile_mode_saves_without_new_digest(db):
@@ -205,7 +235,7 @@ def test_profile_mode_saves_without_new_digest(db):
     chat.say("/profile")
     pm = chat.last_mid()
     assert chat.last_text().startswith("Твой профиль\n\nГлавные ценности\n")
-    assert [[b for b in r] for r in chat.rows(pm)] == [["Ценности", "Интересы"], ["Бюджет, эстетика, время", "Заметка"]]
+    assert [[b for b in r] for r in chat.rows(pm)] == [["Ценности", "Интересы"], ["Бюджет, эстетика, время"]]
     chat.tap(pm, "Интересы")
     assert chat.world.get(UID, pm).text.startswith("Шаг 2 из 2") and "Сохранить" in [b for r in chat.rows(pm) for b in r]
     chat.press(pm, "ob:ct:0")
@@ -253,3 +283,90 @@ def test_text_on_values_step_gets_hint_and_keeps_screen(db):
     chat.say("а что тут нужно сделать?")
     assert chat.last_text().startswith("Здесь нужно нажать кнопку под сообщением")
     assert chat.world.get(UID, mid).text.startswith("Шаг 1 из 2")
+
+
+def _shown_event_ids(chat: Chat, since: int) -> set[str]:
+    """id событий на карточках, пришедших после сообщения номер since."""
+    return {b["callback_data"].split(":")[2] for m in chat.world.chats[UID][since:] if not m.from_user
+            for b in m.buttons() if b.get("callback_data", "").startswith("d:g:")}
+
+
+def test_rebuilt_digest_is_written_to_digest_items_of_the_same_weekend(db):
+    """Д3 отчёта: «Пересобрать подборку» перезаписывает Digest.items того же уикенда, а не оставляет первую подборку."""
+    chat = Chat()
+    mid = _start_and_pick_five(chat)
+    chat.tap(mid, "Дальше →")
+    chat.tap(mid, "Показать подборку")
+    first_ids = _shown_event_ids(chat, 0)
+    assert first_ids and {str(it["event_id"]) for it in db.scalar(select(Digest).where(Digest.user_id == UID)).items} == first_ids
+    head = next(m for m in chat.world.chats[UID] if not m.from_user and "вот первая подборка" in m.text)
+    chat.press(head.mid, "ob:go:s")
+    menu = chat.last_mid()
+    chat.tap(menu, "Бюджет")
+    chat.tap(menu, "до 1 000 ₽")
+    since = len(chat.world.chats[UID])
+    chat.tap(menu, "Пересобрать подборку")
+    second_ids = _shown_event_ids(chat, since)
+    assert second_ids and second_ids != first_ids                       # состав действительно другой
+    db.expire_all()
+    rows = db.scalars(select(Digest).where(Digest.user_id == UID)).all()
+    assert len(rows) == 1                                               # тот же дайджест, а не новая строка
+    assert {str(it["event_id"]) for it in rows[0].items} == second_ids and rows[0].sent_at is not None
+    assert not (second_ids - {str(it["event_id"]) for it in rows[0].items})   # всё показанное есть в журнале «что показывали»
+
+
+def test_nudge_after_second_expensive_miss_once_and_only_when_budget_not_set(db):
+    """T-NUDGE-BUDGET: второй «Мимо — дорого» при бюджете «не важно» → одна подсказка с кнопкой в «Уточнить»; флаг в профиле."""
+    from leisure.api import services as svc
+    from leisure.db.models import Event
+
+    ev = db.scalars(select(Event).where(Event.status == "published").order_by(Event.slug).limit(4)).all()
+    chat = Chat()
+    mid = _start_and_pick_five(chat)
+    chat.tap(mid, "Дальше →")
+    chat.tap(mid, "Показать подборку")
+
+    def card(i):
+        from leisure.core.timeutil import weekend_iso
+        from leisure.worker import messages as msg
+        day = sorted(ev[i].dates)[-1].isoformat()
+        item = svc.card_item(db, _profile(db), ev[i], day, weekend_iso(date.fromisoformat(day)))
+        return chat.send(msg.card_text(item, [], plain_links=False), msg.card_keyboard(item, url_buttons=True))
+
+    def too_expensive(i):
+        m = card(i)
+        chat.tap(m, "Мимо")
+        chat.tap(m, "Дорого")
+        return m
+
+    n = len(chat.world.chats[UID])
+    too_expensive(0)
+    assert "второй раз" not in chat.last_text()                          # первый «дорого» — тихо
+    too_expensive(1)
+    nudge = chat.world.last_bot_message(UID)
+    assert nudge.text == "Уже второй раз «Мимо» из-за цены. Задай потолок в «Уточнить под себя», и дорогое уйдёт ниже в подборке."
+    assert [b["callback_data"] for b in nudge.buttons()] == ["ob:go:s"] and _profile(db).params["nudge_budget"] is True
+    too_expensive(2)                                                     # третий — подсказки больше нет
+    assert "второй раз" not in chat.last_text()
+    assert sum("второй раз «Мимо»" in t for t in chat.texts()) == 1
+    assert chat.tap(nudge.mid, "Уточнить под себя") == ""                # кнопка ведёт в меню
+    assert chat.last_text().startswith("Уточнить под себя")
+    assert len(chat.world.chats[UID]) > n
+
+
+def test_no_nudge_when_budget_already_set(db):
+    from leisure.api import services as svc
+    from leisure.db.models import Event
+
+    ev = db.scalars(select(Event).where(Event.status == "published").order_by(Event.slug).limit(2)).all()
+    chat = Chat()
+    mid = _start_and_pick_five(chat)
+    chat.tap(mid, "Дальше →")
+    chat.tap(mid, "до 2 500 ₽")
+    chat.tap(mid, "Показать подборку")
+    for e in ev:
+        svc.set_decision(db, UID, e, "мимо", reason="дорого")           # две причины «дорого» уже есть
+        m = chat.send("карточка", [[{"text": "Мимо", "callback_data": f"d:s:{e.id}"}]])
+        chat.press(m, f"d:s:{e.id}")
+        chat.press(m, f"r:2:{e.id}")
+    assert not any("второй раз «Мимо»" in t for t in chat.texts()) and "nudge_budget" not in _profile(db).params

@@ -101,7 +101,8 @@ def screen_interests(p, mode: str, changed: bool = False) -> Out:
     save = "Сохранить" if mode == "profile" else "Показать подборку →"
     back = "ob:go:p" if mode == "profile" else "ob:go:v"
     return Out(texts.interests_text(len(ALL_CATS) - len(shown), changed),
-               kb.interests_main_keyboard(shown, _levels(p), len(ALL_CATS) - len(shown), save, back))
+               kb.interests_main_keyboard(shown, _levels(p), len(ALL_CATS) - len(shown), save, back,
+                                          int((p.params or {}).get("budget") or 0)))
 
 
 def screen_all(p, mode: str, brush: int = 2) -> Out:
@@ -169,6 +170,10 @@ def act(session, uid: int, parts: list[str], mode_hint: str | None, dirty: bool,
         lv = _levels(p)
         lv[c] = 0 if lv[c] > 0 else 2
         p = services.update_profile(session, p, {"interests": lv}, auto_onboarded=False)
+        return screen_interests(p, mode)
+
+    if cmd == "sb":                                  # бюджет одной строкой на «Шаге 2»: пишем и остаёмся на экране
+        p = _write_params(session, p, budget=int(arg[0]))
         return screen_interests(p, mode)
 
     if cmd == "br":
@@ -281,7 +286,7 @@ def _show(session, p, mode: str) -> Out:
         return Out(texts.PROFILE_SAVED, [])
     first = p.onboarded_at is None
     p = services.update_profile(session, p, {"onboarded": True}, auto_onboarded=False)
-    return Out(texts.saved_text(top, _levels(p)), [], toast=texts.TOAST_BUILD, digest="first" if first else "regular",
+    return Out(texts.saved_text(top, _levels(p), int((p.params or {}).get("budget") or 0)), [], toast=texts.TOAST_BUILD, digest="first" if first else "regular",
                mode="profile")
 
 
@@ -293,8 +298,10 @@ def _digest_for(session, user_id: int, first: bool):
     now = services.utcnow()
     dg, _, _ = services.core_digest(session, p, services.local_today(p), now=now)
     view = services.digest_view(p, dg, services.decision_map(session, user_id))
-    if first and dg.items():
-        services.save_digest(session, p, dg, sent=True)  # в четверг этот уикенд повторно не шлём
+    if dg.items():
+        # Первая подборка и «Пересобрать» пишутся в Digest.items этого уикенда (перезапись той же строки, не новый дайджест):
+        # показанное попадает в журнал «что показывали», в четверг этот уикенд повторно не шлём.
+        services.save_digest(session, p, dg, sent=True)
     return p, view
 
 

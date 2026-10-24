@@ -9,7 +9,7 @@ from .callbacks import REASON_CODES
 
 Button = dict
 TOP_N = 5
-BUDGETS = [(0, "Без ограничения"), (1000, "до 1 000 ₽"), (2500, "до 2 500 ₽"), (5000, "до 5 000 ₽")]
+BUDGETS = [(0, "Не важно"), (1000, "до 1 000 ₽"), (2500, "до 2 500 ₽"), (5000, "до 5 000 ₽")]
 MARK = "● "
 REASON_CAPTION = "Почему мимо? Можно не отвечать"
 REASON_LABEL = {"не моё": "Не моё", "дорого": "Дорого", "далеко": "Далеко", "уже был": "Уже был",
@@ -46,11 +46,20 @@ def values_pick_keyboard(selected: Iterable[str], back: str = "ob:go:hi") -> lis
 
 
 # ─── Э2. Интересы ───
+STEP_BUDGETS = [(1000, "до 1 000 ₽"), (2500, "до 2 500 ₽"), (0, "Не важно")]      # значения из BUDGETS
+
+
+def step_budget_row(current: int = 0) -> list[Button]:
+    """Бюджет одной строкой на «Шаге 2»: одно нажатие, выбранное отмечено ●, экран не закрывается."""
+    cur = int(current or 0)
+    return [{"text": (MARK if cur == amount else "") + label, "callback_data": f"ob:sb:{amount}"} for amount, label in STEP_BUDGETS]
+
+
 def interests_main_keyboard(shown: list[str], interests: Mapping[str, int], n_all: int, save_text: str = "Показать подборку →",
-                            back: str = "ob:go:v") -> list[list[Button]]:
-    """Предложенные направления (по два в ряд), «Все направления (N)», главное действие и «← Назад»."""
+                            back: str = "ob:go:v", budget: int = 0) -> list[list[Button]]:
+    """Предложенные направления (по два в ряд), строка бюджета, «Все направления (N)», главное действие и «← Назад»."""
     btns = [{"text": LEVEL_MARK[int(interests.get(c, 2))] + cat_label(c), "callback_data": f"ob:ct:{ALL_CATS.index(c)}"} for c in shown]
-    return _rows(btns, 2) + [[{"text": f"Все направления ({n_all})", "callback_data": "ob:go:ia"}],
+    return _rows(btns, 2) + [step_budget_row(budget), [{"text": f"Все направления ({n_all})", "callback_data": "ob:go:ia"}],
                              [{"text": save_text, "callback_data": "ob:show"}], [back_button(back)]]
 
 
@@ -60,23 +69,24 @@ def interests_all_keyboard(interests: Mapping[str, int], brush: int, save_text: 
     cats = [{"text": LEVEL_MARK[int(interests.get(c, 2))] + cat_label(c), "callback_data": f"ob:cs:{i}:{brush}"}
             for i, c in enumerate(ALL_CATS)]
     return (_rows(brushes, 2) + _rows(cats, 2) + [[{"text": save_text, "callback_data": "ob:show"}],
-                                                   [{"text": "← К шести", "callback_data": "ob:go:i"}]])
+                                                   [{"text": "← К восьми", "callback_data": "ob:go:i"}]])
 
 
 # ─── Э4. Уточнить под себя ───
 def budget_label(amount: int) -> str:
-    return dict(BUDGETS).get(int(amount or 0), "Без ограничения")
+    """Значение бюджета в тексте и в меню: «не важен» | «до 2 500 ₽» (подпись кнопки нуля — «Не важно», см. BUDGETS)."""
+    amount = int(amount or 0)
+    return f"до {amount:,} ₽".replace(",", " ") if amount > 0 else "не важен"
 
 
-def setup_menu_keyboard(params: Mapping, has_note: bool, dirty: bool = False) -> list[list[Button]]:
+def setup_menu_keyboard(params: Mapping, has_note: bool = False, dirty: bool = False) -> list[list[Button]]:
     times = ", ".join(params.get("times") or ["день", "вечер"])
     rows = [
-        [{"text": f"Бюджет · {budget_label(params.get('budget', 0)).lower()}", "callback_data": "ob:go:sb"}],
+        [{"text": f"Бюджет · {budget_label(params.get('budget', 0))}", "callback_data": "ob:go:sb"}],
         [{"text": "Эстетика · " + ("важна" if params.get("aesthetics") else "не принципиальна"), "callback_data": "ob:go:sa"}],
         [{"text": f"Время · {times}", "callback_data": "ob:go:st"}],
         [{"text": "С детьми · " + ("да" if params.get("company") == "с детьми" or params.get("kids") else "нет"),
           "callback_data": "ob:go:sc"}],
-        [{"text": "Заметка · " + ("есть" if has_note else "нет"), "callback_data": "ob:go:n"}],
     ]
     if dirty:
         rows.append([{"text": "Пересобрать подборку", "callback_data": "ob:redo"}])
@@ -120,20 +130,20 @@ def consent_keyboard(policy_url: str | None) -> list[list[Button]]:
 
 def profile_keyboard() -> list[list[Button]]:
     return [[{"text": "Ценности", "callback_data": "ob:go:v"}, {"text": "Интересы", "callback_data": "ob:go:i"}],
-            [{"text": "Бюджет, эстетика, время", "callback_data": "ob:go:s"}, {"text": "Заметка", "callback_data": "ob:go:n"}]]
+            [{"text": "Бюджет, эстетика, время", "callback_data": "ob:go:s"}]]
 
 
 # ─── причины «Мимо» ───
 def reasons_keyboard(event_id: str, more: bool = False) -> list[list[Button]]:
-    """Подпись «Почему мимо? Можно не отвечать», затем причины: Не моё · Дорого · Далеко · Ещё… (Ещё… открывает остальные три)."""
+    """Подпись «Почему мимо? Можно не отвечать», затем причины: Не моё · Дорого · Далеко · Уже был и «Ещё…» (остальные две)."""
     caption = [{"text": REASON_CAPTION, "callback_data": "ob:noop"}]  # подпись, не кнопка действия
 
     def b(reason: str) -> Button:
         return {"text": REASON_LABEL[reason], "callback_data": f"r:{REASON_CODES[reason]}:{event_id}"}
 
     if more:
-        return [caption, [b("уже был"), b("не в это время")], [b("не та компания")]]
-    return [caption, [b("не моё"), b("дорого"), b("далеко"), {"text": "Ещё…", "callback_data": f"r:m:{event_id}"}]]
+        return [caption, [b("не в это время"), b("не та компания")]]
+    return [caption, [b("не моё"), b("дорого"), b("далеко"), b("уже был")], [{"text": "Ещё…", "callback_data": f"r:m:{event_id}"}]]
 
 
 def mark_keyboard(rows: list[list[Button]], active_text: str | None) -> list[list[Button]]:

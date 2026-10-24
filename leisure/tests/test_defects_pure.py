@@ -54,9 +54,10 @@ def test_miss_keeps_links_and_reasons_removed_after_choice():
     after_miss = _rows_after_miss("main")
     assert texts(after_miss)[:2] == [["Иду", "Может быть"], ["Интересно", "● Мимо"]]
     assert texts(after_miss)[2] == [kb.REASON_CAPTION]                       # подпись: причина необязательна
-    assert texts(after_miss)[3] == ["Не моё", "Дорого", "Далеко", "Ещё…"] and texts(after_miss)[-1] == ["Подробнее", "Другу"]
+    assert texts(after_miss)[3:5] == [["Не моё", "Дорого", "Далеко", "Уже был"], ["Ещё…"]]      # «Уже был» без «Ещё…»
+    assert texts(after_miss)[-1] == ["Подробнее", "Другу"]
     more = _rows_after_miss("more")
-    assert texts(more)[3:5] == [["Уже был", "Не то время"], ["Не та компания"]] and "Без причины" not in str(more)
+    assert texts(more)[3] == ["Не то время", "Не та компания"] and "Без причины" not in str(more)
     assert texts(_rows_after_miss(None)) == [["Иду", "Может быть"], ["Интересно", "● Мимо"], ["Подробнее", "Другу"]]
 
 

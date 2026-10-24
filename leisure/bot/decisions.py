@@ -4,10 +4,10 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from aiogram import F, Router
+from aiogram import BaseMiddleware, F, Router
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery
-from sqlalchemy import select
+from aiogram.types import CallbackQuery, Message
+from sqlalchemy import func, select
 
 from leisure.api import services
 from leisure.core.timeutil import weekend_days, weekend_iso
@@ -31,6 +31,28 @@ TOAST_GONE = "Этого события уже нет в афише. Остал�
 TOAST_ERROR = "Не удалось сохранить ответ. Нажми ещё раз."
 PROFILE_GONE = texts.STALE_NO_PROFILE
 NOT_MODIFIED = "message is not modified"
+
+# Открытый блок причин «Мимо»: user_id → (chat_id, message_id, ряды карточки без причин). Память процесса: после перезапуска блок
+# просто остаётся на карточке, как и раньше. Свёртка — при любом следующем действии человека в чате (CollapseReasons).
+OPEN_REASONS: dict[int, tuple[int, int, list]] = {}
+
+
+class CollapseReasons(BaseMiddleware):
+    """Любое следующее действие пользователя (сообщение или кнопка не на этой карточке) сворачивает блок причин «Мимо»."""
+
+    async def __call__(self, handler, event, data):
+        user = getattr(event, "from_user", None)
+        pending = OPEN_REASONS.get(user.id) if user else None
+        if pending:
+            chat_id, mid, rows = pending
+            same_card = isinstance(event, CallbackQuery) and event.message is not None and event.message.message_id == mid
+            if not same_card:
+                OPEN_REASONS.pop(user.id, None)
+                try:
+                    await data["bot"].edit_message_reply_markup(chat_id=chat_id, message_id=mid, reply_markup=markup(rows))
+                except Exception:  # noqa: BLE001 - сообщение удалено или клавиатура уже иная: не мешаем обработке
+                    log.debug("не свернулись причины у %s", user.id)
+        return await handler(event, data)
 
 
 def toast_for(status: str, day: date | None) -> str:
@@ -89,8 +111,25 @@ def _decide(session, user_id: int, event_key: str, status: str, day: date | None
     d = services.set_decision(session, user_id, ev, status, reason=reason, day=day)
     if status == "пропуск":                              # «Убрать из плана» / «Не получилось пойти»: кнопку снимаем
         left = [r for r in rows if not any((b.get("callback_data") or "").startswith("d:p:") for b in r)]
-        return d, left
-    return d, card_markup(ev, d.day, status, "main" if status == "мимо" and not picking_reason else None, link_rows_of(rows))
+        return d, left, left, False
+    links = link_rows_of(rows)
+    collapsed = card_markup(ev, d.day, status, None, links)
+    return (d, card_markup(ev, d.day, status, "main" if status == "мимо" and not picking_reason else None, links), collapsed,
+            picking_reason and reason == "дорого" and _budget_nudge_due(session, p))
+
+
+def _budget_nudge_due(session, p) -> bool:
+    """Подсказка про бюджет (T-NUDGE-BUDGET): второй раз «Мимо — дорого» по профилю, бюджет «не важно», раньше не показывали.
+    Флаг показа ставится здесь же — подсказка приходит один раз на профиль."""
+    params = p.params or {}
+    if params.get("nudge_budget") or int(params.get("budget") or 0) != 0:
+        return False
+    n = session.scalar(select(func.count()).select_from(Decision).where(Decision.user_id == p.user_id, Decision.status == "мимо",
+                                                                        Decision.reason == "дорого"))
+    if n < 2:
+        return False
+    services.update_profile(session, p, {"params": {"nudge_budget": True}}, auto_onboarded=False)
+    return True
 
 
 def _rate(session, user_id: int, event_key: str, rating: int):
@@ -163,11 +202,13 @@ async def on_card_button(cb: CallbackQuery) -> None:
             if res == "no_consent":
                 await cb.answer(texts.NEED_CONSENT)
                 return
-            d, new_rows = res
+            d, new_rows, collapsed, _ = res
             changed = await _edit_markup(cb, new_rows)
+            _track_reasons(cb, value == "мимо", collapsed)
             await cb.answer(toast_for(value, d.day) if changed else None)
         elif kind == "more_reasons":
             ev_rows = [r for r in rows if not _is_reason_row(r)]
+            OPEN_REASONS.setdefault(uid, (cb.message.chat.id, cb.message.message_id, ev_rows))
             at = max((i for i, r in enumerate(ev_rows) if any(str(b.get("callback_data", "")).startswith("d:") for b in r)), default=-1) + 1
             new_rows = ev_rows[:at] + kb.reasons_keyboard(event_id, more=True) + ev_rows[at:]
             await _edit_markup(cb, new_rows)
@@ -181,7 +222,10 @@ async def on_card_button(cb: CallbackQuery) -> None:
                 await cb.answer(texts.NEED_CONSENT)
                 return
             await _edit_markup(cb, res[1])
+            _track_reasons(cb, False, None)
             await cb.answer(TOAST_REASON)
+            if res[3]:   # второй раз «Мимо — дорого», а бюджет «не важно»: один раз зовём в «Уточнить под себя»
+                await cb.message.answer(texts.NUDGE_BUDGET, reply_markup=markup([[{"text": "Уточнить под себя", "callback_data": "ob:go:s"}]]))
         elif kind == "day":
             res = await run_db(_pick_day, uid, event_id, int(value), card_day_of(rows))
             if res is None:
@@ -215,6 +259,15 @@ async def on_card_button(cb: CallbackQuery) -> None:
     except Exception:  # noqa: BLE001
         log.exception("кнопка %s у %s", data, uid)
         await cb.answer(TOAST_ERROR)
+
+
+def _track_reasons(cb: CallbackQuery, opened: bool, collapsed: list | None) -> None:
+    """Запомнить карточку с открытым блоком причин (или забыть, если блок закрыт на этой же карточке)."""
+    uid, mid = cb.from_user.id, cb.message.message_id
+    if opened:
+        OPEN_REASONS[uid] = (cb.message.chat.id, mid, collapsed or [])
+    elif OPEN_REASONS.get(uid, (0, 0))[1] == mid:
+        OPEN_REASONS.pop(uid, None)
 
 
 def _is_reason_row(row: list[dict]) -> bool:

@@ -90,6 +90,7 @@ class ParamsIn(BaseModel):
     times: list[str] | None = Field(default=None, max_length=4)
     areas: list[str] | None = Field(default=None, max_length=12)
     interests_basis: list[str] | None = Field(default=None, max_length=5)   # служебное: пятёрка, от которой посчитаны интересы
+    nudge_budget: bool | None = None                                         # служебное: подсказка про бюджет уже показана
 
     @field_validator("company")
     @classmethod

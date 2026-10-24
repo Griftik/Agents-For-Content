@@ -26,6 +26,8 @@ def build_dispatcher() -> Dispatcher:
     dp.include_router(decisions.router)
     dp.include_router(commands.router)
     dp.include_router(fallback.router)  # последним: любой неопознанный callback получает ответ
+    for observer in (dp.message, dp.callback_query):
+        observer.outer_middleware(decisions.CollapseReasons())  # следующее действие человека сворачивает причины «Мимо»
     return dp
 
 

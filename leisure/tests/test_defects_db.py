@@ -86,6 +86,13 @@ def card(db, user):
     return chat, mid, ev, day
 
 
+def _card_text_rows(db, user, ev: Event):
+    day = sorted(ev.dates)[-1].isoformat()
+    weekend = weekend_iso(date.fromisoformat(day))
+    item = services.card_item(db, user, ev, day, weekend)
+    return msg.card_text(item, weekend, plain_links=False), msg.card_keyboard(item, url_buttons=True)
+
+
 def _marked(chat, mid) -> list[str]:
     """Отмеченные кнопки решений (день — отдельный ряд, его отметку не считаем)."""
     return [b for r in chat.rows(mid) for b in r if b.startswith("● ") and b[2:] in ("Иду", "Может быть", "Интересно", "Мимо")]
@@ -180,13 +187,43 @@ def test_miss_then_reason_keeps_links(db, card):
     assert _decision(db, UID, ev).status == "мимо"
     rows = chat.rows(mid)
     assert ["Иду", "Может быть"] in rows and ["Интересно", "● Мимо"] in rows and rows[-1] == ["Подробнее", "Другу"]
-    assert ["Почему мимо? Можно не отвечать"] in rows and ["Не моё", "Дорого", "Далеко", "Ещё…"] in rows
-    chat.press(mid, f"r:m:{ev.id}")                                                    # «Ещё…» — остальные причины
-    assert ["Уже был", "Не то время"] in chat.rows(mid) and ["Не моё", "Дорого", "Далеко", "Ещё…"] not in chat.rows(mid)
+    assert ["Почему мимо? Можно не отвечать"] in rows and ["Не моё", "Дорого", "Далеко", "Уже был"] in rows and ["Ещё…"] in rows
+    chat.press(mid, f"r:m:{ev.id}")                                                    # «Ещё…» — остальные две причины
+    assert ["Не то время", "Не та компания"] in chat.rows(mid) and ["Не моё", "Дорого", "Далеко", "Уже был"] not in chat.rows(mid)
     assert chat.press(mid, chat.cbs(mid, "Не то время")) == "Учту."
     assert chat.rows(mid)[-1] == ["Подробнее", "Другу"] and not any("Почему" in b for r in chat.rows(mid) for b in r)
     assert _decision(db, UID, ev).reason == "не в это время"
     assert chat.press(mid, "ob:noop") == ""                                            # подпись — не кнопка действия
+
+
+def test_already_seen_reason_is_one_tap(db, card):
+    """У4: «Уже был» в первом ряду, а не за «Ещё…»."""
+    chat, mid, ev, _ = card
+    chat.tap(mid, "Мимо")
+    assert chat.tap(mid, "Уже был") == "Учту." and _decision(db, UID, ev).reason == "уже был"
+
+
+def test_reasons_collapse_on_any_next_action(db, user):
+    """У4: блок причин сворачивается при любом следующем действии человека: сообщении или нажатии на другой карточке."""
+    ev1, ev2 = db.scalars(select(Event).where(Event.status == "published").order_by(Event.slug).limit(2)).all()
+    chat, a = _send_card(db, user, ev1, sorted(ev1.dates)[-1].isoformat())
+    b = chat.send(*_card_text_rows(db, user, ev2))
+    opened = lambda mid: any("Почему мимо" in x for r in chat.rows(mid) for x in r)   # noqa: E731
+    chat.tap(a, "Мимо")
+    assert opened(a)
+    chat.press(a, f"r:m:{ev1.id}")                                                    # «Ещё…» на той же карточке блок не сворачивает
+    assert opened(a)
+    chat.say("/help")                                                                 # любое сообщение
+    assert not opened(a) and ["Иду", "Может быть"] in chat.rows(a) and chat.rows(a)[-1] == ["Подробнее", "Другу"]
+    chat.tap(a, "Мимо")
+    assert opened(a)
+    chat.tap(b, "Иду")                                                                # нажатие на другой карточке
+    assert not opened(a) and not opened(b)
+    chat.tap(a, "Мимо")
+    chat.tap(b, "Мимо")                                                               # открыть вторую — первая сворачивается
+    assert opened(b) and not opened(a)
+    chat.tap(b, "Не моё")                                                             # выбор причины закрывает блок сам
+    assert not opened(b) and _decision(db, UID, ev2).reason == "не моё"
 
 
 # ── Д7 ──
@@ -314,6 +351,51 @@ def test_blocked_user_is_deactivated(db, user, monkeypatch):
     chat.say("/start")
     db.expire_all()
     assert db.get(Profile, UID).active is True
+
+
+def test_card_lost_after_all_retries_is_resent_on_next_pass(db, user, monkeypatch):
+    """Д2: четыре 502 подряд на второй карточке — подборка считается отправленной, карточка помечена и дошлётся при следующем проходе."""
+    import asyncio
+
+    from aiogram.exceptions import TelegramServerError
+    from aiogram.methods import SendMessage
+
+    from leisure.worker import send as send_mod
+
+    monkeypatch.setattr(schedules, "_active_profiles", lambda s: [s.get(Profile, UID)])
+    monkeypatch.setattr(send_mod, "RETRY_DELAYS", (0, 0, 0))
+    monkeypatch.setattr(send_mod, "SEND_INTERVAL", 0)
+    fail_on = {"text": None}
+    delivered: list[str] = []
+
+    class Bot:
+        async def send_message(self, uid, text, **kw):
+            if fail_on["text"] and fail_on["text"] in text:
+                raise TelegramServerError(SendMessage(chat_id=uid, text="x"), "Bad Gateway")
+            delivered.append(text)
+
+    monkeypatch.setattr(schedules, "send_sync", lambda msgs: asyncio.run(send_mod.send_with_bot(Bot(), msgs)))
+    from leisure.core.recommend import Digest as CoreDigest  # noqa: F401  (проверяем, что состав берётся из реальной сборки)
+
+    dg, _, _ = services.core_digest(db, user, date(2026, 10, 23), ["2026-10-23", "2026-10-24", "2026-10-25"], now=THU)
+    items = dg.items()
+    assert len(items) >= 2
+    second_title = services.get_event(db, items[1]["event_id"]).title
+    fail_on["text"] = second_title
+    assert schedules.job_send_digests(THU) == 1                                       # заголовок и карточки ушли, одна потеряна
+    row = _row(db)
+    assert row.sent_at is not None and [bool(it.get("undelivered")) for it in row.items][:2] == [False, True]
+    n_first = len(delivered)
+    assert not any(second_title in t for t in delivered)
+
+    assert schedules.job_send_digests(THU) == 0                                       # Бот всё ещё недоступен для неё: флаг остаётся
+    assert _row(db).items[1].get("undelivered") is True
+
+    fail_on["text"] = None
+    assert schedules.job_send_digests(THU) == 1                                       # дослали только пропавшую карточку
+    assert len(delivered) == n_first + 1 and second_title in delivered[-1]
+    assert not any(it.get("undelivered") for it in _row(db).items)
+    assert schedules.job_send_digests(THU) == 0 and len(delivered) == n_first + 1     # больше ничего не шлём
 
 
 # ── Юзабилити 7 ──

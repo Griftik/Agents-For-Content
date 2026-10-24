@@ -114,6 +114,42 @@ def _handle_blocked(s, res: SendResult) -> None:
             log.info("пользователь %s заблокировал бота — рассылки выключены", uid)
 
 
+def _mark_undelivered(row, undelivered: list[int]) -> None:
+    """Недоставленные карточки (индекс сообщения i ≥ 1 ↔ элемент items[i - 1]) помечаются флагом: следующий проход их дошлёт."""
+    if not any(i >= 1 for i in undelivered):
+        return
+    items = [dict(it) for it in row.items or []]
+    for i in undelivered:
+        if 1 <= i <= len(items):
+            items[i - 1]["undelivered"] = True
+    row.items = items
+
+
+def _resend_missing(s, p, row, weekend: list[str]) -> bool:
+    """Дослать карточки уже отправленной подборки, не дошедшие после повторов. True — что-то доставлено."""
+    pending = [it for it in row.items or [] if it.get("undelivered")]
+    if not pending:
+        return False
+    web_ok = services.web_links_enabled()
+    msgs, ids = [], []
+    for it in pending:
+        ev = services.get_event(s, str(it.get("event_id")))
+        if ev is None or ev.status != "published":
+            continue                                       # события больше нет: досылать нечего, флаг снимем ниже
+        item = services.card_item(s, p, ev, it.get("day"), weekend)
+        msgs.append((p.user_id, card_text(item, weekend, plain_links=not web_ok), card_keyboard(item, url_buttons=web_ok)))
+        ids.append(str(it.get("event_id")))
+    res = send_sync(msgs) if msgs else SendResult(0, [], [])
+    _handle_blocked(s, res)
+    still = {ids[i] for i in res.undelivered}
+    row.items = [{k: v for k, v in it.items() if not (k == "undelivered" and str(it.get("event_id")) not in still)}
+                 for it in row.items or []]
+    s.commit()
+    if still:
+        log.warning("пользователю %s по-прежнему не доставлено карточек: %d", p.user_id, len(still))
+    return res.sent > 0
+
+
 def job_send_digests(now_utc: datetime | None = None) -> int:
     """Каждый час: кому пора и ещё не отправлено — собрать свежий дайджест, отправить, отметить."""
     now_utc = now_utc or datetime.now(timezone.utc)
@@ -124,7 +160,7 @@ def job_send_digests(now_utc: datetime | None = None) -> int:
                 return False
             row = services.digest_row(s, p, date.fromisoformat(weekend[0]))
             if row.sent_at is not None:
-                return False
+                return _resend_missing(s, p, row, weekend)   # досылка карточек, не дошедших при прошлой отправке
             dg, _, _ = services.core_digest(s, p, local.date(), weekend, now=now_utc)
             view = services.digest_view(p, dg, services.decision_map(s, p.user_id))
             if not dg.items():
@@ -139,7 +175,9 @@ def job_send_digests(now_utc: datetime | None = None) -> int:
             if res.undelivered:
                 log.warning("пользователю %s не доставлены карточки подборки %s: сообщения %s из %d", p.user_id, weekend[0],
                             res.undelivered, len(msgs))
-            services.save_digest(s, p, dg, sent=True)
+            row = services.save_digest(s, p, dg, sent=True)
+            _mark_undelivered(row, res.undelivered)
+            s.commit()
             return True
         n = _for_each_profile(s, now_utc, send)
     log.info("дайджесты отправлены: %d", n)
