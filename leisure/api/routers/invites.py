@@ -70,7 +70,7 @@ def open_invite(code: str, body: InviteOpenIn, x_user_id: str | None = Header(de
 @router.post("/invites/{code}/accept", response_model=InviteAcceptOut)
 def accept_invite(code: str, body: InviteAcceptIn, x_user_id: str | None = Header(default=None),
                   session: Session = Depends(get_session)) -> dict:
-    """«Иду» (going), «Может быть» (maybe) или declined («Другие выходные под меня»: запись без решения, согласие не нужно).
+    """«Иду» (going), «Может быть» (maybe) или declined («Другие выходные под меня»: запись без решения, согласие не нужно; без согласия профиль не создаётся, отказ пишется в growth_events).
     Первое касание без профиля: consent=true, иначе 409 consent_required.
     410 — событие прошло, снято с публикации или удалено; 400 — своё приглашение. Повтор идемпотентен."""
     uid = _uid(body.user_id, x_user_id)
