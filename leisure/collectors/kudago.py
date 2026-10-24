@@ -12,9 +12,10 @@
   * данные нельзя передавать третьим лицам на коммерческой основе; «kudago» нельзя использовать в названии продукта.
 
 robots.txt: для `User-agent: *` там `Disallow: /public-api`, хотя сам API опубликован для разработчиков.
-Мы уважаем robots.txt по умолчанию (RESPECT_ROBOTS = True), поэтому сейчас коллектор честно останавливается
-с понятной ошибкой. Включить сбор — решение владельца продукта: `KudaGoCollector.respect_robots = False`
-(например, после согласования с KudaGo) или аргумент конструктора.
+Учёт robots.txt включается настройкой `settings.COLLECTORS_RESPECT_ROBOTS` (переменная окружения
+COLLECTORS_RESPECT_ROBOTS, по умолчанию 0: решение владельца продукта от 24.10.2026, на MVP агрегаторы собираем
+бесплатно, проверяя спрос). Явный аргумент конструктора `respect_robots` сильнее настройки. При включённом учёте
+коллектор останавливается с понятной ошибкой, не сделав ни одного запроса к API. Технические блокировки (403) не обходим.
 """
 from __future__ import annotations
 
@@ -30,6 +31,7 @@ from urllib import robotparser
 
 import httpx
 
+from leisure import settings
 from leisure.normalize.schema import RawEvent
 
 from .base import Collector, CollectorError, register
@@ -198,8 +200,6 @@ class KudaGoCollector(Collector):
     name = "kudago"
     cities = ("Москва",)
 
-    respect_robots = True  # см. докстринг модуля: решение владельца продукта
-
     def __init__(
         self,
         client: httpx.Client | None = None,
@@ -214,8 +214,7 @@ class KudaGoCollector(Collector):
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._client = client
-        if respect_robots is not None:
-            self.respect_robots = respect_robots
+        self.respect_robots = settings.COLLECTORS_RESPECT_ROBOTS if respect_robots is None else respect_robots
         self.page_size = max(1, min(page_size, PAGE_SIZE))
         self.max_pages = max(1, max_pages)
         self.pause_sec = pause_sec
@@ -305,8 +304,8 @@ class KudaGoCollector(Collector):
         if not parser.can_fetch(USER_AGENT, API_URL):
             raise CollectorError(
                 "KudaGo: robots.txt запрещает /public-api для нашего бота. Мы уважаем robots.txt, поэтому сбор "
-                "остановлен. Если владелец продукта решил, что открытое API по лицензии KudaGo допустимо, "
-                "включите KudaGoCollector(respect_robots=False)."
+                "остановлен. Отключить учёт можно только решением владельца: COLLECTORS_RESPECT_ROBOTS=0 "
+                "или KudaGoCollector(respect_robots=False)."
             )
 
     def _get_robots(self, client: httpx.Client) -> httpx.Response:

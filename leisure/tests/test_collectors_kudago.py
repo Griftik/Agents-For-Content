@@ -8,6 +8,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from leisure import settings
 from leisure.collectors import load_collectors
 from leisure.collectors.base import REGISTRY, CollectorError
 from leisure.collectors.kudago import (
@@ -55,6 +56,7 @@ def make(fake: FakeKudaGo | None = None, **kw) -> tuple[KudaGoCollector, FakeKud
     fake = fake or FakeKudaGo()
     sleeps: list[float] = []
     client = httpx.Client(transport=httpx.MockTransport(fake))
+    kw.setdefault("respect_robots", True)  # тесты не зависят от настройки окружения; настройка проверяется отдельно
     return KudaGoCollector(client, sleep=sleeps.append, clock=lambda: NOW, **kw), fake, sleeps
 
 
@@ -268,8 +270,45 @@ def test_robots_can_be_waived_explicitly():
     assert all(r.url.path != "/robots.txt" for r in fake.requests)
 
 
-def test_robots_default_is_respectful():
-    assert KudaGoCollector.respect_robots is True
+@pytest.mark.parametrize("setting,arg,expected", [
+    (False, None, False),   # решение владельца от 24.10.2026: по умолчанию не читаем
+    (True, None, True),     # включили в окружении — читаем
+    (False, True, True),    # явный аргумент сильнее настройки
+    (True, False, False),
+])
+def test_robots_default_comes_from_settings(monkeypatch, setting, arg, expected):
+    monkeypatch.setattr(settings, "COLLECTORS_RESPECT_ROBOTS", setting)
+    assert KudaGoCollector(respect_robots=arg).respect_robots is expected
+
+
+def test_settings_switch_changes_behaviour_end_to_end(monkeypatch):
+    for setting, blocked in ((True, True), (False, False)):
+        monkeypatch.setattr(settings, "COLLECTORS_RESPECT_ROBOTS", setting)
+        fake = FakeKudaGo(robots=(200, ROBOTS_NO_API))
+        col = KudaGoCollector(httpx.Client(transport=httpx.MockTransport(fake)), sleep=lambda s: None)
+        if blocked:
+            with pytest.raises(CollectorError, match="COLLECTORS_RESPECT_ROBOTS"):
+                col.collect("Москва", FROM, TO)
+            assert fake.api_requests == []
+        else:
+            assert len(col.collect("Москва", FROM, TO)) == 6
+            assert all(r.url.path != "/robots.txt" for r in fake.requests)
+
+
+def test_settings_default_is_off():
+    """Без переменной окружения учёт robots выключен (решение владельца)."""
+    import importlib
+    import os
+    saved = os.environ.pop("COLLECTORS_RESPECT_ROBOTS", None)
+    try:
+        assert importlib.reload(settings).COLLECTORS_RESPECT_ROBOTS is False
+        os.environ["COLLECTORS_RESPECT_ROBOTS"] = "1"
+        assert importlib.reload(settings).COLLECTORS_RESPECT_ROBOTS is True
+    finally:
+        os.environ.pop("COLLECTORS_RESPECT_ROBOTS", None)
+        if saved is not None:
+            os.environ["COLLECTORS_RESPECT_ROBOTS"] = saved
+        importlib.reload(settings)
 
 
 @pytest.mark.parametrize("status,ok", [(404, True), (403, False), (503, False)])

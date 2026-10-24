@@ -314,7 +314,7 @@ def generate(n_users: int = 50, seed: int = DEFAULT_SEED) -> list[Persona]:
     for i in tail[4:5]:
         personas[i].help_at_notes = True
     # поздний онбординг: суббота днём/вечером и воскресенье — первая подборка приходит, когда часть событий уже началась
-    for i, off in zip(tail[5:9], (107.0, 113.0, 132.0, 137.0)):     # сб 11:00, сб 17:00, вс 12:00, вс 17:00 UTC
+    for i, off in zip(tail[5:9], (107.0, 113.0, 132.0, 137.0), strict=False):     # сб 11:00, сб 17:00, вс 12:00, вс 17:00 UTC
         personas[i].onboard_offset_h = off
     return personas
 

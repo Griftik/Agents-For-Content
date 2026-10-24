@@ -11,7 +11,7 @@ import html as htmllib
 import re
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
@@ -129,6 +129,7 @@ class FakeTelegram:
         self._cb_seq = 0
         self._update_seq = 0
         self.new_since_drain: list[Stored] = []
+        self.fail_plan: list[Exception | None] = []   # план сбоев для ближайших sendMessage: None — отправить нормально
         self.bot: Bot | None = None
 
     # ── служебное ──
@@ -247,6 +248,11 @@ class FakeTelegram:
         pm = self._resolve(bot, m.parse_mode)
         pm = pm.value if hasattr(pm, "value") else pm
         rows = markup_rows(m.reply_markup)
+        if self.fail_plan:
+            exc = self.fail_plan.pop(0)
+            if exc is not None:
+                self._record(method="SendMessage", chat_id=chat_id, ok=False, error=type(exc).__name__, text=plain_text(m.text, pm)[:80])
+                raise exc
         if chat_id in self.blocked:
             self._record(method="SendMessage", chat_id=chat_id, ok=False, error="Forbidden: bot was blocked by the user",
                          text=plain_text(m.text, pm)[:80])
@@ -360,8 +366,8 @@ class FakeSession(BaseSession):
         yield b""
 
 
-def make_bot(world: FakeTelegram) -> Bot:
-    """Настоящий aiogram.Bot с теми же DefaultBotProperties, что в leisure/bot/main.py, но с FakeSession."""
-    bot = Bot(BOT_TOKEN, session=FakeSession(world), default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+def make_bot(world: FakeTelegram, default: DefaultBotProperties | None = None) -> Bot:
+    """Настоящий aiogram.Bot с FakeSession. default — свойства, с которыми продукт сам создаёт бота (leisure/bot/main.py)."""
+    bot = Bot(BOT_TOKEN, session=FakeSession(world), default=default or DefaultBotProperties(parse_mode=ParseMode.HTML))
     world.bot = bot
     return bot

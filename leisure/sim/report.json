@@ -1,0 +1,748 @@
+{
+ "decisions": {
+  "by_status": {
+   "иду": 196,
+   "мимо": 46,
+   "может": 118
+  },
+  "reasons": {
+   "": 7,
+   "дорого": 1,
+   "не в это время": 5,
+   "не моё": 19,
+   "уже был": 5
+  },
+  "skip_no_reason_button": 7,
+  "skip_total": 46,
+  "skip_unanswered": 9,
+  "skip_with_reason": 30,
+  "total": 360,
+  "wanted_interest": 60,
+  "wanted_interest_users": 28
+ },
+ "defects": [
+  {
+   "count": 21,
+   "id": "Д1",
+   "severity": "высокая",
+   "title": "«Иду» сохраняется на другой день, чем показан на карточке",
+   "where": "leisure/api/services.py:151-156 (_default_day), :170 (`d.day = day or d.day or _default_day(...)`); callback_data без дня — leisure/bot/callbacks.py:10-11, leisure/bot/decisions.py:33-37"
+  },
+  {
+   "count": 147,
+   "id": "Д2",
+   "severity": "высокая",
+   "title": "Напоминание и запрос оценки получает меньшинство «Иду»",
+   "where": "leisure/worker/schedules.py:122-146 (job_plan_today: флаг :136, выборка дня :141), :149-170 (job_how_was_it: фильтр :161-162); перенос дня в плане — leisure/api/services.py:282-283; тост — leisure/bot/decisions.py:21-22"
+  },
+  {
+   "count": 1,
+   "id": "Д3",
+   "severity": "высокая",
+   "title": "После /delete нажатие на старую кнопку воссоздаёт профиль и решение без согласия",
+   "where": "leisure/api/services.py:163 (`get_or_create_profile` внутри set_decision); вызов из leisure/bot/decisions.py:33-37"
+  },
+  {
+   "count": 4,
+   "id": "Д4",
+   "severity": "средняя",
+   "title": "Ответы «с кем ходишь», «куда готов ехать», дети и заметка не влияют на подборку",
+   "where": "leisure/core/scoring.py:73-140 читает только aesthetics, adults30, budget, times; params.company/areas/kids и Profile.notes не используются"
+  },
+  {
+   "count": 60,
+   "id": "Д5",
+   "severity": "средняя",
+   "title": "На карточке нет кнопки «Интересно» (требование F6)",
+   "where": "leisure/worker/messages.py:66-73 (card_keyboard: Иду / Может быть / Мимо); спека п. 4 F6, п. 6.5"
+  },
+  {
+   "count": 46,
+   "id": "Д6",
+   "severity": "средняя",
+   "title": "После «Мимо» с карточки пропадают «Подробнее», «Другу», а на последней — «Весь дайджест»",
+   "where": "leisure/bot/decisions.py:72 и :79"
+  },
+  {
+   "count": 5,
+   "id": "Д7",
+   "severity": "средняя",
+   "title": "Двойной тап по кнопке карточки даёт «Что-то пошло не так» и ERROR в логе",
+   "where": "leisure/bot/decisions.py:70-75 (edit_reply_markup без разбора TelegramBadRequest), :86-88 (общий except → тост об ошибке)"
+  },
+  {
+   "count": 13,
+   "id": "Д8",
+   "severity": "средняя",
+   "title": "Среда 22:00 перезаписывает состав уже отправленного дайджеста",
+   "where": "leisure/worker/schedules.py:78-81 → leisure/api/services.py:248-254 (:250 `row.items = …` без проверки sent_at)"
+  },
+  {
+   "count": 212,
+   "id": "Д9",
+   "severity": "средняя",
+   "title": "Digest.opened и Digest.decisions_count никогда не заполняются",
+   "where": "leisure/db/models.py:189-190 — поля есть, записи в bot/, worker/, api/ нет (grep по opened|decisions_count)"
+  },
+  {
+   "count": 1,
+   "id": "Д10",
+   "severity": "средняя",
+   "title": "Временный сбой Telegram (5xx, сеть) навсегда теряет карточку подборки",
+   "where": "leisure/worker/send.py:39-41 (`except Exception: log.exception; break`), leisure/worker/schedules.py:113-115 (`if not send_sync(...)` — только «ни одного»)"
+  },
+  {
+   "count": 3,
+   "id": "Д11",
+   "severity": "средняя",
+   "title": "Заблокировавший бота остаётся активным и получает попытки отправки",
+   "where": "leisure/worker/send.py:36-38 (только лог), leisure/worker/schedules.py:112-115 (`if not send_sync(...): return False`)"
+  },
+  {
+   "count": 2,
+   "id": "Д12",
+   "severity": "средняя",
+   "title": "После перезапуска бота старые кнопки онбординга молчат",
+   "where": "leisure/bot/main.py:22 (MemoryStorage), leisure/bot/onboarding.py:77,127,139,… (callback-обработчики с состоянием)"
+  },
+  {
+   "count": 4,
+   "id": "Д13",
+   "severity": "средняя",
+   "title": "Свободный текст и команды на шагах онбординга: молчание или «съеденная» команда",
+   "where": "leisure/bot/onboarding.py:211-213 (`@router.message(Onb.notes, F.text)` стоит раньше commands.router), leisure/bot/main.py:21-26 (нет общего message-обработчика)"
+  },
+  {
+   "count": 7,
+   "id": "Д14",
+   "severity": "низкая",
+   "title": "Подборка пришла с событиями, которые уже начались",
+   "where": "leisure/bot/onboarding.py:251 и leisure/bot/commands.py:30 (`local_today` → date); leisure/api/services.py:48-51 (trim_past по дате)"
+  },
+  {
+   "count": 452,
+   "id": "Д15",
+   "severity": "низкая",
+   "title": "URL кнопки «Другу» длиннее 2 000 символов",
+   "where": "leisure/worker/messages.py:71-72 + leisure/core/links.py:83-86"
+  },
+  {
+   "count": 1,
+   "id": "Д16",
+   "severity": "низкая",
+   "title": "Отправка дайджеста 10 000 пользователям не укладывается в 15 минут (п. 10)",
+   "where": "leisure/worker/send.py:19 (SEND_INTERVAL = 1/25), leisure/worker/schedules.py:87-94"
+  },
+  {
+   "count": 6,
+   "id": "Д17",
+   "severity": "низкая",
+   "title": "Ошибка в ответе онбординга исправить нельзя — сохраняется неверный профиль",
+   "where": "leisure/bot/onboarding.py:157-208 (шаги без «Назад»)"
+  },
+  {
+   "count": 1,
+   "id": "Д18",
+   "severity": "низкая",
+   "title": "Значение WEB_BASE_URL по умолчанию (localhost) делает онбординг невозможным",
+   "where": "leisure/settings.py:35, leisure/bot/onboarding.py:42,58"
+  }
+ ],
+ "digests": {
+  "all_cards": 1108,
+  "already_started": 7,
+  "avg_cards": 4.609090909090909,
+  "avg_empty": 2.15,
+  "by_week": {
+   "0": {
+    "cards": 5.717948717948718,
+    "digests": 39,
+    "empty": 1.1025641025641026,
+    "go": 29,
+    "horizon": 1.8205128205128205,
+    "opened": 38,
+    "reacted": 37,
+    "slots": 3.8974358974358974
+   },
+   "1": {
+    "cards": 4.846153846153846,
+    "digests": 39,
+    "empty": 2,
+    "go": 14,
+    "horizon": 1.8461538461538463,
+    "opened": 19,
+    "reacted": 17,
+    "slots": 3
+   },
+   "2": {
+    "cards": 5.7368421052631575,
+    "digests": 38,
+    "empty": 1.0789473684210527,
+    "go": 15,
+    "horizon": 1.8157894736842106,
+    "opened": 20,
+    "reacted": 19,
+    "slots": 3.9210526315789473
+   },
+   "3": {
+    "cards": 3.9444444444444446,
+    "digests": 36,
+    "empty": 2.8055555555555554,
+    "go": 16,
+    "horizon": 1.75,
+    "opened": 23,
+    "reacted": 22,
+    "slots": 2.1944444444444446
+   },
+   "4": {
+    "cards": 3.5588235294117645,
+    "digests": 34,
+    "empty": 3.1470588235294117,
+    "go": 12,
+    "horizon": 1.7058823529411764,
+    "opened": 18,
+    "reacted": 15,
+    "slots": 1.8529411764705883
+   },
+   "5": {
+    "cards": 3.5588235294117645,
+    "digests": 34,
+    "empty": 3.0294117647058822,
+    "go": 16,
+    "horizon": 1.588235294117647,
+    "opened": 22,
+    "reacted": 21,
+    "slots": 1.9705882352941178
+   }
+  },
+  "first": 39,
+  "manual": 21,
+  "messy_time": 35,
+  "multi_day_cards": 133,
+  "no_interest_button": true,
+  "opened": 140,
+  "plan_lines": 79,
+  "plan_messy_lines": 8,
+  "reacted": 131,
+  "resent_no_status": 25,
+  "sent": 220,
+  "total_cards": 1014,
+  "with_empty": 220
+ },
+ "findings": {
+  "callback_unanswered": {
+   "count": 2,
+   "users": 2
+  },
+  "card_already_started": {
+   "count": 7,
+   "users": 5
+  },
+  "command_eaten_by_notes": {
+   "count": 1,
+   "users": 1
+  },
+  "double_tap_error": {
+   "count": 5,
+   "users": 5
+  },
+  "error_toast": {
+   "count": 5,
+   "users": 5
+  },
+  "interest_button_missing": {
+   "count": 60,
+   "users": 28
+  },
+  "links_lost_after_click": {
+   "count": 46,
+   "users": 22
+  },
+  "no_back_after_misclick": {
+   "count": 8,
+   "users": 8
+  },
+  "profile_resurrected": {
+   "count": 1,
+   "users": 1
+  },
+  "reason_not_answered": {
+   "count": 9,
+   "users": 5
+  },
+  "resent_card_no_status": {
+   "count": 25,
+   "users": 10
+  },
+  "sixth_value": {
+   "count": 5,
+   "users": 5
+  },
+  "stale_button_dead": {
+   "count": 2,
+   "users": 2
+  },
+  "text_ignored": {
+   "count": 3,
+   "users": 3
+  },
+  "user_blocked_bot": {
+   "count": 3,
+   "users": 3
+  }
+ },
+ "first_go": {
+  "after_onb_median": 1,
+  "after_onb_min": -44,
+  "in_first_digest": 29,
+  "of": 39,
+  "taps_max": 66,
+  "taps_median": 35,
+  "taps_min": 30,
+  "users": 33
+ },
+ "meta": {
+  "archetypes": {
+   "занятой": 6,
+   "интеллектуал": 7,
+   "мастер": 3,
+   "нетворкер": 6,
+   "родитель": 5,
+   "спортсмен": 5,
+   "тусовщик": 6,
+   "экономный": 5,
+   "эстет": 7
+  },
+  "db_name": "leisure_sim",
+  "events_seeded": 177,
+  "seed": 20261024,
+  "sim_end": "2026-12-01T14:40:23.236063+00:00",
+  "sim_start": "2026-10-20T00:00:00+00:00",
+  "updates_fed": 2229,
+  "users": 50,
+  "web_base_url_original": "http://localhost:8000 (значение по умолчанию settings.py)",
+  "weeks": 5,
+  "world_calls": 8318
+ },
+ "norms": [
+  {
+   "name": "Подборка из 5–7 карточек (п. 3.2)",
+   "norm": "все",
+   "note": "по неделям среднее: 5,7, 4,8, 5,7, 3,9, 3,6, 3,6",
+   "status": "fail",
+   "value": "113 из 220 = 51 %; в среднем 4,6"
+  },
+  {
+   "name": "Все 5 слотов уикенда заполнены (п. 8)",
+   "norm": "все",
+   "note": "в seed нет событий на 23.10, а на следующие уикенды их 4–18 на все категории — пустые слоты в основном недобор базы",
+   "status": "fail",
+   "value": "0 из 220 = 0 %"
+  },
+  {
+   "name": "Не больше 7 сообщений за раз (п. 8)",
+   "norm": "≤ 7",
+   "note": "",
+   "status": "ok",
+   "value": "максимум 7"
+  },
+  {
+   "name": "Еженедельная подборка уходит в чт 19:00 по поясу человека (п. 3.2, 8)",
+   "norm": "все",
+   "note": "часовые повторные запуски дубли не создали",
+   "status": "ok",
+   "value": "179 из 179 = 100 %"
+  },
+  {
+   "name": "Не повторять показанное без реакции и после «мимо» (п. 8)",
+   "norm": "0",
+   "note": "повторов всего 13,8 % показов",
+   "status": "fail",
+   "value": "нарушений 4 из 140 повторов"
+  },
+  {
+   "name": "Отправка 10 000 человек за 15 минут (п. 10)",
+   "norm": "≤ 15 мин",
+   "note": "5,6 сообщений на человека",
+   "status": "fail",
+   "value": "≈ 37 мин при 25 сообщ./с"
+  },
+  {
+   "name": "Нажатия сохраняются в БД (F6, F9)",
+   "norm": "все",
+   "note": "",
+   "status": "ok",
+   "value": "302 из 302"
+  },
+  {
+   "name": "Онбординг «три минуты» (п. 3.1)",
+   "norm": "3 мин",
+   "note": "времени на нажатие в симуляции нет; при 4–5 с на нажатие медиана ≈ 2,5–3 мин без чтения экранов",
+   "status": "na",
+   "value": "нажатий: min 28, медиана 33, max 81"
+  }
+ ],
+ "onboarding": {
+  "all_screens_checked": 448,
+  "back_screens": 0,
+  "completed": 39,
+  "funnel": [
+   {
+    "left": 1,
+    "reached": 50,
+    "step": "consent"
+   },
+   {
+    "left": 1,
+    "reached": 49,
+    "step": "values"
+   },
+   {
+    "left": 2,
+    "reached": 48,
+    "step": "weights"
+   },
+   {
+    "left": 3,
+    "reached": 46,
+    "step": "interests"
+   },
+   {
+    "left": 0,
+    "reached": 43,
+    "step": "company"
+   },
+   {
+    "left": 1,
+    "reached": 43,
+    "step": "times"
+   },
+   {
+    "left": 1,
+    "reached": 42,
+    "step": "budget"
+   },
+   {
+    "left": 0,
+    "reached": 41,
+    "step": "aesthetics"
+   },
+   {
+    "left": 0,
+    "reached": 41,
+    "step": "areas"
+   },
+   {
+    "left": 2,
+    "reached": 41,
+    "step": "notes"
+   }
+  ],
+  "interest_buttons": 19,
+  "interest_edits_max": 11,
+  "interest_edits_median": 8,
+  "interest_rows": 20,
+  "interest_share_of_taps": 0.26841359773371104,
+  "prefill": {
+   "avg_level0": 0.0,
+   "avg_level1": 3.5652173913043477,
+   "avg_level2": 7.739130434782608,
+   "avg_level3": 7.695652173913044,
+   "match_share": 0.34096109839816935,
+   "personas": 46
+  },
+  "started": 50,
+  "step_means": {
+   "aesthetics": 1.0512820512820513,
+   "areas": 1.0512820512820513,
+   "budget": 1.1282051282051282,
+   "company": 1.1025641025641026,
+   "consent": 2.2051282051282053,
+   "interests": 9.717948717948717,
+   "notes": 1.0512820512820513,
+   "times": 2.8205128205128207,
+   "values": 6.743589743589744,
+   "weights": 8.820512820512821
+  },
+  "taps_clean_max": 81,
+  "taps_clean_median": 33,
+  "taps_clean_min": 28,
+  "taps_max": 81,
+  "taps_mean": 36.205128205128204,
+  "taps_median": 33,
+  "taps_min": 28,
+  "theoretical_min": 23,
+  "weight_prompts": 8,
+  "weights_share_of_taps": 0.2436260623229462
+ },
+ "plan": {
+  "go_users_by_week": [
+   29,
+   14,
+   16,
+   17,
+   13,
+   16
+  ],
+  "got_push": 31,
+  "mean": 0.44871794871794873,
+  "plan_cmd_empty": 34,
+  "plan_cmd_total": 134,
+  "plan_lines_median": 4,
+  "plan_max_line": 400,
+  "pushes": 66,
+  "reached_any": 36,
+  "reached_go": 33,
+  "share_by_week": [
+   0.7435897435897436,
+   0.358974358974359,
+   0.41025641025641024,
+   0.4358974358974359,
+   0.3333333333333333,
+   0.41025641025641024
+  ],
+  "used_cmd": 34
+ },
+ "plan_reminders": {
+  "saturday_missed_decided_after_plan_job": 16,
+  "Вс": {
+   "asked_rating": 23,
+   "going": 23,
+   "reminded": 0
+  },
+  "Пн–Чт": {
+   "asked_rating": 0,
+   "going": 21,
+   "reminded": 0
+  },
+  "Пт": {
+   "asked_rating": 32,
+   "going": 33,
+   "reminded": 7
+  },
+  "Сб": {
+   "asked_rating": 67,
+   "going": 70,
+   "reminded": 54
+  }
+ },
+ "rating": {
+  "answered": 0.34108527131782945,
+  "dist": {
+   "1": 1,
+   "2": 3,
+   "3": 8,
+   "4": 13,
+   "5": 19
+  },
+  "mean": 4.045454545454546,
+  "n": 44,
+  "prompts": 129
+ },
+ "repeats": {
+  "appearances": 1014,
+  "classes": {
+   "без реакции": 41,
+   "иду": 60,
+   "может": 39
+  },
+  "repeated": 140,
+  "share": 0.13806706114398423,
+  "violate_from_first": 4,
+  "violate_no_reaction_3": 4,
+  "violate_skip": 0
+ },
+ "retention": {
+  "blocked": 3,
+  "by_week": [
+   {
+    "active": 39,
+    "share": 1.0,
+    "week": 0
+   },
+   {
+    "active": 31,
+    "share": 0.7948717948717948,
+    "week": 1
+   },
+   {
+    "active": 29,
+    "share": 0.7435897435897436,
+    "week": 2
+   },
+   {
+    "active": 34,
+    "share": 0.8717948717948718,
+    "week": 3
+   },
+   {
+    "active": 26,
+    "share": 0.6666666666666666,
+    "week": 4
+   },
+   {
+    "active": 26,
+    "share": 0.6666666666666666,
+    "week": 5
+   }
+  ],
+  "churned": 7,
+  "last": 0.6666666666666666,
+  "projected_week8": 0.5842752387471627
+ },
+ "scale": {
+  "avg_messages_per_digest": 5.609090909090909,
+  "max_users_in_15min": 4011,
+  "minutes_for_10k": 37.3939393939394
+ },
+ "silent": {
+  "empty_notices": 0,
+  "logged_nothing": 0,
+  "share": 0.011764705882352941,
+  "silent": 2,
+  "user_weeks": 170
+ },
+ "spec_metrics": [
+  {
+   "id": "activation",
+   "name": "Активация: дошли до конца онбординга",
+   "note": "95 % ДИ 65–87 %",
+   "status": "ok",
+   "target": "≥ 70 %",
+   "value": 0.78
+  },
+  {
+   "id": "reaction",
+   "name": "Реакция: дайджесты хотя бы с одним решением",
+   "note": "95 % ДИ 53–66 %",
+   "status": "ok",
+   "target": "≥ 40 %",
+   "value": 0.5954545454545455
+  },
+  {
+   "id": "plan",
+   "name": "План: доля пользователей с ≥1 «иду» в неделю (среднее по неделям)",
+   "note": "знаменатель — все прошедшие онбординг",
+   "status": "ok",
+   "target": "≥ 25 %",
+   "value": 0.44871794871794873
+  },
+  {
+   "id": "retention",
+   "name": "Удержание: активны на неделе 5 (8-недельное измерить нельзя)",
+   "note": "экстраполяция на неделю 8 по спаду недель 1–5: 58 % (ориентир, не измерение)",
+   "status": "na",
+   "target": "8 нед. ≥ 50 %",
+   "value": 0.6666666666666666
+  },
+  {
+   "id": "rating",
+   "name": "Качество: средняя оценка «как прошло»",
+   "note": "оценили 34 % из 129 запросов",
+   "status": "ok",
+   "target": "≥ 4,0",
+   "value": 4.045454545454546
+  },
+  {
+   "id": "growth",
+   "name": "Рост: доля новых из «Отправить другу»",
+   "note": "кнопка «Другу» — URL, бот не видит нажатий и переходов; метрика требует редиректа через сервер",
+   "status": "na",
+   "target": "≥ 20 %",
+   "value": null
+  },
+  {
+   "id": "money",
+   "name": "Деньги: конверсия в Pro, платящий организатор",
+   "note": "платные функции не реализованы",
+   "status": "na",
+   "target": "≥ 5 % / неделя 6",
+   "value": null
+  }
+ ],
+ "usability": [
+  {
+   "id": "У1",
+   "priority": 1,
+   "title": "Онбординг длиннее обещанного, а счётчик шагов не соответствует экранам"
+  },
+  {
+   "id": "У2",
+   "priority": 2,
+   "title": "Список интересов: 19 кнопок в столбик и цикл из четырёх состояний"
+  },
+  {
+   "id": "У3",
+   "priority": 3,
+   "title": "Нельзя выбрать день у события, идущего несколько дней"
+  },
+  {
+   "id": "У4",
+   "priority": 4,
+   "title": "Нельзя вернуться или отменить шаг онбординга"
+  },
+  {
+   "id": "У5",
+   "priority": 5,
+   "title": "Нет кнопки «Интересно» на карточке (F6)"
+  },
+  {
+   "id": "У6",
+   "priority": 6,
+   "title": "«Мимо» сразу спрашивает причину и перекраивает карточку"
+  },
+  {
+   "id": "У7",
+   "priority": 7,
+   "title": "Подборки худеют, а при пустом составе бот молчит"
+  },
+  {
+   "id": "У8",
+   "priority": 8,
+   "title": "Время события — сырой текст источника, а не время выбранного дня"
+  },
+  {
+   "id": "У9",
+   "priority": 9,
+   "title": "«Весь дайджест» висит только на последней карточке и исчезает после «Мимо»"
+  },
+  {
+   "id": "У10",
+   "priority": 10,
+   "title": "Свободный текст в чат игнорируется"
+  },
+  {
+   "id": "У11",
+   "priority": 11,
+   "title": "Повторно присланная карточка не показывает прежнее решение"
+  },
+  {
+   "id": "У12",
+   "priority": 12,
+   "title": "/plan приходит одним моноширинным блоком"
+  },
+  {
+   "id": "У13",
+   "priority": 13,
+   "title": "Подборка показывает уже начавшиеся события"
+  }
+ ],
+ "violations": {
+  "button_url_long": 452
+ },
+ "volatile": {
+  "duration_s": 69.7,
+  "job_runs": {
+   "build": 6,
+   "feedback": 30,
+   "plan": 30,
+   "send": 36
+  },
+  "job_seconds": {
+   "build": 9.4,
+   "feedback": 2.85,
+   "plan": 7.97,
+   "send": 11.14
+  }
+ }
+}

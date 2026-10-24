@@ -20,7 +20,6 @@ import subprocess
 import sys
 import time
 from collections import Counter
-from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -190,29 +189,36 @@ def patched_product(world, clock: Clock):
 
 
 class LogCatcher(logging.Handler):
+    """Собирает WARNING/ERROR продукта и INFO-сообщения воркера «нечего отправить» (пустая подборка → молчание)."""
+
     def __init__(self) -> None:
-        super().__init__(level=logging.WARNING)
+        super().__init__(level=logging.INFO)
         self.records: list[dict] = []
+        self.nothing: set[tuple[int, str]] = set()
 
     def emit(self, record: logging.LogRecord) -> None:
+        if record.levelno < logging.WARNING:
+            if "нечего отправить" in str(record.msg) and record.args and len(record.args) >= 2:
+                self.nothing.add((int(record.args[0]), str(record.args[1])))
+            return
         self.records.append({"logger": record.name, "level": record.levelname, "msg": record.getMessage()[:300],
                              "exc": (record.exc_text or (self.format(record).splitlines()[-1] if record.exc_info else ""))[:300]})
 
 
 # ───────────────────────── симуляция ─────────────────────────
 class Sim:
-    def __init__(self, personas, weeks: int, seed: int, world, bot, clock: Clock, events: dict[str, dict]) -> None:
-        from leisure.bot.main import build_dispatcher
+    def __init__(self, personas, weeks: int, seed: int, world, clock: Clock, events: dict[str, dict]) -> None:
+        from .actors import Findings, PState
 
-        from .actors import Driver, Findings, PState
-
-        self.weeks, self.seed, self.world, self.bot, self.clock = weeks, seed, world, bot, clock
+        self.weeks, self.seed, self.world, self.clock = weeks, seed, world, clock
+        self.bot = None
+        self.dp = None
+        self.driver = None
+        self.catcher = None
         self.f = Findings()
         self.states = [PState(p=p, rng=random.Random(f"{seed}:{p.idx}:behavior"), E=p.engagement) for p in personas]
         self.by_uid = {ps.p.user_id: ps for ps in self.states}
         self.events = events
-        self.dp = build_dispatcher()
-        self.driver = Driver(world, bot, lambda: self.dp, clock, self.f, events, cycle_of)
         self.heap: list = []
         self.seq = 0
         self.jobs: list[dict] = []
@@ -263,7 +269,7 @@ class Sim:
     def collect(self, origin: str) -> None:
         from leisure.core.timeutil import MONTHS_GEN
 
-        from .actors import CardRec, DigestRec, parse_card
+        from .actors import DigestRec, parse_card
 
         msgs = self.world.drain_new()
         by_uid: dict[int, list] = {}
@@ -365,9 +371,71 @@ class Sim:
             return rng.uniform(10, 22)
         return rng.uniform(30, 60)
 
+    # ── запуск бота так, как это делает продукт ──
+    async def startup(self) -> None:
+        """Выполняет настоящий leisure.bot.main.run() с подменой токена, класса Bot и start_polling: бот создаётся с теми же
+        DefaultBotProperties, набирает команды меню (SetMyCommands) и собирает Dispatcher, который потом принимает все апдейты."""
+        from aiogram import Dispatcher
+
+        from leisure import settings
+        from leisure.bot import main as bot_main
+
+        from .actors import Driver
+        from .fakebot import BOT_TOKEN, make_bot
+
+        seen: dict = {}
+
+        async def fake_polling(dp_self, bot, **kw):
+            seen["dp"], seen["allowed_updates"] = dp_self, kw.get("allowed_updates")
+
+        saved = (bot_main.Bot, settings.bot_token, Dispatcher.start_polling)
+        root = logging.getLogger()
+        root_state = (list(root.handlers), root.level)
+        bot_main.Bot = lambda token, **kw: make_bot(self.world, kw.get("default"))
+        settings.bot_token = lambda: BOT_TOKEN
+        Dispatcher.start_polling = fake_polling
+        try:
+            await bot_main.run()
+        finally:
+            bot_main.Bot, settings.bot_token, Dispatcher.start_polling = saved
+            root.handlers[:] = root_state[0]
+            root.setLevel(root_state[1])
+        self.dp, self.bot = seen["dp"], self.world.bot
+        cmds = self.world.commands[-1] if self.world.commands else []
+        self.scenarios["startup"] = {"commands": [c["command"] for c in cmds], "allowed_updates": seen.get("allowed_updates"),
+                                     "parse_mode": str(getattr(self.bot.default, "parse_mode", None))}
+        self.driver = Driver(self.world, self.bot, lambda: self.dp, self.clock, self.f, self.events, cycle_of)
+        await self.fault_probe()
+
+    async def fault_probe(self) -> None:
+        """Сбои доставки: 5xx на втором из трёх сообщений и 429 на первом — что делает настоящий send_with_bot."""
+        from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
+        from aiogram.methods import SendMessage
+
+        from leisure.worker import send as send_mod
+
+        uid = 900_999_999
+        dummy = SendMessage(chat_id=uid, text="x")
+        out: dict = {}
+        n_logs = len(self.catcher.records) if self.catcher else 0
+        for name, plan in (("server_error", [None, TelegramServerError(method=dummy, message="Bad Gateway")]),
+                           ("retry_after", [TelegramRetryAfter(method=dummy, message="Too Many Requests", retry_after=0)])):
+            before = len(self.world.chats[uid])
+            self.world.fail_plan = list(plan)
+            sent = await send_mod.send_with_bot(self.bot, [(uid, f"m{i}", None) for i in (1, 2, 3)])
+            got = [m.text for m in self.world.chats[uid][before:]]
+            out[name] = {"returned": sent, "delivered": got, "lost": [f"m{i}" for i in (1, 2, 3) if f"m{i}" not in got]}
+        self.world.fail_plan = []
+        self.world.drain_new()
+        if self.catcher:
+            del self.catcher.records[n_logs:]          # ERROR из пробы вызван нами и в статистику логов не входит
+        self.scenarios["fault_probe"] = out
+
     # ── обработчики событий очереди ──
     async def run(self) -> None:
         from leisure.worker import schedules
+
+        await self.startup()
 
         self.job_fns = {"build": schedules.job_build_digests, "send": schedules.job_send_digests,
                         "plan": schedules.job_plan_today, "feedback": schedules.job_how_was_it}
@@ -512,7 +580,7 @@ class Sim:
                                 "answered": res["answered"]})
             if bucket == "after" and not res["handled"]:
                 self.f.add("stale_button_dead", f"после перезапуска бота (MemoryStorage пуст) кнопка «{btn['text']}» старого экрана "
-                           f"«{ps.onb.get('abandoned_at')}»: handled={res['handled']}, ответа на callback нет — у человека крутится часик",
+                           f"«{ps.onb.get('abandoned_at')}»: handled={res['handled']}, ответа на callback нет — у человека крутится индикатор загрузки",
                            ps.p.user_id, self.clock.now)
 
         for ps in cand[:2]:
@@ -566,7 +634,6 @@ def db_facts(sim: Sim) -> dict:
         # 2. день решения в БД против дня на карточке
         from collections import defaultdict
         dd = {"checked": 0, "mismatch": 0, "earlier": 0, "later": 0, "redecided": 0, "examples": []}
-        by_wd: dict = defaultdict(int)
         for ps in sim.states:
             for eid, d in ps.decisions.items():
                 row = ddec.get((ps.p.user_id, eid))
@@ -580,7 +647,7 @@ def db_facts(sim: Sim) -> dict:
                     ev = sim.events.get(eid, {})
                     story = dd.setdefault("story", None)
                     if story is None and ev_title_in_plan(sim, ps.p.user_id, eid, row.day):
-                        wd_names = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+                        wd_names = ["понедельник", "вторник", "среду", "четверг", "пятницу", "субботу", "воскресенье"]
                         cd = date.fromisoformat(d["card_day"])
                         dd["story"] = (f"u{ps.p.user_id}: карточка «{(sim.events.get(eid, {}).get('title') or '')[:46]}» обещала {wd_names[cd.weekday()]} {cd.strftime('%d.%m')}; "
                                        f"напоминание «План на сегодня» пришло на {wd_names[row.day.weekday()]} {row.day.strftime('%d.%m')}")
@@ -683,8 +750,9 @@ def db_facts(sim: Sim) -> dict:
         # 6. заблокировавшие бота: сколько попыток отправки, что с профилем
         blocked = []
         for uid in sorted(sim.world.blocked):
-            att = sum(1 for c in sim.world.calls if c.get("chat_id") == uid and c.get("method") == "SendMessage" and not c.get("ok"))
-            blocked.append({"u": uid, "failed_sends": att, "profile_active": bool(profs.get(uid) and profs[uid].active)})
+            calls = [c for c in sim.world.calls if c.get("chat_id") == uid and c.get("method") == "SendMessage" and not c.get("ok")]
+            blocked.append({"u": uid, "failed_sends": len(calls), "profile_active": bool(profs.get(uid) and profs[uid].active),
+                            "failed_digest_attempts": sum(1 for c in calls if (c.get("text") or "").startswith("Выходные"))})
         out["blocked"] = blocked
         out["profiles_active_after_block"] = sum(1 for b in blocked if b["profile_active"])
     return out
@@ -696,12 +764,22 @@ def ev_title_in_plan(sim: Sim, uid: int, event_id: str, day: date) -> bool:
     return any(pp["u"] == uid and pp["cycle"] == cyc and title in pp["titles"] for pp in sim.plan_pushes)
 
 
+def _variant(base: dict, **prm) -> dict:
+    return {**base, "params": {**base["params"], **prm}}
+
+
+def _digest_ids(events: list[dict], profile: dict, weekend: list[str]) -> tuple:
+    from leisure.core.recommend import build_digest
+    from leisure.core.scoring import score_events
+
+    sc = score_events(events, profile, [], aff=None)
+    return tuple(build_digest(events, profile, [], weekend, scores=sc).event_ids())
+
+
 def sensitivity(sim: Sim) -> dict:
     """Какие ответы онбординга реально меняют подборку: пересчёт дайджеста четверга недели 0 при смене одного параметра."""
     from leisure.api import services
     from leisure.core.catalog import AREA_OPTIONS, COMPANY_OPTIONS
-    from leisure.core.recommend import build_digest
-    from leisure.core.scoring import score_events
     from leisure.core.timeutil import weekend_iso
     from leisure.db.models import Profile
     from leisure.db.session import session_factory
@@ -718,35 +796,28 @@ def sensitivity(sim: Sim) -> dict:
                 continue
             events = services.upcoming_events(s, p.city, today)
             base = p.as_core()
-
-            def ids(prof) -> tuple:
-                sc = score_events(events, prof, [], aff=None)
-                return tuple(build_digest(events, prof, [], wk, scores=sc).event_ids())
-
-            ref = ids(base)
+            ref = _digest_ids(events, base, wk)
             total += 1
-
-            def variant(**prm):
-                v = {**base, "params": {**base["params"], **prm}}
-                return v
-
+            prm = base["params"]
             tests = {
-                "company": [variant(company=c) for c in COMPANY_OPTIONS if c != base["params"].get("company")],
-                "areas": [variant(areas=[a]) for a in AREA_OPTIONS if [a] != base["params"].get("areas")],
-                "kids": [variant(kids=not base["params"].get("kids"))],
+                "company": [_variant(base, company=c) for c in COMPANY_OPTIONS if c != prm.get("company")],
+                "areas": [_variant(base, areas=[a]) for a in AREA_OPTIONS if [a] != prm.get("areas")],
+                "kids": [_variant(base, kids=not prm.get("kids"))],
                 "notes": [{**base, "notes": "ищу тишину, природу и камерные места, не люблю шум"}],
-                "budget (контроль)": [variant(budget=b) for b in (0, 1000, 5000) if b != base["params"].get("budget")],
-                "times (контроль)": [variant(times=t) for t in (["утро"], ["ночь"])],
-                "aesthetics (контроль)": [variant(aesthetics=not base["params"].get("aesthetics"))],
+                "budget (контроль)": [_variant(base, budget=b) for b in (0, 1000, 5000) if b != prm.get("budget")],
+                "times (контроль)": [_variant(base, times=t) for t in (["утро"], ["ночь"])],
+                "aesthetics (контроль)": [_variant(base, aesthetics=not prm.get("aesthetics"))],
             }
             for name, vs in tests.items():
-                if any(ids(v) != ref for v in vs):
+                if any(_digest_ids(events, v, wk) != ref for v in vs):
                     changed[name] += 1
     return {"personas": total, "changed": dict(changed)}
 
 
 # ───────────────────────── сборка результата ─────────────────────────
-def build_results(sim: Sim, args: dict, db_url: str, facts: dict, sens: dict, logs: list[dict], duration: float, seed_created: int) -> dict:
+def build_results(sim: Sim, args: dict, db_url: str, facts: dict, sens: dict, logs: list[dict], duration: float, seed_created: int,
+                  nothing: set | None = None) -> dict:
+    nothing = nothing or set()
     world = sim.world
     viol: dict = {}
     for v in world.violations:
@@ -803,7 +874,7 @@ def build_results(sim: Sim, args: dict, db_url: str, facts: dict, sens: dict, lo
         "onboarding_screens": screens, "personas": pers, "digests": digests, "decisions": sim.driver.taps, "commands": sim.driver.commands, "jobs": jobs,
         "plan_pushes": sim.plan_pushes, "feedback_sent": sim.feedback_sent, "empty_notices": sim.empty_notices,
         "findings": sim.f.to_dict(), "violations": viol, "db": facts, "sensitivity": sens, "scenarios": sim.scenarios,
-        "log_errors": logs, "handler_errors": sim.driver.handler_errors,
+        "log_errors": logs, "handler_errors": sim.driver.handler_errors, "empty_sends": [[u, w] for u, w in sorted(nothing)],
     }
 
 
@@ -813,7 +884,7 @@ def run_simulation(users: int = 50, weeks: int = 5, seed: int = 20261024, db_url
     url = resolve_db_url(db_url)
     guard_db_name(url)
     from . import personas as persmod
-    from .fakebot import FakeTelegram, make_bot
+    from .fakebot import FakeTelegram
 
     if not quiet:
         print(f"[sim] база {url.rsplit('/', 1)[-1]}: пересоздаю, миграции, seed…", flush=True)
@@ -831,18 +902,18 @@ def run_simulation(users: int = 50, weeks: int = 5, seed: int = 20261024, db_url
                 events = {str(e.id): e.as_core() for e in s.scalars(select(Event))}
             clock = Clock()
             world = FakeTelegram(now_fn=lambda: clock.now)
-            bot = make_bot(world)
             personas = persmod.generate(users, seed)
             catcher = LogCatcher()
             lg = logging.getLogger("leisure")
             old_prop, old_level = lg.propagate, lg.level
             lg.addHandler(catcher)
             lg.propagate = False
-            lg.setLevel(logging.WARNING)
+            lg.setLevel(logging.INFO)
             logging.getLogger("aiogram").setLevel(logging.WARNING)
             try:
                 with patched_product(world, clock):
-                    sim = Sim(personas, weeks, seed, world, bot, clock, events)
+                    sim = Sim(personas, weeks, seed, world, clock, events)
+                    sim.catcher = catcher
                     if not quiet:
                         print(f"[sim] {len(personas)} персон, {weeks + 1} уикендов, старт {START.date()}", flush=True)
                     asyncio.run(sim.run())
@@ -852,7 +923,7 @@ def run_simulation(users: int = 50, weeks: int = 5, seed: int = 20261024, db_url
                 lg.removeHandler(catcher)
                 lg.propagate, lg.level = old_prop, old_level
             args = {"users": users, "weeks": weeks, "seed": seed}
-            results = build_results(sim, args, url, facts, sens, catcher.records, time.perf_counter() - t_start, created)
+            results = build_results(sim, args, url, facts, sens, catcher.records, time.perf_counter() - t_start, created, catcher.nothing)
             if log_path is not None:
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 with log_path.open("w", encoding="utf-8") as fh:

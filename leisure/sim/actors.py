@@ -16,11 +16,11 @@ from typing import Any, Callable
 from aiogram import Bot
 from aiogram.dispatcher.event.bases import UNHANDLED
 
-from leisure.core.catalog import ALL_CATS, SLOTS, VALUES
+from leisure.core.catalog import ALL_CATS, VALUES
 from leisure.core.timeutil import MONTHS
 
 from .fakebot import FakeTelegram, Stored
-from .personas import STEPS, Persona, sigmoid
+from .personas import Persona, sigmoid
 
 BUDGET_LABEL = {0: "Без ограничения", 1000: "до 1 000 ₽", 2500: "до 2 500 ₽", 5000: "до 5 000 ₽"}
 AREA_LABEL = {"центр": "Центр", "любой": "Любой район", "свой округ": "Свой округ"}
@@ -224,7 +224,6 @@ class Driver:
         ps.onb.setdefault("redo", 0)
         steps_taps: dict[str, int] = ps.onb.setdefault("steps", {})
         mark = ps.taps
-        cur = {"step": "consent"}
 
         def close(step: str) -> None:
             nonlocal mark
@@ -260,7 +259,6 @@ class Driver:
         close("consent")
 
         # ── 1. ценности ──
-        cur["step"] = "values"
         st = self.screen(ps)
         self._check_back(ps, "values")
         await noise("values")
@@ -291,7 +289,6 @@ class Driver:
         close("values")
 
         # ── 2. остальные ценности: важно / не очень ──
-        cur["step"] = "weights"
         k = 0
         while True:
             st = self.screen(ps)
@@ -319,7 +316,6 @@ class Driver:
         close("weights")
 
         # ── 3. интересы ──
-        cur["step"] = "interests"
         st = self.screen(ps)
         if st is None or "Интересы" not in st.text:
             self._stuck(ps, "interests", "экран интересов")
@@ -400,12 +396,10 @@ class Driver:
                     return "restart"
             return None
 
-        cur["step"] = "company"
         wrong_company = next(c for c in ["один", "с партнёром", "с друзьями", "с детьми", "любая"] if c != p.company)
         r = await single("company", [], p.company, wrong_company)
         if r:
             return await self._finish_flow(ps, r)
-        cur["step"] = "times"
         if p.abandon_step == "times" and not ps.onb.get("abandon_used"):
             ps.onb["abandon_used"] = True
             close("times")
@@ -426,24 +420,20 @@ class Driver:
             return "stuck"
         await self.tap(ps, st, btn)
         close("times")
-        cur["step"] = "budget"
         wrong_budget = BUDGET_LABEL[0] if p.budget else BUDGET_LABEL[1000]
         r = await single("budget", [], BUDGET_LABEL[p.budget], wrong_budget)
         if r:
             return await self._finish_flow(ps, r)
-        cur["step"] = "aesthetics"
         r = await single("aesthetics", [], "Да, важна" if p.aesthetics else "Не принципиально",
                          "Не принципиально" if p.aesthetics else "Да, важна")
         if r:
             return await self._finish_flow(ps, r)
-        cur["step"] = "areas"
         wrong_area = next(a for a in ("центр", "любой", "свой округ") if a != p.area)
         r = await single("areas", [], AREA_LABEL[p.area], AREA_LABEL[wrong_area])
         if r:
             return await self._finish_flow(ps, r)
 
         # ── 5. заметка ──
-        cur["step"] = "notes"
         if p.abandon_step == "notes" and not ps.onb.get("abandon_used"):
             ps.onb["abandon_used"] = True
             close("notes")

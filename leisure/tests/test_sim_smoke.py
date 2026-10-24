@@ -88,7 +88,7 @@ def test_personas_deterministic_and_diverse():
 
 def test_fake_telegram_enforces_bot_api_rules():
     from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from aiogram.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 
     world = fakebot.FakeTelegram()
     bot = fakebot.make_bot(world)
@@ -117,6 +117,8 @@ def test_fake_telegram_enforces_bot_api_rules():
         assert world.callbacks[cb_id]["answered"] and world.callbacks[cb_id]["toast"] == "ок"
         with pytest.raises(TelegramBadRequest):         # повторный ответ на тот же callback Telegram отвергает
             await upd.callback_query.answer("ещё")
+        assert await bot.set_my_commands([BotCommand(command="digest", description="Подборка")]) is True
+        assert world.commands[-1] == [{"command": "digest", "description": "Подборка"}]
 
     asyncio.run(scenario())
     assert {v["code"] for v in world.violations} >= {"html_parse", "callback_data_len"}

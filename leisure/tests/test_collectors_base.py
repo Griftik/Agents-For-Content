@@ -129,9 +129,11 @@ def test_real_registry_roundtrip_with_kudago_robots_refusal(monkeypatch):
     """Настоящий KudaGo-коллектор, сеть подменена: robots.txt запрещает API → ошибка в сводке, а не исключение."""
     import httpx
 
+    from leisure import settings
     from leisure.collectors import kudago
 
     transport = httpx.MockTransport(lambda r: httpx.Response(200, text="User-agent: *\nDisallow: /public-api\n"))
+    monkeypatch.setattr(settings, "COLLECTORS_RESPECT_ROBOTS", True)
     real = httpx.Client
     monkeypatch.setattr(kudago.httpx, "Client", lambda *a, **kw: real(transport=transport))
     result = collect_all("Москва", FROM, TO, names=["kudago"])
