@@ -159,33 +159,32 @@ async def db_call(fn, *args):
 # ───────────────────────── подмена часов и отправки ─────────────────────────
 @contextlib.contextmanager
 def patched_product(world, clock: Clock):
-    """Подменяет в процессе: «сегодня» (часы симуляции), отправку воркера (в FakeTelegram), паузу между сообщениями
+    """Подменяет в процессе: «сейчас» (services.utcnow → часы симуляции), отправку воркера (в FakeTelegram), паузу между сообщениями
     и публичный URL. Код продукта не меняется — только атрибуты модулей на время прогона."""
     from leisure import settings
     from leisure.api import services
     from leisure.bot import onboarding
     from leisure.worker import send as send_mod
 
-    saved = (services.local_today, send_mod.send_messages, send_mod.SEND_INTERVAL, settings.WEB_BASE_URL, onboarding.POLICY_URL)
+    saved = (services.utcnow, send_mod.send_messages, send_mod.SEND_INTERVAL, send_mod.RETRY_DELAYS, settings.WEB_BASE_URL,
+             onboarding.POLICY_URL)
     WEB_ORIGINAL.setdefault("url", settings.WEB_BASE_URL)
-
-    def local_today(p=None, now=None):
-        zone = ZoneInfo((p.tz if p else None) or settings.DEFAULT_TZ)
-        return (now or clock.now).astimezone(zone).date()
 
     async def fake_send_messages(messages):
         return await send_mod.send_with_bot(world.bot, messages)
 
-    services.local_today = local_today
+    services.utcnow = lambda: clock.now          # единая точка «сейчас» в живых путях бота и воркера (local_today берёт её же)
     send_mod.send_messages = fake_send_messages
     send_mod.SEND_INTERVAL = 0
+    send_mod.RETRY_DELAYS = (0, 0, 0)            # паузы повторов 5xx в симуляции не ждём
     if "localhost" in settings.WEB_BASE_URL or "127.0.0.1" in settings.WEB_BASE_URL:
         settings.WEB_BASE_URL = DEFAULT_WEB
     onboarding.POLICY_URL = f"{settings.WEB_BASE_URL.rstrip('/')}/policy"
     try:
         yield
     finally:
-        (services.local_today, send_mod.send_messages, send_mod.SEND_INTERVAL, settings.WEB_BASE_URL, onboarding.POLICY_URL) = saved
+        (services.utcnow, send_mod.send_messages, send_mod.SEND_INTERVAL, send_mod.RETRY_DELAYS, settings.WEB_BASE_URL,
+         onboarding.POLICY_URL) = saved
 
 
 class LogCatcher(logging.Handler):
@@ -215,6 +214,7 @@ class Sim:
         self.dp = None
         self.driver = None
         self.catcher = None
+        self.lazy_ticks: set = set()
         self.f = Findings()
         self.states = [PState(p=p, rng=random.Random(f"{seed}:{p.idx}:behavior"), E=p.engagement) for p in personas]
         self.by_uid = {ps.p.user_id: ps for ps in self.states}
@@ -246,12 +246,12 @@ class Sim:
                 self.push(at_local(thu, 19, tz), PRIO_JOB, "job", "send")
             self.push(at_local(thu, 20), PRIO_JOB, "job", "send")     # «часовые» повторные запуски: ловят дубли
             self.push(at_local(fri, 9), PRIO_JOB, "job", "send")
-            for tz in tzs:
-                self.push(at_local(sat, 9, tz), PRIO_JOB, "job", "plan")
-            self.push(at_local(sat, 15), PRIO_JOB, "job", "plan")
-            for tz in tzs:
-                self.push(at_local(mon, 12, tz), PRIO_JOB, "job", "feedback")
-            self.push(at_local(mon, 18), PRIO_JOB, "job", "feedback")
+            # «План на сегодня» (с 09:00) и «Как прошло?» (с 12:00 на следующий день) теперь идут ежедневно, по флагам на решении
+            for off in range(-3, 4):                                    # вт … пн недели прогона
+                day = F + timedelta(days=off)
+                for tz in tzs:
+                    self.push(at_local(day, 9, tz), PRIO_JOB, "job", "plan")
+                    self.push(at_local(day, 12, tz), PRIO_JOB, "job", "feedback")
             for kind, d, h in (("cmd_fri", fri, 12), ("cmd_sat", sat, 11), ("cmd_mon", mon, 19)):
                 for ps in self.states:
                     self.push(at_local(d, h), PRIO_USER, kind, (ps, w))
@@ -264,6 +264,17 @@ class Sim:
         if self.weeks >= 3:
             self.push(at_local(FRI0 + timedelta(days=21 - 2), 12), PRIO_USER, "fsm_restart")
         self.push(at_local(FRI0 + timedelta(days=7), 13), PRIO_USER, "not_ready")
+
+    def _local_date(self, ps, uid: int) -> str:
+        tz = ps.p.tz if ps is not None else MSK
+        return self.clock.now.astimezone(ZoneInfo(tz)).date().isoformat()
+
+    def lazy_plan(self, ps) -> None:
+        """«Иду» на сегодня после 09:00: в проде часовой запуск плана подберёт его в ближайший :00 — эмулируем этот запуск."""
+        nxt = self.clock.now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        if nxt not in self.lazy_ticks:
+            self.lazy_ticks.add(nxt)
+            self.push(nxt, PRIO_JOB, "job", "plan")
 
     # ── разбор того, что пришло пользователям ──
     def collect(self, origin: str) -> None:
@@ -317,6 +328,7 @@ class Sim:
                         titles.append(ms[j].text.split("\n")[0])
                         j += 1
                     self.plan_pushes.append({"t": self.clock.now.isoformat(), "u": uid, "cycle": cycle_of(self.clock.now), "titles": titles,
+                                             "date": self._local_date(ps, uid),
                                              "messy_lines": sum(1 for ln in m.text.splitlines() if ln.startswith("• ") and ";" in ln),
                                              "lines": sum(1 for ln in m.text.splitlines() if ln.startswith("• "))})
                     i = j
@@ -329,6 +341,7 @@ class Sim:
                         fb.append(ms[j])
                         j += 1
                     self.feedback_sent.append({"t": self.clock.now.isoformat(), "u": uid, "n": len(fb), "cycle": cycle_of(self.clock.now),
+                                               "date": self._local_date(ps, uid),
                                                "titles": [x.text.split("\n")[1] if "\n" in x.text else "" for x in fb]})
                     if ps is not None and ps.status == "active":
                         h = ps.rng.uniform(0.5, 30)
@@ -405,30 +418,52 @@ class Sim:
         self.scenarios["startup"] = {"commands": [c["command"] for c in cmds], "allowed_updates": seen.get("allowed_updates"),
                                      "parse_mode": str(getattr(self.bot.default, "parse_mode", None))}
         self.driver = Driver(self.world, self.bot, lambda: self.dp, self.clock, self.f, self.events, cycle_of)
+        self.driver.on_same_day_go = self.lazy_plan
         await self.fault_probe()
 
     async def fault_probe(self) -> None:
-        """Сбои доставки: 5xx на втором из трёх сообщений и 429 на первом — что делает настоящий send_with_bot."""
-        from aiogram.exceptions import TelegramRetryAfter, TelegramServerError
+        """Пробы доставки на трёх сообщениях: разовый 502, стойкий 502 (больше числа повторов), 429, блокировка бота,
+        а также консент-экран при WEB_BASE_URL=localhost. Работает настоящий send_with_bot; результат — SendResult."""
+        from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter, TelegramServerError
         from aiogram.methods import SendMessage
 
+        from leisure import settings
+        from leisure.bot import onboarding
         from leisure.worker import send as send_mod
 
         uid = 900_999_999
         dummy = SendMessage(chat_id=uid, text="x")
+
+        def e502():
+            return TelegramServerError(method=dummy, message="Bad Gateway")
+
         out: dict = {}
         n_logs = len(self.catcher.records) if self.catcher else 0
-        for name, plan in (("server_error", [None, TelegramServerError(method=dummy, message="Bad Gateway")]),
-                           ("retry_after", [TelegramRetryAfter(method=dummy, message="Too Many Requests", retry_after=0)])):
+        probes = (("server_error_once", [None, e502()]),
+                  ("server_error_persistent", [None] + [e502() for _ in range(len(send_mod.RETRY_DELAYS) + 1)]),
+                  ("retry_after", [TelegramRetryAfter(method=dummy, message="Too Many Requests", retry_after=0)]),
+                  ("blocked", [None, TelegramForbiddenError(method=dummy, message="Forbidden: bot was blocked by the user")]))
+        for name, plan in probes:
             before = len(self.world.chats[uid])
             self.world.fail_plan = list(plan)
-            sent = await send_mod.send_with_bot(self.bot, [(uid, f"m{i}", None) for i in (1, 2, 3)])
+            res = await send_mod.send_with_bot(self.bot, [(uid, f"m{i}", None) for i in (1, 2, 3)])
             got = [m.text for m in self.world.chats[uid][before:]]
-            out[name] = {"returned": sent, "delivered": got, "lost": [f"m{i}" for i in (1, 2, 3) if f"m{i}" not in got]}
+            out[name] = {"sent": res.sent, "undelivered": list(res.undelivered), "blocked": list(res.blocked), "delivered": got,
+                         "lost": [f"m{i}" for i in (1, 2, 3) if f"m{i}" not in got]}
         self.world.fail_plan = []
+        # согласие при WEB_BASE_URL=localhost: Telegram отклоняет такие URL-кнопки, бот должен дать ссылку текстом
+        old = (settings.WEB_BASE_URL, onboarding.POLICY_URL)
+        settings.WEB_BASE_URL = "http://localhost:8000"
+        onboarding.POLICY_URL = "http://localhost:8000/policy"
+        try:
+            text, rows = onboarding.hello_message()
+            res = await send_mod.send_with_bot(self.bot, [(uid, text, rows)])
+            out["localhost"] = {"sent": res.sent, "url_buttons": sum(1 for r in rows for b in r if "url" in b), "link_in_text": "localhost" in text}
+        finally:
+            settings.WEB_BASE_URL, onboarding.POLICY_URL = old
         self.world.drain_new()
         if self.catcher:
-            del self.catcher.records[n_logs:]          # ERROR из пробы вызван нами и в статистику логов не входит
+            del self.catcher.records[n_logs:]          # WARNING/ERROR из проб вызваны нами и в статистику логов не входят
         self.scenarios["fault_probe"] = out
 
     # ── обработчики событий очереди ──
@@ -575,10 +610,12 @@ class Sim:
             btn = next((b for b in (st.buttons() if st else []) if "callback_data" in b and b["callback_data"] != "ob:noop"), None)
             if btn is None:
                 return
+            n0 = len(self.world.chats[ps.p.user_id])
             res = await self.driver.tap(ps, st, btn, "(старый экран онбординга)")
+            replies = [m.text for m in self.world.chats[ps.p.user_id][n0:] if not m.from_user]
             rec[bucket].append({"u": ps.p.user_id, "screen": ps.onb.get("abandoned_at"), "button": btn["text"], "handled": res["handled"],
-                                "answered": res["answered"]})
-            if bucket == "after" and not res["handled"]:
+                                "answered": res["answered"], "reply": replies[0] if replies else None})
+            if bucket == "after" and (not res["handled"] or not res["answered"] or not replies):
                 self.f.add("stale_button_dead", f"после перезапуска бота (MemoryStorage пуст) кнопка «{btn['text']}» старого экрана "
                            f"«{ps.onb.get('abandoned_at')}»: handled={res['handled']}, ответа на callback нет — у человека крутится индикатор загрузки",
                            ps.p.user_id, self.clock.now)
@@ -667,6 +704,7 @@ def db_facts(sim: Sim) -> dict:
             dg["rows_sent"] += 1
             dg["opened_true"] += int(bool(row.opened))
             dg["decisions_count_nonzero"] += int(bool(row.decisions_count))
+            dg["decisions_count_sum"] = dg.get("decisions_count_sum", 0) + int(row.decisions_count or 0)
             week = (row.weekend_start - FRI0).days // 7
             got = delivered.get((row.user_id, week))
             if not got:
@@ -703,50 +741,60 @@ def db_facts(sim: Sim) -> dict:
                 mism["budget"] += 1
             if bool(prm.get("aesthetics")) != p.aesthetics:
                 mism["aesthetics"] += 1
-            if (prm.get("areas") or [None])[0] != p.area:
-                mism["areas"] += 1
-            want_note = "/help" if p.help_at_notes else p.note
+            want_note = p.note
             if (pr.notes or "") != want_note:
                 mism["notes"] += 1
         out["profile_mismatch"] = dict(mism)
-        # 5. «Иду» → попал ли в напоминание «План на сегодня»; по дням недели
+        # 5. «Иду» → пришло ли напоминание в день события и вопрос «Как прошло?» на следующий день; по дням недели
         titles = {e["id"]: e["title"] for e in sim.events.values()}
         reminded: dict = defaultdict(set)
         for pp in sim.plan_pushes:
-            reminded[(pp["u"], pp["cycle"])].update(pp["titles"])
+            reminded[(pp["u"], pp["date"])].update(pp["titles"])
         asked: dict = defaultdict(set)
         for fb in sim.feedback_sent:
-            asked[(fb["u"], fb["cycle"])].update(fb["titles"])
-        plan_take = {(t["u"], t["event_id"]): t for t in sim.driver.taps if t.get("kind") == "decision" and t["status"] == "иду"}
+            asked[(fb["u"], fb["date"])].update(fb["titles"])
+        last_go: dict = {}
+        for t in sorted(sim.driver.taps, key=lambda t: t["t"]):
+            if t.get("kind") == "decision":
+                last_go[(t["u"], t["event_id"])] = t
+        last_day = FRI0 + timedelta(days=7 * sim.weeks + 3)       # последний день прогона (понедельник после последнего уикенда)
         rem = {"Пт": [0, 0, 0], "Сб": [0, 0, 0], "Вс": [0, 0, 0], "Пн–Чт": [0, 0, 0]}
-        late = 0
-        sat_plan_time: dict = defaultdict(list)
-        for j in sim.jobs:
-            if j["job"] == "plan":
-                sat_plan_time[j["cycle"]].append(j["t"])
+        same_day = [0, 0]
+        flags = [0, 0, 0]
+        stale_taps = 0
+        wrong_day = 0
         for d in decs:
-            if d.status != "иду" or d.day is None or d.day > FRI0 + timedelta(days=7 * sim.weeks + 2):
+            if d.status != "иду" or d.day is None or d.day > last_day - timedelta(days=1) or d.day < START.date():
+                continue
+            tap = last_go.get((d.user_id, str(d.event_id)))
+            ps = sim.by_uid.get(d.user_id)
+            if tap is None or ps is None:
+                continue
+            tz = ZoneInfo(ps.p.tz)
+            tap_local = datetime.fromisoformat(tap["t"]).astimezone(tz)
+            if tap["status"] != "иду" or tap_local.date() > d.day or (tap_local.date() == d.day and tap_local.hour >= 23):
+                stale_taps += tap_local.date() > d.day                   # нажали, когда день события уже прошёл — напоминать поздно
                 continue
             wd = d.day.weekday()
             key = {4: "Пт", 5: "Сб", 6: "Вс"}.get(wd, "Пн–Чт")
             ttl = titles.get(str(d.event_id))
-            cyc = (d.day - FRI0).days // 7
-            if key == "Пн–Чт":      # верхняя оценка: любое напоминание или вопрос с этим названием в любую неделю
-                got = any(ttl in v for (u, _), v in reminded.items() if u == d.user_id)
-                ask = any(ttl in v for (u, _), v in asked.items() if u == d.user_id)
-            else:
-                got = ttl in reminded.get((d.user_id, cyc), set())
-                ask = ttl in asked.get((d.user_id, cyc), set())
+            got = ttl in reminded.get((d.user_id, d.day.isoformat()), set())
+            ask = ttl in asked.get((d.user_id, (d.day + timedelta(days=1)).isoformat()), set())
             rem[key][0] += 1
             rem[key][1] += int(got)
             rem[key][2] += int(ask)
-            if key == "Сб" and not got:
-                tt = plan_take.get((d.user_id, str(d.event_id)))
-                cyc = (d.day - FRI0).days // 7
-                if tt and sat_plan_time.get(cyc) and tt["t"] > min(sat_plan_time[cyc]):
-                    late += 1
+            flags[0] += int(d.reminded_at is not None)
+            flags[1] += int(d.feedback_asked_at is not None or d.rating is not None)
+            flags[2] += 1
+            wrong_day += int(not got and any(ttl in v for (u, _), v in reminded.items() if u == d.user_id))
+            if tap_local.date() == d.day and tap_local.hour >= 9:
+                same_day[0] += 1
+                same_day[1] += int(got)
         out["plan_reminders"] = {k: {"going": v[0], "reminded": v[1], "asked_rating": v[2]} for k, v in rem.items()}
-        out["plan_reminders"]["saturday_missed_decided_after_plan_job"] = late
+        out["plan_reminders"]["same_day_after_9"] = {"going": same_day[0], "reminded": same_day[1]}
+        out["plan_reminders"]["flags"] = {"reminded_at": flags[0], "feedback_asked_at": flags[1], "total": flags[2]}
+        out["plan_reminders"]["stale_taps"] = stale_taps
+        out["plan_reminders"]["reminded_other_day"] = wrong_day
         # 6. заблокировавшие бота: сколько попыток отправки, что с профилем
         blocked = []
         for uid in sorted(sim.world.blocked):
@@ -760,8 +808,7 @@ def db_facts(sim: Sim) -> dict:
 
 def ev_title_in_plan(sim: Sim, uid: int, event_id: str, day: date) -> bool:
     title = (sim.events.get(event_id) or {}).get("title")
-    cyc = (day - FRI0).days // 7
-    return any(pp["u"] == uid and pp["cycle"] == cyc and title in pp["titles"] for pp in sim.plan_pushes)
+    return any(pp["u"] == uid and pp["date"] == day.isoformat() and title in pp["titles"] for pp in sim.plan_pushes)
 
 
 def _variant(base: dict, **prm) -> dict:
@@ -779,7 +826,7 @@ def _digest_ids(events: list[dict], profile: dict, weekend: list[str]) -> tuple:
 def sensitivity(sim: Sim) -> dict:
     """Какие ответы онбординга реально меняют подборку: пересчёт дайджеста четверга недели 0 при смене одного параметра."""
     from leisure.api import services
-    from leisure.core.catalog import AREA_OPTIONS, COMPANY_OPTIONS
+    from leisure.core.catalog import COMPANY_OPTIONS
     from leisure.core.timeutil import weekend_iso
     from leisure.db.models import Profile
     from leisure.db.session import session_factory
@@ -801,7 +848,6 @@ def sensitivity(sim: Sim) -> dict:
             prm = base["params"]
             tests = {
                 "company": [_variant(base, company=c) for c in COMPANY_OPTIONS if c != prm.get("company")],
-                "areas": [_variant(base, areas=[a]) for a in AREA_OPTIONS if [a] != prm.get("areas")],
                 "kids": [_variant(base, kids=not prm.get("kids"))],
                 "notes": [{**base, "notes": "ищу тишину, природу и камерные места, не люблю шум"}],
                 "budget (контроль)": [_variant(base, budget=b) for b in (0, 1000, 5000) if b != prm.get("budget")],

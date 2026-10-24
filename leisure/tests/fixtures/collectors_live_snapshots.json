@@ -1,0 +1,112 @@
+{
+ "afisha_party.html": {
+  "url": "https://www.afisha.ru/msk/party/",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Оставлены без изменений только блоки <script type=\"application/ld+json\">, остальной HTML вырезан.",
+  "bytes_unpacked": 34988
+ },
+ "afisha_events.html": {
+  "url": "https://www.afisha.ru/msk/events/",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Оставлены без изменений только блоки <script type=\"application/ld+json\">, остальной HTML вырезан.",
+  "bytes_unpacked": 47766
+ },
+ "afisha_excursions.html": {
+  "url": "https://www.afisha.ru/msk/excursions/",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Оставлены без изменений только блоки <script type=\"application/ld+json\">, остальной HTML вырезан.",
+  "bytes_unpacked": 21742
+ },
+ "club16tons_home.html.gz": {
+  "url": "https://www.16tons.ru/",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Оставлены без изменений только блоки <script type=\"application/ld+json\"> (118 MusicEvent), остальной HTML вырезан.",
+  "bytes_unpacked": 162746
+ },
+ "mosbilet_koncerty.html.gz": {
+  "url": "https://bilet.mos.ru/koncerty/",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Оставлен без изменений только блок <script id=\"__NEXT_DATA__\">, остальной HTML вырезан.",
+  "bytes_unpacked": 164398
+ },
+ "mosbilet_sport.html.gz": {
+  "url": "https://bilet.mos.ru/sport/",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Оставлен без изменений только блок <script id=\"__NEXT_DATA__\">, остальной HTML вырезан.",
+  "bytes_unpacked": 78422
+ },
+ "mosbilet_rechnye-progulki.html.gz": {
+  "url": "https://bilet.mos.ru/rechnye-progulki/",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Оставлен без изменений только блок <script id=\"__NEXT_DATA__\">, остальной HTML вырезан.",
+  "bytes_unpacked": 82419
+ },
+ "mosbilet_home.html.gz": {
+  "url": "https://bilet.mos.ru/",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Оставлен без изменений только блок <script id=\"__NEXT_DATA__\">, остальной HTML вырезан.",
+  "bytes_unpacked": 107406
+ },
+ "tg_quda_today.html.gz": {
+  "url": "https://t.me/s/quda_today",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Страница целиком, без правок.",
+  "bytes_unpacked": 125740
+ },
+ "tg_quda_today_before.html.gz": {
+  "url": "https://t.me/s/quda_today?before=10296",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Страница целиком, без правок.",
+  "bytes_unpacked": 124742
+ },
+ "tg_kozlovclub.html.gz": {
+  "url": "https://t.me/s/kozlovclub",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "Страница целиком, без правок.",
+  "bytes_unpacked": 101563
+ },
+ "robots_afisha.txt": {
+  "url": "https://www.afisha.ru/robots.txt",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "robots.txt целиком, без правок."
+ },
+ "robots_mosbilet.txt": {
+  "url": "https://bilet.mos.ru/robots.txt",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "robots.txt целиком, без правок."
+ },
+ "robots_club16tons.txt": {
+  "url": "https://www.16tons.ru/robots.txt",
+  "fetched": "2026-10-24",
+  "http": 200,
+  "live": true,
+  "note": "robots.txt целиком, без правок."
+ },
+ "_note": "Живые снимки ответов источников, снятые 2026-10-24 из окружения разработки для тестов коллекторов afisha, mosbilet, club16tons, telegram. Сети в тестах нет. Файлы .gz — тот же текст, сжатый gzip."
+}

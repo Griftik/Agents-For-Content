@@ -244,3 +244,5 @@ class CatalogOut(BaseModel):
     areas: list[str]
     times: list[str]
     default_profile: dict
+    value_clusters: dict[str, list[str]] = {}
+    value_short: dict[str, str] = {}

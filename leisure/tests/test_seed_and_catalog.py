@@ -1,18 +1,27 @@
 import pytest
 from pydantic import ValidationError
 
-from leisure.core.catalog import (ALL_CATS, CATEGORY_TAGS, CATS, KNOWN_TAGS, REASONS, VALUE_MAP, VALUES, default_profile,
-                                  interests_from_values, values_average)
+from leisure.core.catalog import (ALL_CATS, CATEGORY_TAGS, CATS, KNOWN_TAGS, REASONS, VALUE_CLUSTERS, VALUE_MAP, VALUE_SHORT,
+                                  VALUES, default_profile, interests_from_values, values_average)
 from leisure.core.timeutil import weekend_days
 from leisure.normalize.schema import EventIn
 
 
 def test_catalog_sizes():
-    assert len(VALUES) == 13 and len(CATS) == 15 and len(ALL_CATS) == 19 and len(REASONS) == 6
-    assert len(VALUE_MAP) == 22 and all(v in VALUES for m in VALUE_MAP.values() for v, _ in m)
+    assert len(VALUES) == 19 and len(CATS) == 15 and len(ALL_CATS) == 19 and len(REASONS) == 6
+    assert len(VALUE_MAP) == 22 + 17 and all(v in VALUES for m in VALUE_MAP.values() for v, _ in m)
     assert set(CATEGORY_TAGS) == set(ALL_CATS) and all(t in KNOWN_TAGS for ts in CATEGORY_TAGS.values() for t in ts)
     p = default_profile()
     assert set(p["values"]) == set(VALUES) and set(p["interests"]) == set(CATS)
+
+
+def test_value_clusters_cover_all_values_once():
+    flat = [v for vs in VALUE_CLUSTERS.values() for v in vs]
+    assert sorted(flat) == sorted(VALUES) and list(VALUE_CLUSTERS) == ["Познание", "Люди", "Тело и чувства", "Смысл"]
+    assert VALUES[13:] == ["Удовольствие", "Веселье", "Азарт", "Покой", "Близость", "Смысл"]
+    assert VALUE_SHORT == {"Красота/эстетика": "Эстетика", "Единство/Дружба": "Дружба", "Инновации/новизна": "Новизна",
+                           "Сохранение традиций": "Традиции"}
+    assert all(w == 2 for v, w in default_profile()["values"].items() if v in VALUES[13:])
 
 
 def test_interests_from_values():
@@ -40,7 +49,7 @@ def test_schema_rejects_unknown_tag_and_bad_slug():
     base = {"slug": "ok-event", "title": "Событие для теста", "category": "Джаз", "dates": ["2026-10-24"]}
     EventIn.model_validate(base)
     with pytest.raises(ValidationError):
-        EventIn.model_validate({**base, "tags": ["романтика"]})
+        EventIn.model_validate({**base, "tags": ["неведомый-тег"]})
     with pytest.raises(ValidationError):
         EventIn.model_validate({**base, "slug": "Плохой slug"})
     with pytest.raises(ValidationError):

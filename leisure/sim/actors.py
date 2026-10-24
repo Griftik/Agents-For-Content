@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import random
 import re
+from zoneinfo import ZoneInfo
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -23,7 +24,6 @@ from .fakebot import FakeTelegram, Stored
 from .personas import Persona, sigmoid
 
 BUDGET_LABEL = {0: "Без ограничения", 1000: "до 1 000 ₽", 2500: "до 2 500 ₽", 5000: "до 5 000 ₽"}
-AREA_LABEL = {"центр": "Центр", "любой": "Любой район", "свой округ": "Свой округ"}
 LEVEL_OF_LABEL = {"—": 0, "иногда": 1, "интересно": 2, "в первую очередь": 3}
 BACK_RE = re.compile(r"назад|отмен|вернуть|← |изменить|исправ", re.I)
 DAY_RE = re.compile(r"^(?:(Пятница|Суббота|Воскресенье), )?(\d{1,2}) (" + "|".join(MONTHS) + r")\b")
@@ -123,7 +123,7 @@ def parse_card(st: Stored) -> CardRec | None:
             in_weekend = m.group(1) is not None
             day = f"2026-{MONTHS.index(m.group(3)) + 1:02d}-{int(m.group(2)):02d}"
             time_text = lines[1][m.end():].lstrip(", ")
-    return CardRec(st.mid, btn["callback_data"].split(":", 2)[2], lines[0], day, in_weekend, time_text,
+    return CardRec(st.mid, btn["callback_data"].split(":")[2], lines[0], day, in_weekend, time_text,
                    [b["text"] for b in st.buttons()])
 
 
@@ -140,6 +140,7 @@ class Driver:
         self.commands: list[dict] = []
         self.updates = 0
         self.handler_errors = 0
+        self.on_same_day_go: Callable[[PState], None] | None = None   # «иду» на сегодня после 09:00 — воркер напомнит на ближайшем часовом запуске
 
     # ───────── базовые операции ─────────
     def _log(self, ps: PState, kind: str, **kw: Any) -> None:
@@ -180,7 +181,11 @@ class Driver:
         return res
 
     def screen(self, ps: PState) -> Stored | None:
-        return self.world.last_bot_message(ps.p.user_id)
+        """Последнее сообщение бота с клавиатурой: подсказки без кнопок («Здесь нужно нажать кнопку выше») экраном не считаются."""
+        for st in reversed(self.world.chats[ps.p.user_id]):
+            if not st.from_user and st.rows:
+                return st
+        return None
 
     @staticmethod
     def find(st: Stored | None, pred: Callable[[str], bool]) -> dict | None:
@@ -240,6 +245,8 @@ class Driver:
                     self.f.add("text_ignored", f"на шаге «{step}» бот молчит в ответ на текст «а что тут нужно сделать?» "
                                f"(handled={res['handled']})", p.user_id, self.clock.now)
                     ps.onb["text_ignored"] = ps.onb.get("text_ignored", 0) + 1
+                else:
+                    self.f.add("text_answered", f"на шаге «{step}» текст получил ответ: «{replies[0].text[:50]}»", p.user_id, self.clock.now)
 
         await self.say(ps, command)
         st = self.screen(ps)
@@ -428,10 +435,6 @@ class Driver:
                          "Не принципиально" if p.aesthetics else "Да, важна")
         if r:
             return await self._finish_flow(ps, r)
-        wrong_area = next(a for a in ("центр", "любой", "свой округ") if a != p.area)
-        r = await single("areas", [], AREA_LABEL[p.area], AREA_LABEL[wrong_area])
-        if r:
-            return await self._finish_flow(ps, r)
 
         # ── 5. заметка ──
         if p.abandon_step == "notes" and not ps.onb.get("abandon_used"):
@@ -439,13 +442,18 @@ class Driver:
             close("notes")
             return self._abandon(ps, "notes")
         self._check_back(ps, "notes")
-        before = len(self.world.chats[p.user_id])
-        if p.help_at_notes:
+        if p.help_at_notes and not ps.onb.get("help_used"):
+            ps.onb["help_used"] = True
+            h0 = len(self.world.chats[p.user_id])
             await self.say(ps, "/help")
-            ps.onb["help_at_notes"] = True
-            self.f.add("command_eaten_by_notes", "на шаге заметки отправил /help — бот принял команду за текст заметки и завершил онбординг",
-                       p.user_id, self.clock.now)
-        elif p.note:
+            h = [m for m in self.world.chats[p.user_id][h0:] if not m.from_user]
+            ps.onb["help_at_notes"] = "команды" in (h[0].text if h else "") or "/digest" in (h[0].text if h else "")
+            if ps.onb["help_at_notes"]:
+                self.f.add("command_in_notes_ok", "на шаге заметки /help отработал как команда (онбординг не завершён)", p.user_id, self.clock.now)
+            else:
+                self.f.add("command_eaten_by_notes", "на шаге заметки /help не дал справки", p.user_id, self.clock.now)
+        before = len(self.world.chats[p.user_id])
+        if p.note:
             await self.say(ps, p.note)
         else:
             st = self.screen(ps)
@@ -526,6 +534,8 @@ class Driver:
             ps.decisions[card.event_id] = d
         else:
             d["reason"] = reason or d.get("reason")
+            if reason is None:                     # то же решение повторно с другой карточки: день и неделя — с последней карточки
+                d["card_day"], d["week"] = card.day, rec.week
         if reason is None:
             self.taps.append({"t": self.clock.now.isoformat(), "u": ps.p.user_id, "kind": "decision", "status": status,
                               "event_id": card.event_id, "week": rec.week, "cycle": self.cycle_of(self.clock.now),
@@ -533,6 +543,9 @@ class Driver:
         rec.decisions += 1
         if status == "иду":
             rec.go += 1
+            local = self.clock.now.astimezone(ZoneInfo(ps.p.tz))
+            if reason is None and self.on_same_day_go and card.day == local.date().isoformat() and local.hour >= 9:
+                self.on_same_day_go(ps)
             if ps.first_go_taps is None:
                 ps.first_go_taps = ps.taps
                 ps.first_go_cycle = self.cycle_of(self.clock.now)
@@ -566,6 +579,8 @@ class Driver:
             if r2["toast"] == ERROR_TOAST:
                 self.f.add("double_tap_error", f"двойной тап на «{label}» → тост «{r2['toast']}»; в логе: «message is not modified»",
                            p.user_id, self.clock.now)
+            else:
+                self.f.add("double_tap_ok", f"двойной тап на «{label}» → тост «{r2['toast']}», ошибки нет", p.user_id, self.clock.now)
         reason_chosen = False
         if action == "skip":
             st = self.world.get(p.user_id, card.mid)
@@ -604,7 +619,7 @@ class Driver:
             b0 = next((b for b in st.buttons() if str(b.get("callback_data", "")).startswith("s:")), None)
             if b0 is None:
                 continue
-            eid = b0["callback_data"].split(":", 2)[2]
+            eid = b0["callback_data"].split(":")[2]
             ev = self.events.get(eid)
             if ev is None:
                 continue

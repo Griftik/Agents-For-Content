@@ -24,7 +24,8 @@ NAMES = [
     "Василий", "Галина", "Денис",
 ]
 
-# Порядок шагов онбординга — по нему считаются отвалы.
+# Порядок шагов онбординга — по нему считаются отвалы. «areas» (район) из продукта убран, но остаётся в розыгрыше
+# случайных чисел, чтобы набор персон не менялся между прогонами; персона, «бросившая» на нём, теперь проходит дальше.
 STEPS = ["consent", "values", "weights", "interests", "company", "times", "budget", "aesthetics", "areas", "notes"]
 # Базовая вероятность бросить именно на этом экране (до множителя архетипа). Допущение модели, не измерение.
 STEP_HAZARD = {"consent": 0.03, "values": 0.03, "weights": 0.06, "interests": 0.07, "company": 0.01, "times": 0.01,
@@ -135,7 +136,7 @@ class Persona:
     times: list[str]
     budget: int
     aesthetics: bool
-    area: str
+    area: str                         # скрытое предпочтение (влияет на причину «далеко»); бот про район больше не спрашивает
     note: str
     # онбординг: сбои поведения
     abandon_step: str | None
@@ -251,7 +252,7 @@ def make_persona(seed: int, idx: int, archetype: str, n_users: int) -> Persona:
     abandon = None
     for st in STEPS:
         if rng.random() < min(0.6, STEP_HAZARD[st] * mult):
-            abandon = st
+            abandon = st if st != "areas" else None
             break
     if abandon == "weights":
         sub = rng.randrange(0, 8)
@@ -260,6 +261,8 @@ def make_persona(seed: int, idx: int, archetype: str, n_users: int) -> Persona:
     else:
         sub = 0
     misclick = _pick(rng, ["company", "budget", "aesthetics", "areas"]) if rng.random() < 0.12 else None
+    if misclick == "areas":
+        misclick = None                                     # шага «район» в продукте больше нет
     noise = _pick(rng, ["values", "interests", "company", "budget"]) if rng.random() < 0.08 else None
     # время онбординга: 85 % во вторник–четверг днём, остальные в пятницу–воскресенье
     if rng.random() < 0.88:

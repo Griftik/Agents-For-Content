@@ -13,7 +13,6 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib import robotparser
 from urllib.parse import urlsplit
 
 import httpx
@@ -170,26 +169,78 @@ def overlaps(start: datetime, end: datetime | None, window_start: datetime, wind
 # ─── robots.txt ───
 
 
+class RobotsRules:
+    """Правила robots.txt по RFC 9309 для одного бота: группа с его именем, иначе группа `*`.
+
+    Стандартный `urllib.robotparser` не годится: он ищет имя бота подстрокой («Bot», «NE», «IS» совпадают с любым
+    ботом, у bilet.mos.ru это закрывало весь сайт) и не знает про `*` и `$` внутри пути. Здесь: имя бота сравнивается
+    целиком без учёта регистра, побеждает самое длинное совпавшее правило, при равенстве длины Allow сильнее,
+    пустой Disallow ничего не запрещает, нет совпадений — можно.
+    """
+
+    def __init__(self, text: str, user_agent: str) -> None:
+        token = user_agent.split("/", 1)[0].split()[0].lower() if user_agent.strip() else ""
+        groups: dict[str, list[tuple[bool, re.Pattern[str], int]]] = {}
+        agents: list[str] = []
+        in_rules = False
+        for line in text.splitlines():
+            line = line.split("#", 1)[0].strip()
+            if ":" not in line:
+                continue
+            key, value = (x.strip() for x in line.split(":", 1))
+            key = key.lower()
+            if key == "user-agent":
+                if in_rules:  # новая группа начинается с первой строки user-agent после правил
+                    agents, in_rules = [], False
+                agents.append(value.lower())
+                for a in agents:
+                    groups.setdefault(a, [])
+            elif key in ("allow", "disallow"):
+                in_rules = True
+                if not value:
+                    continue  # «Disallow:» без пути не запрещает ничего
+                rule = (key == "allow", self._compile(value), len(value))
+                for a in agents:
+                    groups[a].append(rule)
+        self._rules = groups.get(token) if token in groups else groups.get("*", [])
+
+    @staticmethod
+    def _compile(pattern: str) -> re.Pattern[str]:
+        anchored = pattern.endswith("$")
+        body = re.escape(pattern.rstrip("$") if anchored else pattern).replace(r"\*", ".*")
+        return re.compile(body + ("$" if anchored else ""))
+
+    def allows(self, url: str) -> bool:
+        parts = urlsplit(url)
+        target = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        best: tuple[int, bool] | None = None
+        for allow, rx, length in self._rules:
+            if rx.match(target) and (best is None or length > best[0] or (length == best[0] and allow)):
+                best = (length, allow)
+        return True if best is None else best[1]
+
+
 class RobotsGuard:
     """Читает robots.txt хоста один раз за запуск и отвечает, можно ли нашему боту открыть страницу (RFC 9309).
 
-    200 — разбираем; 401/403 — всё закрыто; прочие 4xx (в том числе 404) — ограничений нет; сетевой сбой и 5xx —
-    CollectorError (не рискуем и не гадаем). Запрет страницы — не ошибка источника: вызывающий пропускает страницу.
+    200 — разбираем (RobotsRules); 401/403 — всё закрыто; прочие 4xx (в том числе 404) — ограничений нет; сетевой
+    сбой и 5xx — CollectorError (не рискуем и не гадаем). Запрет страницы — не ошибка источника: вызывающий пропускает
+    страницу.
     """
 
     def __init__(self, client: httpx.Client, user_agent: str, source: str) -> None:
         self._client, self._ua, self._source = client, user_agent, source
-        self._parsers: dict[str, robotparser.RobotFileParser | bool] = {}  # True — всё разрешено, False — всё закрыто
+        self._rules: dict[str, RobotsRules | bool] = {}  # True — всё разрешено, False — всё закрыто
 
     def allows(self, url: str) -> bool:
         parts = urlsplit(url)
         base = f"{parts.scheme}://{parts.netloc}"
-        if base not in self._parsers:
-            self._parsers[base] = self._load(base)
-        rules = self._parsers[base]
-        return rules if isinstance(rules, bool) else rules.can_fetch(self._ua, url)
+        if base not in self._rules:
+            self._rules[base] = self._load(base)
+        rules = self._rules[base]
+        return rules if isinstance(rules, bool) else rules.allows(url)
 
-    def _load(self, base: str) -> robotparser.RobotFileParser | bool:
+    def _load(self, base: str) -> RobotsRules | bool:
         try:
             resp = self._client.get(f"{base}/robots.txt", headers={"User-Agent": self._ua})
         except httpx.TransportError as exc:
@@ -201,9 +252,7 @@ class RobotsGuard:
             raise CollectorError(f"{self._source}: robots.txt не прочитан (HTTP {resp.status_code}), сбор отложен.")
         if resp.status_code != 200:
             return True
-        parser = robotparser.RobotFileParser()
-        parser.parse(resp.text.splitlines())
-        return parser
+        return RobotsRules(resp.text, self._ua)
 
 
 # ─── постраничная выкачка HTML ───
