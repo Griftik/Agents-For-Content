@@ -379,8 +379,13 @@ def spec_table(m: dict, d: dict, weeks: int) -> list[dict]:
     q = rk["mean"]
     add("rating", "Качество: средняя оценка «как прошло»", q, f"{num(q, 2)} (n = {rk['n']})", "≥ 4,0", "na" if q is None else "ok" if q >= 4.0 else "fail",
         f"оценили {pct(rk['answered'])} из {rk['prompts']} запросов")
-    add("growth", "Рост: доля новых из «Отправить другу»", None, "не измеряется", "≥ 20 %", "na",
-        "кнопка «Другу» — URL, бот не видит нажатий и переходов; метрика требует редиректа через сервер")
+    gm = (d.get("growth") or {}).get("metrics", {}).get("new_via_friends", {}).get("own")
+    if gm and gm["value"] is not None:
+        add("growth", "Рост: доля новых через друзей (приглашения и ссылка-рекомендация)", gm["value"], f"{pct(gm['value'], 1)} ({gm['numerator']} из {gm['denominator']})", "≥ 20 %",
+            "ok" if gm["value"] >= 0.2 else "fail", "source ∈ {invite, ref, share} среди новых с согласием; остальные метрики роста — в разделе 5")
+    else:
+        add("growth", "Рост: доля новых из «Отправить другу»", None, "не измеряется", "≥ 20 %", "na",
+            "кнопка «Другу» — URL, бот не видит нажатий и переходов; метрика требует редиректа через сервер")
     add("money", "Деньги: конверсия в Pro, платящий организатор", None, "не измеряется", "≥ 5 % / неделя 6", "na", "платные функции не реализованы")
     return rows
 
@@ -399,9 +404,13 @@ PREV_ID = {"day": "Д1", "remind": "Д2", "resurrect": "Д3", "params": "Д4", "
            "opened": "Д9", "fault": "Д10", "blocked": "Д11", "stale": "Д12", "text": "Д13", "started": "Д14", "url": "Д15", "scale": "Д16",
            "noback": "Д17", "localhost": "Д18"}
 # Порядок вывода открытых дефектов: по серьёзности, внутри — по важности.
-DEF_ORDER = ["day", "remind", "resurrect", "params", "interest", "links", "double", "rewrite", "opened", "repeat", "stale", "text", "fault",
+DEF_ORDER = ["invitecontract", "growthmetrics", "step1", "notified", "refmoment", "notifyhtml", "day", "remind", "resurrect", "params", "interest", "links", "double", "rewrite", "opened", "repeat", "stale", "text", "fault",
              "blocked", "persistent", "nudge", "rebuilt", "started", "url", "scale", "noback", "localhost"]
 USAB_ORDER = ["onboarding", "proposal", "defaults", "skip", "thin", "time", "resent", "text", "started", "interests", "days", "noback", "interest", "digest_btn", "pre"]
+
+
+def fcount_v(d: dict, code: str) -> int:
+    return int((d.get("violations", {}).get(code) or {}).get("count", 0))
 
 
 def build_defects(m: dict, d: dict) -> tuple[list[dict], list[dict]]:
@@ -605,6 +614,48 @@ def build_defects(m: dict, d: dict) -> tuple[list[dict], list[dict]]:
         ["При localhost URL-кнопки уходят в Telegram и отклоняются."], "leisure/bot/onboarding.py", "Запустить бота без WEB_BASE_URL.", 1,
         f"проба с WEB_BASE_URL=localhost: URL-кнопок {lh.get('url_buttons', 0)}, ссылка на политику в тексте: {'да' if lh.get('link_in_text') else 'нет'}, "
         f"сообщение доставлено: {'да' if lh.get('sent') else 'нет'}{was('localhost')}")
+    # ── рост через друзей (docs/GROWTH.md) ──
+    g = d.get("growth")
+    if g:
+        ck, mism = g["checks"], g["mismatch"]
+        f = g["funnel"]
+        chk("growthmetrics", "средняя", "Метрики роста не учитывают открывших без согласия (расходятся с формулами GROWTH.md §4)", bool(mism),
+            [f"Не совпали с расчётом симулятора: {', '.join(GROWTH_NAMES[k] for k in mism)}.",
+             *[f"{GROWTH_NAMES[k]}: симулятор {growth_value(g['metrics'][k]['own'])}, API {growth_value(g['metrics'][k]['api'])}." for k in mism],
+             f"Причина для «принятия» и «активации приглашённых»: человек без профиля и согласия при открытии не получает строки в `invite_accepts`, в журнал пишется только "
+             f"`growth_events(invite_open)` (таких {f.get('opened_anonymous_api')}), и в знаменатель они не попадают; «рекомендация» не видит открытий ссылки без согласия "
+             f"(ссылку открыли {f.get('ref_codes_seen')} раз, с согласием — {f.get('ref_codes_opened')})."],
+            "leisure/api/invites.py (growth_metrics, web_open: log_open_without_consent)",
+            "Открыть приглашение человеком без профиля и не принимать его: `GET /api/metrics/growth` → `acceptance.denominator` не вырос, `counts.opened_without_consent` вырос.",
+            len(mism), "метрики роста совпадают с формулами §4")
+        chk("notifyhtml", "низкая", "Уведомление пригласившему не экранирует имя друга и название события (HTML)", fcount_v(d, "html_warning") > 0 and bool(ck.get("inviter_notified")),
+            [f"В тексте «идёт с тобой» не экранированы `&`, `<`, `>`: нарушений формата Bot API {fcount_v(d, 'html_warning')}.",
+             *[f"Пример: {x}" for x in d["violations"].get("html_warning", {}).get("examples", [])[:2]],
+             "Имя берётся из профиля Telegram и бывает любым, название — из источника; при `<` Telegram отклонит сообщение, и повторные попытки `job_invite_notifications` будут падать каждую минуту."],
+            "leisure/worker/messages.py (invite_joined_text, invite_joined_many_text)", "Принять приглашение на событие с `&` или `<` в названии (или с таким именем в профиле) и посмотреть текст уведомления.",
+            fcount_v(d, "html_warning"), "")
+        sk = d["db"].get("step1_skipped_profiles", 0)
+        n_sk = fcount(d, "step1_skipped")
+        chk("step1", "средняя", "После согласия в Mini App бот на /start пропускает «Шаг 1» и оставляет ценности по умолчанию", n_sk > 0,
+            [f"{cnt(n_sk, 'человек', 'человека', 'человек')} приняли приглашение в Mini App (согласие там), потом нажали /start в боте и сразу получили «Шаг 2 из 2»: пять ценностей не выбирались, "
+             f"в профиле {sk} остались значения по умолчанию, подборка строится не по их ценностям.", *[f"Лог: {x}" for x in fex(d, "step1_skipped", 2)]],
+            "leisure/bot/onboarding.py (start: top_values(p) == TOP_N у профиля с согласием из Mini App)",
+            "Принять приглашение в Mini App с согласием, затем в боте /start: первым экраном приходит «Шаг 2 из 2».", n_sk, "")
+        bad = ck.get("invite_contract_bad", 0) + ck.get("accept_bad", 0) + ck.get("view_bad", 0) + ck.get("together_name_bad", 0) + ck.get("accept_failed", 0) + ck.get("declined_has_decision", 0)
+        chk("invitecontract", "высокая", "API приглашений нарушает контракт GROWTH.md §6", bad > 0 or g["n_api_errors"] > 0,
+            [f"Нарушений контракта: {bad}, ответов 5xx: {g['n_api_errors']}.", *[f"Пример: {x}" for k in ("invite_contract_bad", "accept_bad", "view_bad", "accept_failed") for x in g["examples"].get(k, [])[:1]]],
+            "leisure/api/invites.py, leisure/api/routers/invites.py", "См. раздел 5.4 отчёта.", bad + g["n_api_errors"],
+            f"контракт §6 соблюдён: проверок {ck.get('invite_contract_ok', 0) + ck.get('accept_ok', 0) + ck.get('view_ok', 0)}, 5xx {g['n_api_errors']}")
+        chk("notified", "средняя", "Пригласивший не получает уведомление «идёт с тобой»", ck.get("inviter_not_notified", 0) > 0,
+            [f"Не получили {ck.get('inviter_not_notified', 0)} из {f['going']} «иду» по приглашениям.", *[f"Пример: {x}" for x in g["examples"].get("inviter_not_notified", [])[:2]]],
+            "leisure/api/invites.py (notify_inviter, _deliver), leisure/worker/schedules.py (job_invite_notifications)", "Принять приглашение «Иду» и посмотреть чат пригласившего.",
+            ck.get("inviter_not_notified", 0), f"уведомлений доставлено {ck.get('inviter_notified', 0)}, не доставлено {ck.get('inviter_not_notified', 0)}")
+        late = ck.get("ref_ask_too_soon", 0) + ck.get("ref_ask_missing", 0) + ck.get("ref_ask_on_low_rating", 0) + ck.get("ref_ask_no_button", 0) + ck.get("ref_source_bad", 0)
+        chk("refmoment", "средняя", "Момент рекомендации: просьба чаще раза в 14 дней, пропущена, на низкую оценку или без ссылки", late > 0,
+            [f"Слишком рано {ck.get('ref_ask_too_soon', 0)}, пропущена {ck.get('ref_ask_missing', 0)}, на оценку 1–2 {ck.get('ref_ask_on_low_rating', 0)}, без кнопки {ck.get('ref_ask_no_button', 0)}, "
+             f"неверный source по ссылке {ck.get('ref_source_bad', 0)}.", *[f"Пример: {x}" for k in ("ref_ask_too_soon", "ref_ask_missing", "ref_source_bad") for x in g["examples"].get(k, [])[:1]]],
+            "leisure/bot/decisions.py (_ref_moment), leisure/api/invites.py (ref_ask_due)", "Поставить две оценки 4–5 в течение 14 дней.", late,
+            f"просьб {f['ref_asks']} у {f['ref_ask_users']} человек, раньше срока 0, source=ref по ссылке верно {ck.get('ref_source_ok', 0)}")
     return opened, closed
 
 
@@ -746,6 +797,116 @@ def renumber(defects: list[dict], usab: list[dict], closed: list[dict]) -> None:
 
 
 # ───────────────────────── вывод ─────────────────────────
+# ───────────────────────── рост через друзей (docs/GROWTH.md §4) ─────────────────────────
+GROWTH_NAMES = {"invite_share": "Доля «иду» с приглашением", "acceptance": "Принятие приглашения", "activation_invited": "Активация приглашённых",
+                "onboarding_invited": "Онбординг приглашённых", "new_via_friends": "Доля новых через друзей", "virality": "Коэффициент виральности",
+                "positive_experience": "Положительный опыт", "recommendation": "Рекомендация", "together_going": "Совместные походы"}
+GROWTH_FORMULA = {"invite_share": "приглашений / решений «иду»", "acceptance": "открывших с «иду» или «может быть» / всех открывших",
+                  "activation_invited": "согласие + решение / открывших без профиля", "onboarding_invited": "полный профиль за 2 недели / принявших",
+                  "new_via_friends": "source ∈ {invite, ref, share} / все новые", "virality": "новых через друзей / активных",
+                  "positive_experience": "оценок 4–5 / всех оценок", "recommendation": "нажали «Поделиться» / показов момента",
+                  "together_going": "«иду» вдвоём / всех «иду»"}
+GROWTH_TARGET = {"invite_share": 0.15, "acceptance": 0.30, "activation_invited": 0.60, "onboarding_invited": 0.40, "new_via_friends": 0.20,
+                 "virality": 0.2, "positive_experience": 0.70, "recommendation": 0.10, "together_going": None}
+
+
+def growth_value(x: dict | None) -> str:
+    if not x:
+        return "н/д"
+    return f"{pct(x['value'], 1) if x['value'] is not None else 'н/д'} ({x['numerator']} из {x['denominator']})"
+
+
+def growth_rows(g: dict) -> list[list[str]]:
+    rows = []
+    for k, name in GROWTH_NAMES.items():
+        v = g["metrics"][k]
+        own = v["own"]
+        t = GROWTH_TARGET[k]
+        if t is None:
+            status = "наблюдаем"
+        elif own["value"] is None:
+            status = "нельзя оценить"
+        else:
+            status = "достигнута" if own["value"] >= t else "не достигнута"
+        target = "наблюдаем" if t is None else f"≥ {pct(t)}" if k != "virality" else "≥ 0,2"
+        val = growth_value(own).replace("(", "(", 1)
+        if k == "virality" and own["value"] is not None:
+            val = f"{num(own['value'], 2)} ({own['numerator']} из {own['denominator']})"
+        rows.append([name, GROWTH_FORMULA[k], target, val, status, growth_value(v["api"]) if k != "virality" else (growth_value(v["api"]) if not v["api"] else
+                     f"{num(v['api']['value'], 2)} ({v['api']['numerator']} из {v['api']['denominator']})")])
+    return rows
+
+
+def growth_lines(d: dict) -> list[str]:
+    g = d.get("growth")
+    if not g:
+        return []
+    f, cmp_, ck = g["funnel"], g["compare"], g["checks"]
+    fr = g["friends"]
+    guests = g["guests"]
+    L = ["## 5. Рост через друзей (docs/GROWTH.md)", "",
+         f"Граф дружбы: у каждой из {len(d['personas'])} персон 2–5 друзей (в среднем {num(fr['avg'], 1)}), из них {fr['inside']} внутри сервиса и {fr['outside']} вне его "
+         "(новые персоны близкого, но другого архетипа). После «иду» персона зовёт друга с вероятностью от общительности и от того, подходит ли событие другу; "
+         "друг принимает с вероятностью от скоринга события под его скрытый вкус. Приглашают и принимают через API Mini App (FastAPI TestClient: `POST /api/invites`, "
+         "`GET /api/invites/{code}`, `POST …/open`, `POST …/accept`, `PUT /api/profile`), через бота идут только уведомление пригласившему, «План на сегодня», «Как прошло?» "
+         "и момент рекомендации после оценки 4–5. Приглашённые и пришедшие по ссылке-рекомендации в основные метрики п. 11 не входят.", "",
+         "### 5.1 Метрики таблицы §4", "",
+         "«Симулятор» считает по формулам GROWTH.md из своего журнала и БД; «API» — ответ `GET /api/metrics/growth`. Расхождение — признак ошибки в метрике продукта (см. дефекты).", "",
+         table(["Метрика", "Формула §4", "Цель", "Симулятор", "Статус", "API"], growth_rows(g)), ""]
+    if g["mismatch"]:
+        L += ["Расходятся с API: " + ", ".join(GROWTH_NAMES[k] for k in g["mismatch"]) + ".", ""]
+    L += ["### 5.2 Воронка приглашений", "",
+          table(["Шаг", "Значение"], [
+              ["Приглашений создано (на событие)", f"{f['invites']}; позвали {f['inviters']} человек; друзей внутри сервиса {f['to_inside']}, вне его {f['to_outside']}"],
+              ["Открыли страницу приглашения", f"{f['opened']}; из них без профиля и согласия {f['new_openers']}"],
+              ["Приняли «Иду» / «Может быть»", f"{f['accepted']} ({f['going']} / {f['maybe']}); «Другие выходные под меня»: {f['declined']}"],
+              ["Согласие при первом касании (ответ 409 → галочка)", f"{f['consent_409']} из {f['new_openers']} новых; из них ушли без согласия {ck.get('consent_not_given', 0)}"],
+              ["Событие уже прошло к открытию (410 на «Иду»)", str(ck.get("accept_gone_410", 0))],
+              ["Пригласивший получил уведомление «идёт с тобой»", f"{f['notified']} из {f['going']} «иду»"],
+              ["Предложение онбординга: «Давай» сразу / в повторе", f"{f['offers_yes1']} из {f['offers_round1']} / {f['offers_yes2']} из {f['offers_round2']}"],
+              ["Онбординг в Mini App: начали / закончили", f"{f['onboarding_started']} / {f['onboarding_done']}"],
+              ["Новых людей всего (приглашённые и по ссылке)", f"{f['guests_total']}; дали боту право писать {f['guests_can_write']}; получили хотя бы одну подборку {f['guests_with_digest']}"],
+              ["Просьба о рекомендации (T-REF-ASK)", f"{f['ref_asks']} показов у {f['ref_ask_users']} человек; «Поделиться» нажали {f['ref_shares']}; ссылку открыли {f['ref_newcomers']} человек, "
+                                                    f"согласились {f['ref_newcomers_consented']}"],
+          ]), ""]
+    if f.get("opened_all_by_api") is not None:
+        L += [f"Открывших без согласия API считает отдельно (`counts.opened_without_consent` = {f['opened_anonymous_api']}) и в знаменатели метрик «принятие» и «активация» не кладёт: "
+              f"по API открывших {f['opened_all_by_api'] - f['opened_anonymous_api']} с согласием, всего {f['opened_all_by_api']}.", ""]
+    org, inv = cmp_["activation"]["organic"], cmp_["activation"]["invited"]
+    o2, i2 = cmp_["onboarding"]["organic"], cmp_["onboarding"]["invited"]
+    rt = cmp_["ratings"]
+
+    def rrow(label, x):
+        return [label, x["n"], num(x["mean"], 2), pct(x["share_4_5"])]
+
+    L += ["### 5.3 Приглашённые и органические", "",
+          table(["Показатель", "Органические (50 персон, бот)", "Приглашённые (Mini App)", "Как считали"], [
+              ["Активация", f"{pct(ratio(org['num'], org['den']))} ({org['num']} из {org['den']})", f"{pct(ratio(inv['num'], inv['den']))} ({inv['num']} из {inv['den']})",
+               "дошли до конца онбординга / начали; согласие + решение / открыли без профиля"],
+              ["Онбординг", f"{pct(ratio(o2['num'], o2['den']))} ({o2['num']} из {o2['den']})", f"{pct(ratio(i2['num'], i2['den']))} ({i2['num']} из {i2['den']})",
+               "прошли онбординг / дали согласие; полный профиль за 2 недели / принявшие с source=invite"]]), "",
+          table(["Оценки «как прошло»", "Оценок", "Средняя", "Доля 4–5"],
+                [rrow("Органические «иду»", rt["organic"]), rrow("«Иду» по приглашению", rt["invited_decisions"]), rrow("Все оценки приглашённых людей", rt["invited_users_all"]),
+                 rrow("Совместные походы (оба идут)", rt["together"]), rrow("Одиночные «иду» органических", rt["solo"])]), "",
+          "Оценка в модели — функция скрытого вкуса человека и события, «вдвоём приятнее» намеренно не заложено (`TOGETHER_RATING_BONUS = 0`). Поэтому разница между совместными и "
+          "одиночными походами — только отбор: друг принимает то, что ему подходит. Малые n (см. колонку) дают лишь ориентир, не вывод.", "",
+          "### 5.4 Контрольные проверки API приглашений", "",
+          "- Вызовы: " + "; ".join(f"{k} — {v}" for k, v in g["calls"].items()) + ".",
+          f"- Контракт `POST /api/invites` (код 8 символов без 0/1/I/L/O/U, ссылка Mini App в `url`, текст от первого лица со ссылкой): верно {ck.get('invite_contract_ok', 0)}, "
+          f"нарушено {ck.get('invite_contract_bad', 0)}; повторное «Позвать друга» вернуло тот же код {ck.get('invite_idempotent', 0)} раз, другой — {ck.get('invite_not_idempotent', 0)}.",
+          f"- `GET /api/invites/{{code}}`: карточка, день, имя пригласившего верны {ck.get('view_ok', 0)}, событие уже прошло {ck.get('view_past', 0)}, ошибок {ck.get('view_bad', 0)}.",
+          f"- `POST …/accept`: решение с верным статусом и днём приглашения {ck.get('accept_ok', 0)}, без согласия 409 {ck.get('consent_required_409', 0)}, событие прошло 410 {ck.get('accept_gone_410', 0)}, "
+          f"другие ошибки {ck.get('accept_failed', 0)}; «declined» без решения {ck.get('declined_ok', 0)} (с решением {ck.get('declined_has_decision', 0)}); имя пригласившего в ответе верно {ck.get('together_name_ok', 0)} из "
+          f"{ck.get('together_name_ok', 0) + ck.get('together_name_bad', 0)}.",
+          f"- Уведомление пригласившему дошло {ck.get('inviter_notified', 0)} раз, не дошло {ck.get('inviter_not_notified', 0)}.",
+          f"- Момент рекомендации: просьба после оценки 4–5 не чаще раза в 14 дней — нарушений {ck.get('ref_ask_too_soon', 0)}, пропущено {ck.get('ref_ask_missing', 0)}, на оценку 1–2 пришло {ck.get('ref_ask_on_low_rating', 0)}; "
+          f"ссылка по `PUT /api/profile` с `ref_code` ставит `source=ref`: верно {ck.get('ref_source_ok', 0)}, неверно {ck.get('ref_source_bad', 0)}; открывшие ссылку без согласия профиля не получили: "
+          f"{ck.get('ref_no_profile_without_consent', 0)}.",
+          f"- Ответы сервера 5xx: {g['n_api_errors']}.",
+          f"- Приглашённые в боте: «План на сегодня» {guests['plan_pushes']}, «Как прошло?» {guests['feedback_requests']}, подборок {guests['digests']}, оценок {guests['ratings_n']}.", ""]
+    return L
+
+
 def compare_rows(m: dict, d: dict, defects: list[dict], closed: list[dict], usab: list[dict]) -> list[list[str]] | None:
     """Строки «метрика | исходный | второй прогон | стало». Исходный — sim/baseline.json, второй — baseline_v2.json (онбординг v2, 19 ценностей),
     «стало» — этот прогон."""
@@ -753,6 +914,7 @@ def compare_rows(m: dict, d: dict, defects: list[dict], closed: list[dict], usab
     if not b:
         return None
     f = load_baseline("baseline_v2.json") or {}
+    g3 = load_baseline("baseline_v3.json") or {}
 
     def val(src: dict, mid: str):
         return next((r["value"] for r in src.get("spec_metrics", []) if r["id"] == mid), None)
@@ -768,7 +930,7 @@ def compare_rows(m: dict, d: dict, defects: list[dict], closed: list[dict], usab
     now_taps = f"{o['taps_min']} / {num(o['taps_median'], 0)} / {o['taps_max']}"
 
     def row(name, fn, now):
-        return [name, fn(b), fn(f) if f else "—", now]
+        return [name, fn(b), fn(f) if f else "—", fn(g3) if g3 else "—", now]
 
     rows = [
         row("Активация", lambda s: p(val(s, "activation")), p(m["activation"])),
@@ -796,13 +958,13 @@ def compare_rows(m: dict, d: dict, defects: list[dict], closed: list[dict], usab
     sev_b = Counter(x["severity"] for x in b.get("defects", []))
     sev_f = Counter(x["severity"] for x in f.get("defects", []))
     nsev = Counter(x["severity"] for x in defects)
-    rows += [["Открытых дефектов, всего", str(len(b.get("defects", []))), str(len(f.get("defects", []))) if f else "—", str(len(defects))],
-             ["  высокой серьёзности", str(sev_b.get("высокая", 0)), str(sev_f.get("высокая", 0)) if f else "—", str(nsev.get("высокая", 0))],
-             ["  средней", str(sev_b.get("средняя", 0)), str(sev_f.get("средняя", 0)) if f else "—", str(nsev.get("средняя", 0))],
-             ["  низкой", str(sev_b.get("низкая", 0)), str(sev_f.get("низкая", 0)) if f else "—", str(nsev.get("низкая", 0))],
-             ["Закрыто из дефектов исходного прогона", "—", str(len(f.get("closed_defects", []))) if f else "—", f"{sum(1 for c in closed if c['prev'])} из {len(PREV_ID)}"],
-             ["Закрыто из открытых во втором прогоне", "—", "—", f"{sum(1 for c in closed if c.get('prev2'))} из {len(f.get('defects', []))}" if f else "—"],
-             ["Проблем юзабилити (открытых)", str(len(b.get("usability", []))), str(len(f.get("usability", []))) if f else "—", str(len(usab))]]
+    sev_3 = Counter(x["severity"] for x in g3.get("defects", []))
+    rows += [["Открытых дефектов, всего", str(len(b.get("defects", []))), str(len(f.get("defects", []))) if f else "—", str(len(g3.get("defects", []))) if g3 else "—", str(len(defects))],
+             ["  высокой серьёзности", str(sev_b.get("высокая", 0)), str(sev_f.get("высокая", 0)) if f else "—", str(sev_3.get("высокая", 0)) if g3 else "—", str(nsev.get("высокая", 0))],
+             ["  средней", str(sev_b.get("средняя", 0)), str(sev_f.get("средняя", 0)) if f else "—", str(sev_3.get("средняя", 0)) if g3 else "—", str(nsev.get("средняя", 0))],
+             ["  низкой", str(sev_b.get("низкая", 0)), str(sev_f.get("низкая", 0)) if f else "—", str(sev_3.get("низкая", 0)) if g3 else "—", str(nsev.get("низкая", 0))],
+             ["Закрыто из дефектов исходного прогона", "—", str(len(f.get("closed_defects", []))) if f else "—", "—", f"{sum(1 for c in closed if c['prev'])} из {len(PREV_ID)}"],
+             ["Проблем юзабилити (открытых)", str(len(b.get("usability", []))), str(len(f.get("usability", []))) if f else "—", str(len(g3.get("usability", []))) if g3 else "—", str(len(usab))]]
     return rows
 
 
@@ -825,12 +987,13 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict], closed: l
     cr = compare_rows(m, d, defects, closed, usab)
     if cr:
         L += ["## 0. Было → стало (против прошлого прогона)", "",
-              "«Исходный» — `leisure/sim/baseline.json` (первый прогон, 5 недель), «второй» — `baseline_v2.json` (онбординг v2, 19 ценностей, 4 недели), «стало» — этот прогон "
-              "(онбординг v2.1: восемь направлений, бюджет строкой на «Шаге 2», без заметки, «Уже был» в первом ряду причин, свёртка блока причин, подсказка про бюджет, "
-              "досылка недоставленных карточек, пересобранная подборка в `Digest.items`). Тот же seed и те же 50 архетипов; горизонт второго и этого прогона — 4 недели после недели онбординга, "
-              "в исходном было 5, поэтому «удержание на последней неделе» с ним сравнивать надо с оговоркой. Активация в двух последних прогонах выше исходной в основном потому, что "
-              "убраны экраны, на которых прежде бросали.", "",
-              table(["Показатель", "Исходный прогон", "Второй (онбординг v2)", "Стало (онбординг v2.1)"], cr), ""]
+              "«Исходный» — `leisure/sim/baseline.json` (первый прогон, 5 недель), «второй» — `baseline_v2.json` (онбординг v2, 19 ценностей), «третий» — `baseline_v3.json` "
+              "(онбординг v2.1: восемь направлений, бюджет строкой на «Шаге 2»), «стало» — этот прогон: то же плюс автопереход на «Шаг 2» после пятой ценности, "
+              "приглашения друзей и момент рекомендации (раздел 5). Тот же seed и те же 50 архетипов; горизонт второго, третьего и этого прогона — 4 недели после недели онбординга, "
+              "в исходном было 5, поэтому «удержание на последней неделе» с ним сравнивать надо с оговоркой. Основные метрики считаются только по 50 персонам; приглашённых они не включают. "
+              "Небольшие сдвиги реакции, оценок и удержания по сравнению с третьим прогоном — шум модели: приглашения и уведомления добавили в историю персон события, "
+              "и случайные розыгрыши пошли иначе.", "",
+              table(["Показатель", "Исходный прогон", "Второй (онбординг v2)", "Третий (v2.1)", "Стало (приглашения, авто-переход)"], cr), ""]
     L += ["## 1. Метрики п. 11 спеки", "",
           table(["Метрика", "Значение", "Цель", "Статус", "Примечание"],
                 [[r["name"], r["shown"], r["target"], STATUS_RU[r["status"]], r["note"]] for r in m["spec_table"]]), ""]
@@ -912,7 +1075,8 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict], closed: l
               table(["Было", "Проблема", "Что показал этот прогон"],
                     [[x["prev"] or f"{x['prev2']} (второй прогон)", x["title"], x["evidence"] or "—"] for x in sorted(
                         closed_u, key=lambda x: (0 if x["prev"] else 1, int((x["prev"] or x["prev2"])[1:])))]), ""]
-    L += ["## 5. Что подтвердилось и что нет (контрольные проверки)", ""]
+    L += growth_lines(d)
+    L += ["## 6. Что подтвердилось и что нет (контрольные проверки)", ""]
     vio = d.get("violations", {})
     st = d["scenarios"].get("startup", {})
     cmds = Counter(c["cmd"] for c in d["commands"])
@@ -951,17 +1115,21 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict], closed: l
           f"{fcount(d, 'reasons_collapsed')} раз из {fcount(d, 'reasons_collapsed') + fcount(d, 'reasons_not_collapsed')}.",
           f"- Подсказка про бюджет (проба u{npb.get('uid')}, два «Мимо — дорого» подряд при «не важно»): пришла {fcount(d, 'nudge_ok')}, не пришла {fcount(d, 'nudge_missing')}, "
           f"без повода {fcount(d, 'nudge_unexpected')}; бюджет из неё задали {fcount(d, 'nudge_followed')}." if npb else "- Подсказка про бюджет: проба не выполнялась.", ""]
-    L += ["## 6. Ограничения прогона", "",
+    L += ["## 7. Ограничения прогона", "",
           "- Поведение людей — допущения (`leisure/sim/personas.py`, `actors.py`): вероятности отвала по экранам (`STEP_HAZARD`), открытия, решений, оценок, "
           "усталость и порог ухода. Новые ценности (Удовольствие, Веселье, Азарт, Покой, Близость, Смысл) персоны получают отдельным розыгрышем поверх прежних 13, чтобы когорта оставалась сравнимой с прошлыми прогонами; интересы персон заданы заранее и редко совпадают с восемью предложенными ботом, поэтому число нажатий на экране интересов — оценка сверху. Бюджет строкой на «Шаге 2» задают 85 % персон с бюджетом 1 000 или 2 500 ₽ (5 000 ₽ в строке нет), из подсказки про бюджет в «Уточнить» идёт 55 % персон с бюджетом; заметки персоны больше не пишут (пункта нет). Другие допущения дадут другие абсолютные доли; механика продукта от них не зависит.",
           "- Seed — 177 событий; на первом уикенде их 93, дальше 18, 8, 6, 4, 6 на уикенд: часть «пустых слотов» — недобор базы, а не логики подборки.",
           "- Не проверялись: живой Telegram (лимиты, форматирование, превью), поток сбоев сети и 429/5xx (проверены пробами на трёх сообщениях: разовый и стойкий 502, 429, блокировка — и одной пробой на настоящей рассылке: четыре 502 подряд на карточке одного человека и досылка на следующем часовом запуске), "
           "веб-приложение, переходы по URL-кнопкам («Подробнее», «Другу», календари), параллельные нажатия, несколько городов.",
+          "- Рост через друзей: граф, вероятности приглашения, принятия, «Давай», «Поделиться» и число пришедших по ссылке — допущения (`social.py`, `social_run.py`), абсолютные доли зависят от них. "
+          "Приглашённых за 4 недели мало (десяток), поэтому сравнение приглашённых с органическими, особенно по оценкам, — ориентир, не вывод. Первый пришедший по ссылке-рекомендации всегда проходит путь целиком "
+          "(согласие и онбординг по `PUT /api/profile` с `ref_code`) — это проба контракта. Часы БД подменены триггерами на `created_at`/`opened_at`/`updated_at`, а `datetime.now()` в модулях профилей и приглашений — часами симуляции: "
+          "без этого «онбординг за 2 недели» и «просьба не чаще раза в 14 дней» сравнивали бы время симуляции с настоящим. Друзья без права писать (Mini App) не получают плана и подборок: бот отвечает им Forbidden, как Telegram.",
           "- Время: часы подменены (`services.utcnow`), воркер вызывается с `now_utc`: среда 22:00 (сборка), четверг 19:00 по поясу каждого (подборка) с повторными запусками "
           "(ловят дубли), «План на сегодня» ежедневно в 09:00 и «Как прошло?» ежедневно в 12:00 по поясу каждого; «Иду» на сегодня после 09:00 получает дополнительный запуск "
           "плана в ближайший :00 (эмуляция часового cron). Остальные часы суток не гонялись. Пауза между сообщениями и паузы повторов 5xx отключены "
           "(`SEND_INTERVAL = 0`, `RETRY_DELAYS = (0, 0, 0)`).", ""]
-    L += ["## 7. Как воспроизвести", "",
+    L += ["## 8. Как воспроизвести", "",
           "```", f"python -m leisure.sim.runner --users {meta['users']} --weeks {w} --seed {meta['seed']}", "cd leisure && python -m pytest tests/test_sim_smoke.py", "```",
           "Журнал вызовов — `leisure/sim/out/sim_log.jsonl` (не в git), сырые результаты — `leisure/sim/out/run_data.json`.", "",
           f"---\nДлительность прогона: {d['volatile']['duration_s']} с (единственная строка отчёта, которая меняется от запуска к запуску)."]
@@ -993,7 +1161,9 @@ def write_reports(d: dict, out_dir: Path | str) -> dict:
         "rating": m["rating"], "repeats": m["repeats"], "silent": m["silent"], "scale": m["scale"], "plan_reminders": m["plan_reminders"],
         "defects": [{k: x[k] for k in ("id", "severity", "title", "count", "where")} for x in defects],
         "closed_defects": [{k: x[k] for k in ("id", "title", "evidence")} for x in closed],
-        "vs_previous": [{"metric": r[0], "was": r[1], "after_fixes": r[2], "now": r[3]} for r in (cr or [])],
+        "vs_previous": [{"metric": r[0], "was": r[1], "second": r[2], "third": r[3], "now": r[4]} for r in (cr or [])],
+        "growth": ({"metrics": {k: {"own": v["own"], "api": v["api"]} for k, v in d["growth"]["metrics"].items()}, "funnel": d["growth"]["funnel"],
+                    "compare": d["growth"]["compare"], "mismatch": d["growth"]["mismatch"], "checks": d["growth"]["checks"]} if d.get("growth") else None),
         "usability": [{k: x[k] for k in ("id", "priority", "title")} for x in usab],
         "findings": {k: {"count": v["count"], "users": v["users"]} for k, v in d["findings"].items()},
         "violations": {k: v["count"] for k, v in d["violations"].items()},

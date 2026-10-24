@@ -1,12 +1,12 @@
 {
  "closed_defects": [
   {
-   "evidence": "расхождений дня 0 из 141 решений «иду» (было 21); день едет в callback_data карточки и обновляется при повторном решении",
+   "evidence": "расхождений дня 0 из 137 решений «иду» (было 21); день едет в callback_data карточки и обновляется при повторном решении",
    "id": "Д1",
    "title": "«Иду» сохраняется на другой день, чем показан на карточке"
   },
   {
-   "evidence": "напоминание в день события: 141 из 141 (Пт 22/22; Сб 54/54; Вс 46/46; Пн–Чт 19/19); «Как прошло?» на следующий день: 141 из 141; «иду» на сегодня после 09:00 получили напоминание на часовом запуске: 12 из 12; флаги на решении: reminded_at 141, feedback_asked_at 141 из 141 (было 61 из 147)",
+   "evidence": "напоминание в день события: 136 из 136 (Пт 21/21; Сб 50/50; Вс 46/46; Пн–Чт 19/19); «Как прошло?» на следующий день: 135 из 136; «иду» на сегодня после 09:00 получили напоминание на часовом запуске: 11 из 11; флаги на решении: reminded_at 136, feedback_asked_at 136 из 136 (было 61 из 147)",
    "id": "Д2",
    "title": "Напоминание и запрос оценки получает меньшинство «Иду»"
   },
@@ -21,12 +21,12 @@
    "title": "Заметка, компания и «с детьми» не влияют на подборку"
   },
   {
-   "evidence": "кнопка есть на карточках; нажата 70 раз (16 % решений), попыток без кнопки 0 (было 60)",
+   "evidence": "кнопка есть на карточках; нажата 72 раз (16 % решений), попыток без кнопки 0 (было 60)",
    "id": "Д5",
    "title": "На карточке нет кнопки «Интересно» (требование F6)"
   },
   {
-   "evidence": "после «Мимо» ссылок потеряно 0 из 55 отказов (было 46)",
+   "evidence": "после «Мимо» ссылок потеряно 0 из 60 отказов (было 46)",
    "id": "Д6",
    "title": "После «Мимо» с карточки пропадают «Подробнее», «Другу», «Весь дайджест»"
   },
@@ -41,12 +41,12 @@
    "title": "Среда 22:00 перезаписывает состав уже отправленного дайджеста"
   },
   {
-   "evidence": "opened=true у 136 из 206 дайджестов, decisions_count>0 у 136, сумма decisions_count 406 при 352 решениях (было opened=true у 0 из 212)",
+   "evidence": "opened=true у 136 из 206 дайджестов, decisions_count>0 у 136, сумма decisions_count 406 при 356 решениях (было opened=true у 0 из 212)",
    "id": "Д9",
    "title": "Digest.opened и Digest.decisions_count никогда не заполняются"
   },
   {
-   "evidence": "нарушений правила исключения 0 из 91 повторов",
+   "evidence": "нарушений правила исключения 0 из 89 повторов",
    "id": "",
    "title": "Событие вернулось в подборку вопреки правилам исключения (п. 8)"
   },
@@ -96,7 +96,7 @@
    "title": "URL кнопок длиннее 2 048 символов"
   },
   {
-   "evidence": "«← Назад» на 142 из 142 проверенных экранов; профилей с неверными ответами из-за ошибки: 0",
+   "evidence": "«← Назад» на 140 из 140 проверенных экранов; профилей с неверными ответами из-за ошибки: 1",
    "id": "Д17",
    "title": "Ошибку в ответе онбординга исправить нельзя — сохраняется неверный профиль"
   },
@@ -104,72 +104,108 @@
    "evidence": "проба с WEB_BASE_URL=localhost: URL-кнопок 0, ссылка на политику в тексте: да, сообщение доставлено: да",
    "id": "Д18",
    "title": "WEB_BASE_URL=localhost делает онбординг невозможным"
+  },
+  {
+   "evidence": "контракт §6 соблюдён: проверок 77, 5xx 0",
+   "id": "",
+   "title": "API приглашений нарушает контракт GROWTH.md §6"
+  },
+  {
+   "evidence": "уведомлений доставлено 14, не доставлено 0",
+   "id": "",
+   "title": "Пригласивший не получает уведомление «идёт с тобой»"
+  },
+  {
+   "evidence": "просьб 28 у 21 человек, раньше срока 0, source=ref по ссылке верно 1",
+   "id": "",
+   "title": "Момент рекомендации: просьба чаще раза в 14 дней, пропущена, на низкую оценку или без ссылки"
   }
  ],
  "decisions": {
   "by_status": {
-   "иду": 226,
-   "интересно": 70,
-   "мимо": 55,
-   "может": 83,
+   "иду": 221,
+   "интересно": 72,
+   "мимо": 60,
+   "может": 81,
    "пропуск": 4
   },
   "reasons": {
    "далеко": 1,
    "дорого": 5,
    "не в это время": 5,
-   "не моё": 12,
+   "не моё": 13,
    "не та компания": 3,
-   "уже был": 5
+   "уже был": 6
   },
   "skip_no_reason_button": 0,
-  "skip_total": 55,
-  "skip_unanswered": 24,
-  "skip_with_reason": 31,
+  "skip_total": 60,
+  "skip_unanswered": 27,
+  "skip_with_reason": 33,
   "total": 438,
   "wanted_interest": 0,
   "wanted_interest_users": 0
  },
  "defects": [
   {
-   "count": 1,
+   "count": 2,
    "id": "Д1",
+   "severity": "средняя",
+   "title": "Метрики роста не учитывают открывших без согласия (расходятся с формулами GROWTH.md §4)",
+   "where": "leisure/api/invites.py (growth_metrics, web_open: log_open_without_consent)"
+  },
+  {
+   "count": 1,
+   "id": "Д2",
+   "severity": "средняя",
+   "title": "После согласия в Mini App бот на /start пропускает «Шаг 1» и оставляет ценности по умолчанию",
+   "where": "leisure/bot/onboarding.py (start: top_values(p) == TOP_N у профиля с согласием из Mini App)"
+  },
+  {
+   "count": 1,
+   "id": "Д3",
+   "severity": "низкая",
+   "title": "Уведомление пригласившему не экранирует имя друга и название события (HTML)",
+   "where": "leisure/worker/messages.py (invite_joined_text, invite_joined_many_text)"
+  },
+  {
+   "count": 1,
+   "id": "Д4",
    "severity": "низкая",
    "title": "Отправка дайджеста 10 000 пользователям не укладывается в 15 минут (п. 10)",
    "where": "leisure/worker/send.py (SEND_INTERVAL = 1/25), leisure/worker/schedules.py (digest_messages)"
   }
  ],
  "digests": {
-  "all_cards": 1163,
+  "all_cards": 1174,
   "already_started": 0,
   "avg_cards": 4.509345794392523,
-  "avg_empty": 1.4953271028037383,
+  "avg_empty": 1.5,
   "by_week": {
    "0": {
     "cards": 5.488888888888889,
     "digests": 45,
-    "empty": 0.7777777777777778,
+    "empty": 0.7555555555555555,
     "go": 29,
-    "horizon": 1.2,
+    "horizon": 1.1777777777777778,
     "opened": 43,
     "reacted": 39,
-    "slots": 4.288888888888889
+    "slots": 4.311111111111111
    },
    "1": {
     "cards": 4.711111111111111,
     "digests": 45,
-    "empty": 1.5333333333333334,
+    "empty": 1.511111111111111,
     "go": 18,
-    "horizon": 1.2444444444444445,
+    "horizon": 1.2222222222222223,
     "opened": 24,
     "reacted": 23,
-    "slots": 3.466666666666667
+    "slots": 3.488888888888889
    },
    "2": {
     "cards": 5.488372093023256,
     "digests": 43,
     "empty": 0.5116279069767442,
-    "go": 17,
+    "go": 18,
     "horizon": 0.8604651162790697,
     "opened": 28,
     "reacted": 25,
@@ -178,37 +214,37 @@
    "3": {
     "cards": 3.5714285714285716,
     "digests": 42,
-    "empty": 2.357142857142857,
+    "empty": 2.380952380952381,
     "go": 17,
-    "horizon": 0.9285714285714286,
+    "horizon": 0.9523809523809523,
     "opened": 27,
     "reacted": 26,
-    "slots": 2.642857142857143
+    "slots": 2.619047619047619
    },
    "4": {
     "cards": 3.076923076923077,
     "digests": 39,
-    "empty": 2.4358974358974357,
+    "empty": 2.4871794871794872,
     "go": 14,
-    "horizon": 0.5128205128205128,
-    "opened": 21,
-    "reacted": 18,
-    "slots": 2.5641025641025643
+    "horizon": 0.5641025641025641,
+    "opened": 20,
+    "reacted": 17,
+    "slots": 2.5128205128205128
    }
   },
   "first": 45,
-  "manual": 20,
+  "manual": 22,
   "messy_time": 0,
-  "multi_day_cards": 125,
+  "multi_day_cards": 128,
   "no_interest_button": false,
-  "opened": 143,
+  "opened": 142,
   "plan_lines": 0,
   "plan_messy_lines": 0,
-  "reacted": 131,
+  "reacted": 130,
   "resent_no_status": 0,
   "sent": 214,
   "total_cards": 965,
-  "with_empty": 175
+  "with_empty": 173
  },
  "findings": {
   "budget_row_fixed": {
@@ -224,8 +260,8 @@
    "users": 1
   },
   "day_picked": {
-   "count": 20,
-   "users": 16
+   "count": 19,
+   "users": 15
   },
   "double_tap_ok": {
    "count": 8,
@@ -239,17 +275,21 @@
    "count": 1,
    "users": 1
   },
-  "reason_not_answered": {
-   "count": 24,
-   "users": 17
-  },
-  "reasons_collapsed": {
-   "count": 24,
-   "users": 17
-  },
-  "sixth_value": {
+  "overselect_skipped": {
    "count": 5,
    "users": 5
+  },
+  "reason_not_answered": {
+   "count": 27,
+   "users": 19
+  },
+  "reasons_collapsed": {
+   "count": 27,
+   "users": 19
+  },
+  "step1_skipped": {
+   "count": 1,
+   "users": 1
   },
   "text_answered": {
    "count": 1,
@@ -265,10 +305,236 @@
   "after_onb_min": 1,
   "in_first_digest": 29,
   "of": 45,
-  "taps_max": 35,
-  "taps_median": 16,
-  "taps_min": 12,
+  "taps_max": 34,
+  "taps_median": 15,
+  "taps_min": 6,
   "users": 39
+ },
+ "growth": {
+  "checks": {
+   "accept_gone_410": 4,
+   "accept_ok": 15,
+   "consent_not_given": 2,
+   "consent_required_409": 11,
+   "declined_ok": 2,
+   "invite_contract_ok": 33,
+   "invite_idempotent": 7,
+   "inviter_notified": 14,
+   "ref_no_profile_without_consent": 1,
+   "ref_source_ok": 1,
+   "together_name_ok": 14,
+   "view_ok": 29,
+   "view_past": 4
+  },
+  "compare": {
+   "activation": {
+    "invited": {
+     "den": 16,
+     "num": 9
+    },
+    "organic": {
+     "den": 50,
+     "num": 45
+    }
+   },
+   "onboarding": {
+    "invited": {
+     "den": 9,
+     "num": 7
+    },
+    "invited_note": "полный профиль за 2 недели / принявшие (source=invite)",
+    "organic": {
+     "den": 49,
+     "num": 45
+    },
+    "organic_note": "прошли онбординг / дали согласие"
+   },
+   "ratings": {
+    "invited_decisions": {
+     "mean": 4.25,
+     "n": 4,
+     "share_4_5": 0.75
+    },
+    "invited_users_all": {
+     "mean": 4.33,
+     "n": 6,
+     "share_4_5": 0.8333
+    },
+    "organic": {
+     "mean": 3.82,
+     "n": 61,
+     "share_4_5": 0.623
+    },
+    "solo": {
+     "mean": 3.84,
+     "n": 57,
+     "share_4_5": 0.614
+    },
+    "together": {
+     "mean": 3.6,
+     "n": 5,
+     "share_4_5": 0.6
+    }
+   }
+  },
+  "funnel": {
+   "accepted": 15,
+   "consent_409": 11,
+   "declined": 2,
+   "going": 14,
+   "guests_can_write": 4,
+   "guests_total": 16,
+   "guests_with_digest": 4,
+   "inviters": 21,
+   "invites": 33,
+   "maybe": 1,
+   "new_accepted": 9,
+   "new_openers": 16,
+   "notified": 14,
+   "offers_round1": 8,
+   "offers_round2": 4,
+   "offers_yes1": 4,
+   "offers_yes2": 2,
+   "onboarding_done": 7,
+   "onboarding_started": 7,
+   "opened": 33,
+   "opened_all_by_api": 44,
+   "opened_anonymous_api": 18,
+   "opened_anonymous_sim": 7,
+   "ref_ask_users": 21,
+   "ref_asks": 28,
+   "ref_codes_opened": 1,
+   "ref_codes_seen": 1,
+   "ref_newcomers": 2,
+   "ref_newcomers_consented": 1,
+   "ref_opened_db": 1,
+   "ref_shares": 4,
+   "to_inside": 16,
+   "to_outside": 17
+  },
+  "metrics": {
+   "acceptance": {
+    "api": {
+     "denominator": 26,
+     "numerator": 15,
+     "target": "≥ 30 %",
+     "value": 0.5769
+    },
+    "own": {
+     "denominator": 33,
+     "numerator": 15,
+     "value": 0.4545
+    }
+   },
+   "activation_invited": {
+    "api": {
+     "denominator": 9,
+     "numerator": 9,
+     "target": "≥ 60 %",
+     "value": 1.0
+    },
+    "own": {
+     "denominator": 16,
+     "numerator": 9,
+     "value": 0.5625
+    }
+   },
+   "invite_share": {
+    "api": {
+     "denominator": 180,
+     "numerator": 33,
+     "target": "≥ 15 %",
+     "value": 0.1833
+    },
+    "own": {
+     "denominator": 180,
+     "numerator": 33,
+     "value": 0.1833
+    }
+   },
+   "new_via_friends": {
+    "api": {
+     "denominator": 56,
+     "numerator": 10,
+     "target": "≥ 20 %",
+     "value": 0.1786
+    },
+    "own": {
+     "denominator": 56,
+     "numerator": 10,
+     "value": 0.1786
+    }
+   },
+   "onboarding_invited": {
+    "api": {
+     "denominator": 9,
+     "numerator": 7,
+     "target": "≥ 40 %",
+     "value": 0.7778
+    },
+    "own": {
+     "denominator": 9,
+     "numerator": 7,
+     "value": 0.7778
+    }
+   },
+   "positive_experience": {
+    "api": {
+     "denominator": 69,
+     "numerator": 45,
+     "target": "≥ 70 %",
+     "value": 0.6522
+    },
+    "own": {
+     "denominator": 69,
+     "numerator": 45,
+     "value": 0.6522
+    }
+   },
+   "recommendation": {
+    "api": {
+     "denominator": 26,
+     "numerator": 1,
+     "target": "≥ 10 % (ссылку открыли / показов просьбы)",
+     "value": 0.0385
+    },
+    "own": {
+     "denominator": 26,
+     "numerator": 3,
+     "value": 0.1154
+    }
+   },
+   "together_going": {
+    "api": {
+     "denominator": 180,
+     "numerator": 28,
+     "target": "наблюдаем",
+     "value": 0.1556
+    },
+    "own": {
+     "denominator": 180,
+     "numerator": 28,
+     "value": 0.1556
+    }
+   },
+   "virality": {
+    "api": {
+     "denominator": 50,
+     "numerator": 10,
+     "target": "≥ 0,2",
+     "value": 0.2
+    },
+    "own": {
+     "denominator": 50,
+     "numerator": 10,
+     "value": 0.2
+    }
+   }
+  },
+  "mismatch": [
+   "acceptance",
+   "activation_invited"
+  ]
  },
  "meta": {
   "archetypes": {
@@ -285,13 +551,13 @@
   "db_name": "leisure_sim",
   "events_seeded": 177,
   "seed": 20261024,
-  "sim_end": "2026-11-23T19:00:00+00:00",
+  "sim_end": "2026-12-19T09:30:00+00:00",
   "sim_start": "2026-10-20T00:00:00+00:00",
-  "updates_fed": 1558,
+  "updates_fed": 1516,
   "users": 50,
   "web_base_url_original": "http://localhost:8000 (значение по умолчанию settings.py)",
   "weeks": 4,
-  "world_calls": 6583
+  "world_calls": 6629
  },
  "norms": [
   {
@@ -306,7 +572,7 @@
    "norm": "все",
    "note": "в seed нет событий на 23.10, а на следующие уикенды их 4–18 на все категории — пустые слоты в основном недобор базы",
    "status": "fail",
-   "value": "39 из 214 = 18 %"
+   "value": "41 из 214 = 19 %"
   },
   {
    "name": "Не больше 7 сообщений за раз (п. 8)",
@@ -325,9 +591,9 @@
   {
    "name": "Не повторять показанное без реакции и после «мимо» (п. 8)",
    "norm": "0",
-   "note": "повторов всего 9,4 % показов",
+   "note": "повторов всего 9,2 % показов",
    "status": "ok",
-   "value": "нарушений 0 из 91 повторов"
+   "value": "нарушений 0 из 89 повторов"
   },
   {
    "name": "Отправка 10 000 человек за 15 минут (п. 10)",
@@ -341,26 +607,26 @@
    "norm": "все",
    "note": "",
    "status": "ok",
-   "value": "352 из 352"
+   "value": "356 из 356"
   },
   {
    "name": "Нажатий до первой подборки (FLOW-ONBOARDING, разд. 1)",
    "norm": "медиана ≤ 12",
-   "note": "минимум по коду 9; без правок интересов медиана 10 (n=2); правки интересов — 4 нажатий в медиане",
-   "status": "fail",
-   "value": "min 10, медиана 14, max 17; ≤ 12: 14 из 45"
+   "note": "минимум по коду 9; без правок интересов медиана 8 (n=2); правки интересов — 4 нажатий в медиане",
+   "status": "ok",
+   "value": "min 5, медиана 12, max 16; ≤ 12: 23 из 45"
   },
   {
    "name": "«Уточнить под себя» — необязательный блок",
    "norm": "необязательно",
-   "note": "пересобрали подборку 18; с «Уточнить» вместе до готового профиля — медиана 15",
+   "note": "пересобрали подборку 18; с «Уточнить» вместе до готового профиля — медиана 14",
    "status": "na",
    "value": "открыли 18 из 45; нажатий в медиане 6"
   }
  ],
  "onboarding": {
-  "all_screens_checked": 142,
-  "back_screens": 142,
+  "all_screens_checked": 140,
+  "back_screens": 140,
   "completed": 45,
   "funnel": [
    {
@@ -383,33 +649,33 @@
   "interest_edits_max": 7,
   "interest_edits_median": 4,
   "interest_rows": null,
-  "interest_share_of_taps": 0.3970345963756178,
-  "no_interest_edit_median": 10.0,
+  "interest_share_of_taps": 0.4343065693430657,
+  "no_interest_edit_median": 8.5,
   "no_interest_edit_n": 2,
   "prefill": {
    "avg_level0": 0.0,
-   "avg_level1": 11.0,
-   "avg_level2": 3.0,
-   "avg_level3": 5.0,
-   "match_share": 0.5383771929824561,
+   "avg_level1": 10.770833333333334,
+   "avg_level2": 3.2708333333333335,
+   "avg_level3": 4.958333333333333,
+   "match_share": 0.5285087719298246,
    "personas": 48,
-   "shown_match_avg": 3.1041666666666665,
-   "shown_match_share": 0.3880208333333333
+   "shown_match_avg": 3.0625,
+   "shown_match_share": 0.3721518987341772
   },
   "started": 50,
   "step_means": {
-   "consent": 2,
-   "interests": 5.355555555555555,
-   "values": 6.133333333333334
+   "consent": 1.9777777777777779,
+   "interests": 5.288888888888889,
+   "values": 4.911111111111111
   },
-  "taps_clean_max": 17,
-  "taps_clean_median": 13.5,
-  "taps_clean_min": 10,
-  "taps_le_target": 14,
-  "taps_max": 17,
-  "taps_mean": 13.488888888888889,
-  "taps_median": 14,
-  "taps_min": 10,
+  "taps_clean_max": 16,
+  "taps_clean_median": 12.0,
+  "taps_clean_min": 5,
+  "taps_le_target": 23,
+  "taps_max": 16,
+  "taps_mean": 12.177777777777777,
+  "taps_median": 12,
+  "taps_min": 5,
   "theoretical_min": 9,
   "weight_prompts": null,
   "weights_share_of_taps": 0.0
@@ -418,15 +684,15 @@
   "go_users_by_week": [
    29,
    19,
-   19,
+   20,
    20,
    15
   ],
   "got_push": 39,
-  "mean": 0.4533333333333333,
-  "plan_cmd_empty": 32,
-  "plan_cmd_total": 147,
-  "plan_lines_median": 6,
+  "mean": 0.4577777777777778,
+  "plan_cmd_empty": 30,
+  "plan_cmd_total": 146,
+  "plan_lines_median": 6.0,
   "plan_max_line": 179,
   "pushes": 147,
   "reached_any": 43,
@@ -434,7 +700,7 @@
   "share_by_week": [
    0.6444444444444445,
    0.4222222222222222,
-   0.4222222222222222,
+   0.4444444444444444,
    0.4444444444444444,
    0.3333333333333333
   ],
@@ -442,18 +708,18 @@
  },
  "plan_reminders": {
   "flags": {
-   "feedback_asked_at": 141,
-   "reminded_at": 141,
-   "total": 141
+   "feedback_asked_at": 136,
+   "reminded_at": 136,
+   "total": 136
   },
   "reminded_other_day": 0,
   "same_day_after_9": {
-   "going": 12,
-   "reminded": 12
+   "going": 11,
+   "reminded": 11
   },
   "stale_taps": 11,
   "Вс": {
-   "asked_rating": 46,
+   "asked_rating": 45,
    "going": 46,
    "reminded": 46
   },
@@ -463,37 +729,37 @@
    "reminded": 19
   },
   "Пт": {
-   "asked_rating": 22,
-   "going": 22,
-   "reminded": 22
+   "asked_rating": 21,
+   "going": 21,
+   "reminded": 21
   },
   "Сб": {
-   "asked_rating": 54,
-   "going": 54,
-   "reminded": 54
+   "asked_rating": 50,
+   "going": 50,
+   "reminded": 50
   }
  },
  "rating": {
-  "answered": 0.391812865497076,
+  "answered": 0.40588235294117647,
   "dist": {
    "2": 5,
-   "3": 18,
+   "3": 19,
    "4": 23,
-   "5": 21
+   "5": 22
   },
-  "mean": 3.8955223880597014,
-  "n": 67,
-  "prompts": 171
+  "mean": 3.898550724637681,
+  "n": 69,
+  "prompts": 170
  },
  "repeats": {
   "appearances": 965,
   "classes": {
    "без реакции": 5,
-   "иду": 57,
-   "может": 29
+   "иду": 56,
+   "может": 28
   },
-  "repeated": 91,
-  "share": 0.09430051813471503,
+  "repeated": 89,
+  "share": 0.0922279792746114,
   "violate_from_first": 0,
   "violate_no_reaction_3": 0,
   "violate_skip": 0
@@ -555,10 +821,10 @@
   {
    "id": "reaction",
    "name": "Реакция: дайджесты хотя бы с одним решением",
-   "note": "95 % ДИ 55–67 %",
+   "note": "95 % ДИ 54–67 %",
    "status": "ok",
    "target": "≥ 40 %",
-   "value": 0.6121495327102804
+   "value": 0.6074766355140186
   },
   {
    "id": "plan",
@@ -566,7 +832,7 @@
    "note": "знаменатель — все прошедшие онбординг",
    "status": "ok",
    "target": "≥ 25 %",
-   "value": 0.4533333333333333
+   "value": 0.4577777777777778
   },
   {
    "id": "retention",
@@ -579,18 +845,18 @@
   {
    "id": "rating",
    "name": "Качество: средняя оценка «как прошло»",
-   "note": "оценили 39 % из 171 запросов",
+   "note": "оценили 41 % из 170 запросов",
    "status": "fail",
    "target": "≥ 4,0",
-   "value": 3.8955223880597014
+   "value": 3.898550724637681
   },
   {
    "id": "growth",
-   "name": "Рост: доля новых из «Отправить другу»",
-   "note": "кнопка «Другу» — URL, бот не видит нажатий и переходов; метрика требует редиректа через сервер",
-   "status": "na",
+   "name": "Рост: доля новых через друзей (приглашения и ссылка-рекомендация)",
+   "note": "source ∈ {invite, ref, share} среди новых с согласием; остальные метрики роста — в разделе 5",
+   "status": "fail",
    "target": "≥ 20 %",
-   "value": null
+   "value": 0.1786
   },
   {
    "id": "money",
@@ -605,183 +871,199 @@
   {
    "id": "У1",
    "priority": 1,
-   "title": "Онбординг: нажатий до подборки больше целевых 12"
+   "title": "Предложенные восемь направлений слабо совпадают с тем, что хочет человек"
   },
   {
    "id": "У2",
    "priority": 2,
-   "title": "Предложенные восемь направлений слабо совпадают с тем, что хочет человек"
+   "title": "Подборки худеют к концу прогона"
   },
   {
    "id": "У3",
    "priority": 3,
-   "title": "Подборки худеют к концу прогона"
-  },
-  {
-   "id": "У4",
-   "priority": 4,
    "title": "/plan приходит одним моноширинным блоком"
   }
  ],
- "violations": {},
+ "violations": {
+  "html_warning": 1
+ },
  "volatile": {
-  "duration_s": 73.5,
+  "duration_s": 110.9,
   "job_runs": {
    "build": 5,
    "feedback": 140,
-   "plan": 155,
+   "invites": 840,
+   "plan": 153,
    "send": 30
   },
   "job_seconds": {
-   "build": 6.21,
-   "feedback": 6.14,
-   "plan": 7.43,
-   "send": 8.4
+   "build": 8.06,
+   "feedback": 7.6,
+   "invites": 5.57,
+   "plan": 10.43,
+   "send": 12.93
   }
  },
  "vs_previous": [
   {
-   "after_fixes": "90 %",
    "metric": "Активация",
    "now": "90 %",
+   "second": "90 %",
+   "third": "90 %",
    "was": "78 %"
   },
   {
-   "after_fixes": "57 %",
    "metric": "Реакция (подборки с решением)",
    "now": "61 %",
+   "second": "57 %",
+   "third": "61 %",
    "was": "60 %"
   },
   {
-   "after_fixes": "44 %",
    "metric": "«Иду» в неделю (среднее)",
-   "now": "45 %",
+   "now": "46 %",
+   "second": "44 %",
+   "third": "45 %",
    "was": "45 %"
   },
   {
-   "after_fixes": "71 %",
    "metric": "Удержание на последней неделе",
    "now": "60 %",
+   "second": "71 %",
+   "third": "60 %",
    "was": "67 %"
   },
   {
-   "after_fixes": "4,06",
    "metric": "Средняя оценка",
    "now": "3,90",
+   "second": "4,06",
+   "third": "3,90",
    "was": "4,05"
   },
   {
-   "after_fixes": "11 / 15 / 18",
    "metric": "Нажатий до первой подборки: min / медиана / max",
-   "now": "10 / 14 / 17",
+   "now": "5 / 12 / 16",
+   "second": "11 / 15 / 18",
+   "third": "10 / 14 / 17",
    "was": "28 / 33 / 81"
   },
   {
-   "after_fixes": "18",
    "metric": "Нажатий до первого «Иду» (медиана)",
-   "now": "16",
+   "now": "15",
+   "second": "18",
+   "third": "16",
    "was": "35"
   },
   {
-   "after_fixes": "5",
    "metric": "Бросили онбординг (из 50)",
    "now": "5",
+   "second": "5",
+   "third": "5",
    "was": "11"
   },
   {
-   "after_fixes": "4,3",
    "metric": "Карточек в подборке (среднее)",
    "now": "4,5",
+   "second": "4,3",
+   "third": "4,5",
    "was": "4,6"
   },
   {
-   "after_fixes": "1,56",
    "metric": "Пустых слотов из 5 (среднее)",
    "now": "1,50",
+   "second": "1,56",
+   "third": "1,50",
    "was": "2,15"
   },
   {
-   "after_fixes": "9,5 %",
    "metric": "Повторные показы, доля",
-   "now": "9,4 %",
+   "now": "9,2 %",
+   "second": "9,5 %",
+   "third": "9,4 %",
    "was": "13,8 %"
   },
   {
-   "after_fixes": "43",
    "metric": "Дошли до плана",
    "now": "43",
+   "second": "43",
+   "third": "43",
    "was": "36"
   },
   {
-   "after_fixes": "61",
    "metric": "Решений «Интересно»",
-   "now": "70",
+   "now": "72",
+   "second": "61",
+   "third": "70",
    "was": "0"
   },
   {
-   "after_fixes": "20",
    "metric": "«Мимо»: причина не выбрана",
-   "now": "24",
+   "now": "27",
+   "second": "20",
+   "third": "24",
    "was": "9"
   },
   {
-   "after_fixes": "23 из 23",
    "metric": "Напоминание в день события, Пт",
-   "now": "22 из 22",
+   "now": "21 из 21",
+   "second": "23 из 23",
+   "third": "22 из 22",
    "was": "7 из 33"
   },
   {
-   "after_fixes": "32 из 32",
    "metric": "Напоминание в день события, Вс",
    "now": "46 из 46",
+   "second": "32 из 32",
+   "third": "46 из 46",
    "was": "0 из 23"
   },
   {
-   "after_fixes": "16 из 17",
    "metric": "Напоминание в день события, Пн–Чт",
    "now": "19 из 19",
+   "second": "16 из 17",
+   "third": "19 из 19",
    "was": "0 из 21"
   },
   {
-   "after_fixes": "4",
    "metric": "Открытых дефектов, всего",
-   "now": "1",
+   "now": "4",
+   "second": "4",
+   "third": "1",
    "was": "18"
   },
   {
-   "after_fixes": "0",
    "metric": "  высокой серьёзности",
    "now": "0",
+   "second": "0",
+   "third": "0",
    "was": "3"
   },
   {
-   "after_fixes": "1",
    "metric": "  средней",
-   "now": "0",
+   "now": "2",
+   "second": "1",
+   "third": "0",
    "was": "10"
   },
   {
-   "after_fixes": "3",
    "metric": "  низкой",
-   "now": "1",
+   "now": "2",
+   "second": "3",
+   "third": "1",
    "was": "5"
   },
   {
-   "after_fixes": "17",
    "metric": "Закрыто из дефектов исходного прогона",
    "now": "17 из 18",
+   "second": "17",
+   "third": "—",
    "was": "—"
   },
   {
-   "after_fixes": "—",
-   "metric": "Закрыто из открытых во втором прогоне",
-   "now": "3 из 4",
-   "was": "—"
-  },
-  {
-   "after_fixes": "6",
    "metric": "Проблем юзабилити (открытых)",
-   "now": "4",
+   "now": "3",
+   "second": "6",
+   "third": "4",
    "was": "13"
   }
  ]

@@ -275,57 +275,69 @@ class Driver:
             close("consent")
             return self._abandon(ps, "consent")
         btn = self.find(st, lambda t: t.startswith("Принять"))
-        if btn is None:
+        if btn is None and ("Шаг 1 из 2" in st.text or "Шаг 2 из 2" in st.text):    # согласие уже дано в Mini App (приглашение друга)
+            ps.onb["consent_in_miniapp"] = True
+            close("consent")
+        elif btn is None:
             self._stuck(ps, "consent", "Принять и начать")
             return "stuck"
-        await self.tap(ps, st, btn)
-        close("consent")
-
-        # ── Шаг 1 из 2: пять ценностей (по 19) ──
-        st = self.screen(ps)
-        self._check_back(ps, "values")
-        await noise("values")
-        picks = list(p.top_values)
-        wrong = None
-        if p.misclick_step == "values" and not ps.misclick_done:
-            wrong = next(v for v in VALUES if v not in picks)       # по ошибке нажал соседнюю ценность вместо последней
-            picks = picks[:-1] + [wrong]
-
-        async def pick(v: str) -> bool:
-            s = self.screen(ps)
-            b = self.find(s, lambda t, v=v: t.removeprefix("✓ ") == VALUE_SHORT.get(v, v))
-            if b is None:
-                self._stuck(ps, "values", v)
-                return False
-            await self.tap(ps, s, b, f"ценность {v}")
-            return True
-
-        for i, v in enumerate(picks):
-            if p.abandon_step == "values" and i == p.abandon_sub and not ps.onb.get("abandon_used"):
-                ps.onb["abandon_used"] = True
-                close("values")
-                return self._abandon(ps, "values", i)
-            if not await pick(v):
-                return "stuck"
-        s = self.screen(ps)
-        if s is not None and "Шаг 1 из 2" not in s.text:                 # пятая ценность при первом проходе сама открывает «Шаг 2» (автопереход)
-            ps.onb["auto_advance"] = True
-            if p.overselect:
-                self.f.add("overselect_skipped", "шестую ценность нажать нельзя: после пятой экран уже сменился", p.user_id, self.clock.now)
         else:
-            if p.overselect:
-                extra = self.find(s, lambda t: not t.startswith("✓ ") and t in {VALUE_SHORT.get(x, x) for x in VALUES})
-                if extra is not None:
-                    r = await self.tap(ps, s, extra, "шестая ценность")
-                    ps.onb["overselect_toast"] = r["toast"]
-                    self.f.add("sixth_value", f"шестая ценность «{extra['text']}» → тост «{r['toast']}»", p.user_id, self.clock.now)
+            await self.tap(ps, st, btn)
+            close("consent")
+
+        wrong = None
+        skip_values = False
+        if st is not None and "Шаг 2 из 2" in st.text:                  # профиль из Mini App с согласием: /start открывает сразу «Шаг 2», значения — по умолчанию
+            skip_values = True
+            ps.onb["step1_skipped"] = True
+            self.f.add("step1_skipped", "после согласия в Mini App /start открыл «Шаг 2 из 2»: пять ценностей не выбирались, остались по умолчанию",
+                       p.user_id, self.clock.now)
+        if not skip_values:
+            # ── Шаг 1 из 2: пять ценностей (по 19) ──
+            st = self.screen(ps)
+            self._check_back(ps, "values")
+            await noise("values")
+            picks = list(p.top_values)
+            wrong = None
+            if p.misclick_step == "values" and not ps.misclick_done:
+                wrong = next(v for v in VALUES if v not in picks)       # по ошибке нажал соседнюю ценность вместо последней
+                picks = picks[:-1] + [wrong]
+
+            async def pick(v: str) -> bool:
+                s = self.screen(ps)
+                b = self.find(s, lambda t, v=v: t.removeprefix("✓ ") == VALUE_SHORT.get(v, v))
+                if b is None:
+                    self._stuck(ps, "values", v)
+                    return False
+                await self.tap(ps, s, b, f"ценность {v}")
+                return True
+
+            for i, v in enumerate(picks):
+                if p.abandon_step == "values" and i == p.abandon_sub and not ps.onb.get("abandon_used"):
+                    ps.onb["abandon_used"] = True
+                    close("values")
+                    return self._abandon(ps, "values", i)
+                if not await pick(v):
+                    return "stuck"
             s = self.screen(ps)
-            btn = self.find(s, lambda t: t.startswith("Дальше"))
-            if btn is None:
-                self._stuck(ps, "values", "Дальше →")
-                return "stuck"
-            await self.tap(ps, s, btn)
-        close("values")
+            if s is not None and "Шаг 1 из 2" not in s.text:                 # пятая ценность при первом проходе сама открывает «Шаг 2» (автопереход)
+                ps.onb["auto_advance"] = True
+                if p.overselect:
+                    self.f.add("overselect_skipped", "шестую ценность нажать нельзя: после пятой экран уже сменился", p.user_id, self.clock.now)
+            else:
+                if p.overselect:
+                    extra = self.find(s, lambda t: not t.startswith("✓ ") and t in {VALUE_SHORT.get(x, x) for x in VALUES})
+                    if extra is not None:
+                        r = await self.tap(ps, s, extra, "шестая ценность")
+                        ps.onb["overselect_toast"] = r["toast"]
+                        self.f.add("sixth_value", f"шестая ценность «{extra['text']}» → тост «{r['toast']}»", p.user_id, self.clock.now)
+                s = self.screen(ps)
+                btn = self.find(s, lambda t: t.startswith("Дальше"))
+                if btn is None:
+                    self._stuck(ps, "values", "Дальше →")
+                    return "stuck"
+                await self.tap(ps, s, btn)
+            close("values")
 
         # ── Шаг 2 из 2: интересы ──
         st = self.screen(ps)

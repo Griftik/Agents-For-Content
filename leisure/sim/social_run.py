@@ -121,6 +121,10 @@ class Social:
 
         ps = self.guests.get(persona.user_id)
         if ps is None:
+            if persona.idx % 10 == 3:                               # имя из Telegram бывает любым: проверяем, что уведомление его экранирует
+                persona.name = f"<{persona.name}>"
+            elif persona.idx % 10 == 7:
+                persona.name = f"{persona.name}&Ко"
             ps = PState(p=persona, rng=random.Random(f"{self.seed}:{persona.idx}:behavior"), E=persona.engagement, status="new")
             ps.onb["via"] = via
             self.guests[persona.user_id] = ps
@@ -139,7 +143,7 @@ class Social:
         key = (p.user_id, card.event_id)
         if key in self.asked:
             return
-        rng = random.Random(f"{self.seed}:{p.idx}:invite:{card.event_id}")
+        rng = random.Random(f"{self.seed}:{p.idx}:invite:{ev['slug']}")
         fits = {f.idx: f.persona.fit(ev) for f in friends if f.persona is not None}
         f = friend_pick(rng, friends, fits)
         if f is None or rng.random() >= p_invite(p, self.soc[p.idx], fits.get(f.idx, 0.3)):
@@ -157,19 +161,19 @@ class Social:
         code = body.get("code", "")
         link = body.get("url") or body.get("web_url") or ""
         ok = bool(re.fullmatch(r"[2-9A-HJKMNP-TV-Z]{8}", code)) and link in (body.get("share_text") or "") and ev["title"][:20] in (body.get("share_text") or "")
-        self.note("invite_contract_ok" if ok else "invite_contract_bad", f"u{p.user_id}: code={code!r} url={body.get('url')!r} share_text={str(body.get('share_text'))[:60]!r}")
+        self.note("invite_contract_ok" if ok else "invite_contract_bad", f"u{p.user_id}: код {'ok' if ok else repr(code)}, url={'есть' if body.get('url') else None}, share_text={str(body.get('share_text'))[:40].replace(code, '…')!r}")
         if not body.get("url") or "startapp=inv_" not in body["url"]:
             self.note("invite_no_miniapp_url", f"url={body.get('url')!r}")
-        rec = {"code": code, "inviter": p.user_id, "inviter_idx": p.idx, "friend": user_id_of(fr), "friend_idx": fr.idx, "inside": fr.inside,
+        rec = {"n": len(self.invites), "code": code, "inviter": p.user_id, "inviter_idx": p.idx, "friend": user_id_of(fr), "friend_idx": fr.idx, "inside": fr.inside,
                "event_id": eid, "event_slug": ev["slug"], "day": day, "t": self.now.isoformat(), "opened": False, "accept": None,
                "declined": False, "was_new": None, "consent_409": False, "notified": None, "together_with": None, "profile_state": None,
                "viewed_status": None}
         self.invites.append(rec)
         self.inv_by_code[code] = rec
-        rng = random.Random(f"{self.seed}:{p.idx}:invite2:{eid}")
+        rng = random.Random(f"{self.seed}:{p.idx}:invite2:{ev['slug']}")
         if rng.random() < 0.12:                                   # повторное нажатие «Позвать друга»: тот же код
             st2, b2 = await self.api("post", "/api/invites", json={"user_id": p.user_id, "event_slug": ev["slug"], "day": day, "kind": "event"})
-            self.note("invite_idempotent" if st2 == 200 and b2.get("code") == code else "invite_not_idempotent", f"u{p.user_id}: {code} → {b2.get('code')}")
+            self.note("invite_idempotent" if st2 == 200 and b2.get("code") == code else "invite_not_idempotent", f"u{p.user_id}: повторное «Позвать друга» → {'тот же код' if b2.get('code') == code else 'другой код'}")
         if rng.random() < OPEN_P:
             self.push(self.now + timedelta(hours=rng.uniform(0.1, 30.0)), "friend_open", rec, fr)
 
@@ -189,21 +193,23 @@ class Social:
             ps = self.new_guest(persona, "invite")
             if uid not in sim.world.cannot_initiate and ps.status == "new":
                 sim.world.cannot_initiate.add(uid)             # профиль создаст Mini App: бот первым писать не может
-        rng = random.Random(f"{self.seed}:{fr.idx}:friend:{rec['code']}")
+        rng = random.Random(f"{self.seed}:{fr.idx}:friend:{rec['n']}")
         rec["fnew"] = await self._is_new(uid)                    # нет профиля или согласия: так же считает продукт (InviteAccept.was_new)
         st, view = await self.api("get", f"/api/invites/{rec['code']}", params={"user_id": uid})
         if st != 200:
-            self.note("invite_view_failed", f"{rec['code']} → {st}")
+            self.note("invite_view_failed", f"#{rec['n']} → {st}")
             return
         rec["viewed_status"] = view.get("status")
         inv_p = sim.by_uid[rec["inviter"]].p
-        good = (view.get("status") == "active" and view.get("event") is not None and view.get("day") == rec["day"]
+        good = (view.get("event") is not None and view.get("day") == rec["day"]
                 and (view.get("inviter_name") == _first_name(inv_p.name) or view.get("inviter_name") is None))
-        self.note("view_ok" if good else "view_bad", f"{rec['code']}: status={view.get('status')} day={view.get('day')} inviter={view.get('inviter_name')!r}")
+        late = view.get("status") in ("past", "unpublished", "gone")           # открыл после события: страница честно говорит, что оно прошло
+        self.note("view_past" if late and good else "view_ok" if good and view.get("status") == "active" else "view_bad",
+                  f"#{rec['n']}: status={view.get('status')} day={view.get('day')} inviter={view.get('inviter_name')!r}")
         st, _ = await self.api("post", f"/api/invites/{rec['code']}/open", json={"user_id": uid, "name": persona.name, "username": persona.username})
         rec["opened"] = st == 200
         if st != 200:
-            self.note("open_failed", f"{rec['code']} → {st}")
+            self.note("open_failed", f"#{rec['n']} → {st}")
             return
         fit = persona.fit(ev)
         if rng.random() >= p_accept(fit):
@@ -221,14 +227,17 @@ class Social:
         st, js = await self.api("post", f"/api/invites/{rec['code']}/accept", json=body)
         if st == 409:
             rec["consent_409"] = True
-            self.note("consent_required_409", f"{rec['code']} u{uid}")
+            self.note("consent_required_409", f"#{rec['n']} u{uid}")
             if rng.random() >= CONSENT_TICK_P:
-                self.note("consent_not_given", f"{rec['code']} u{uid}")
+                self.note("consent_not_given", f"#{rec['n']} u{uid}")
                 return
             body["consent"] = True
             st, js = await self.api("post", f"/api/invites/{rec['code']}/accept", json=body)
+        if st == 410:
+            self.note("accept_gone_410", f"#{rec['n']} u{uid}: событие прошло ({js.get('detail')})")
+            return
         if st != 200:
-            self.note("accept_failed", f"{rec['code']} u{uid} {status} → {st} {str(js)[:60]}")
+            self.note("accept_failed", f"#{rec['n']} u{uid} {status} → {st} {str(js)[:60]}")
             return
         rec["accept"] = status
         rec["profile_state"] = js.get("profile_state")
@@ -237,11 +246,11 @@ class Social:
         if status == "declined":
             rec["declined"] = True
             rec["accept"] = None
-            self.note("declined_ok" if js.get("decision") is None else "declined_has_decision", f"{rec['code']} u{uid}")
+            self.note("declined_ok" if js.get("decision") is None else "declined_has_decision", f"#{rec['n']} u{uid}")
             return
         d = js.get("decision") or {}
         self.note("accept_ok" if d.get("status") == {"going": "иду", "maybe": "может"}[status] and d.get("day") == rec["day"] else "accept_bad",
-                  f"{rec['code']}: decision={d}")
+                  f"#{rec['n']}: решение {d.get('status')} на {d.get('day')}")
         inviter_ps = sim.by_uid[rec["inviter"]]
         if status == "going":
             msgs = [m for m in inviter_chat[n0:] if not m.from_user and any(b.get("callback_data") == "pl:s" for b in m.buttons())]
@@ -249,9 +258,9 @@ class Social:
             if msgs:
                 self.note("inviter_notified", f"u{rec['inviter']}: «{msgs[0].text[:60]}»")
             elif inviter_ps.status == "active" and rec["inviter"] not in sim.world.blocked:
-                self.note("inviter_not_notified", f"{rec['code']}: пригласивший u{rec['inviter']} не получил уведомления")
+                self.note("inviter_not_notified", f"#{rec['n']}: пригласивший u{rec['inviter']} не получил уведомления")
             exp_name = _first_name(inviter_ps.p.name)
-            self.note("together_name_ok" if js.get("together_with") in (exp_name, None) else "together_name_bad", f"{rec['code']}: {js.get('together_with')!r}")
+            self.note("together_name_ok" if js.get("together_with") in (exp_name, None) else "together_name_bad", f"#{rec['n']}: {js.get('together_with')!r}")
         # учёт решения в состоянии человека (для планов и оценок)
         eid = rec["event_id"]
         if ps is not None:
@@ -358,7 +367,7 @@ class Social:
                 m = re.search(r"(?:ref_|[?&]ref=)([A-Z0-9]{8})", link)
                 self.ref_shares.append({"u": p.user_id, "code": m.group(1) if m else None, "link": link, "t": self.now.isoformat()})
                 if not m:
-                    self.note("ref_link_unparsed", f"u{p.user_id}: {link[:80]!r}")
+                    self.note("ref_link_unparsed", f"u{p.user_id}: ссылку не разобрать")
                     return
                 k = rng.choices(*REF_NEWCOMERS)[0]
                 for j in range(k):
@@ -369,7 +378,7 @@ class Social:
     async def ref_open(self, ps, code: str, j: int) -> None:
         sim = self.sim
         sharer = ps.p
-        r = random.Random(f"{self.seed}:{sharer.idx}:refnew:{code}:{j}")
+        r = random.Random(f"{self.seed}:{sharer.idx}:refnew:{len(self.ref_shares)}:{j}")
         self.ref_counter += 1
         idx = REF_IDX0 + self.ref_counter
         arch = r.choice(NEIGHBORS[sharer.archetype])
@@ -382,22 +391,24 @@ class Social:
                "source": None}
         self.ref_newcomers.append(rec)
         if st != 200:
-            self.note("ref_open_failed", f"{code} → {st}")
+            self.note("ref_open_failed", f"ссылка-рекомендация → {st}")
             return
-        _, prof = await self.api("get", f"/api/profile/{uid}")
-        rec["source"] = prof.get("source")
-        self.note("ref_source_ok" if prof.get("source") == "ref" else "ref_source_bad", f"u{uid}: source={prof.get('source')!r}")
         gps.status = "new"
-        if r.random() < p_take_onboarding(persona) * 0.8:
+        if self.ref_counter == 1 or r.random() < p_take_onboarding(persona) * 0.8:    # первый пришедший по ссылке проходит путь целиком (проба); согласие и онбординг в Mini App; код рекомендации едет в PUT /api/profile
             gps.status = "active"
             gps.onb["consent_t"] = self.now.isoformat()
             rec["consented"] = True
-            await self.api("put", f"/api/profile/{uid}", json={"consent": True, "name": persona.name})
+            pst, prof = await self.api("put", f"/api/profile/{uid}", json={"consent": True, "name": persona.name, "ref_code": code})
+            rec["source"] = prof.get("source") if pst == 200 else None
+            self.note("ref_source_ok" if rec["source"] == "ref" else "ref_source_bad", f"u{uid}: PUT профиля → {pst}, source={rec['source']!r}")
             if r.random() < WRITE_ACCESS_P:
                 await self.api("put", f"/api/profile/{uid}", json={"can_write": True})
                 sim.world.cannot_initiate.discard(uid)
                 gps.onb["can_write"] = True
             self.push(self.now + timedelta(minutes=r.uniform(1, 15)), "onboard_api", gps, None)
+        else:
+            pst, _ = await self.api("get", f"/api/profile/{uid}")
+            self.note("ref_no_profile_without_consent" if pst == 404 else "ref_profile_without_consent", f"u{uid}: GET профиля → {pst}")
 
     # ───────── диспетчер событий ─────────
     async def handle(self, payload: tuple) -> None:
@@ -446,7 +457,8 @@ class Social:
         by_u = {p["u"]: p for p in profs}
         going = [d for d in decs if d["status"] == "иду"]
         gone = {u for u, x in sim.by_uid.items() if x.status == "deleted"}       # /delete каскадом стирает их приглашения и принятия
-        recs = [r for r in self.invites if r["inviter"] not in gone and r["friend"] not in gone]
+        made = list(self.invites)                                               # приглашение переживает удаление профиля пригласившего (inviter_id → NULL)
+        recs = [r for r in made if r["friend"] not in gone]                      # принятие — пока жив и профиль друга
         opened = [r for r in recs if r["opened"]]
         accepted = [r for r in opened if r["accept"] in ("going", "maybe")]
         new_opened = [r for r in opened if r.get("fnew")]
@@ -464,18 +476,20 @@ class Social:
             return round(n / d, 4) if d else None
 
         own = {
-            "invite_share": (len(recs), len(going)),
+            "invite_share": (len(made), len(going)),
             "acceptance": (len(accepted), len(opened)),
             "activation_invited": (len(new_activated), len(new_opened)),
             "onboarding_invited": (len(inv_onb14), len(invited)),
             "new_via_friends": (len(new_friends), len(new_total)),
             "virality": (len(new_friends), len(active_users)),
             "positive_experience": (len(good), len(rated)),
-            "recommendation": (len(self.ref_shares), len(self.ref_asks)),
+            "recommendation": (len([x for x in self.ref_shares if x["u"] not in gone]), len([x for x in self.ref_asks if x["u"] not in gone])),
             "together_going": (together_n, len(going)),
         }
         api_m = (api_metrics or {}).get("metrics", {}) if st == 200 else {}
         table = {k: {"own": {"value": ratio(*v), "numerator": v[0], "denominator": v[1]}, "api": api_m.get(k)} for k, v in own.items()}
+        ref_codes_opened = len({r["code"] for r in self.ref_newcomers if r["consented"]})
+        ref_codes_seen = len({r["code"] for r in self.ref_newcomers if r["opened"]})
         # ссылки-рекомендации: открыли по данным БД
         ref_invs = [i for i in invs if i["kind"] == "ref"]
         ref_opened_db = sum(1 for i in ref_invs if i["opened"] > 0)
@@ -506,7 +520,7 @@ class Social:
         }
         # воронка приглашений
         funnel = {
-            "invites": len(recs), "opened": len(opened), "accepted": len(accepted), "going": sum(1 for r in opened if r["accept"] == "going"),
+            "invites": len(made), "opened": len(opened), "accepted": len(accepted), "going": sum(1 for r in opened if r["accept"] == "going"),
             "maybe": sum(1 for r in opened if r["accept"] == "maybe"), "declined": sum(1 for r in opened if r["declined"]),
             "new_openers": len(new_opened), "new_accepted": len(new_activated), "consent_409": sum(1 for r in opened if r["consent_409"]),
             "to_inside": sum(1 for r in recs if r["inside"]), "to_outside": sum(1 for r in recs if not r["inside"]),
@@ -517,17 +531,23 @@ class Social:
             "guests_total": len(guests), "guests_can_write": sum(1 for u in guests if by_u.get(u, {}).get("can_write")),
             "guests_with_digest": len({r.uid for r in sim.digest_recs if r.uid in guests}),
             "ref_asks": len(self.ref_asks), "ref_shares": len(self.ref_shares), "ref_newcomers": len(self.ref_newcomers),
-            "ref_newcomers_consented": sum(1 for r in self.ref_newcomers if r["consented"]), "ref_opened_db": ref_opened_db, "ref_codes_opened": ref_codes_opened,
+            "ref_newcomers_consented": sum(1 for r in self.ref_newcomers if r["consented"]), "ref_opened_db": ref_opened_db, "ref_codes_opened": ref_codes_opened, "ref_codes_seen": ref_codes_seen,
             "ref_ask_users": len({r["u"] for r in self.ref_asks}),
         }
-        ref_codes_opened = len({r["code"] for r in self.ref_newcomers if r["opened"]})
+        sim_codes = {r["code"] for r in self.invites}
+        extra_db = [i["code"] for i in invs if i["kind"] == "event" and i["code"] not in sim_codes]
         mism = [k for k, v in table.items() if k != "recommendation" and v["api"] and v["api"].get("numerator") is not None
                 and (v["api"]["numerator"], v["api"]["denominator"]) != (v["own"]["numerator"], v["own"]["denominator"])]
-        if (table["recommendation"]["api"] or {}).get("numerator") not in (None, ref_codes_opened):
+        if (table["recommendation"]["api"] or {}).get("numerator") not in (None, ref_codes_seen):     # открытия ссылки без согласия API не видит
             mism.append("recommendation")
         sources = Counter(p["source"] for p in profs)
+        anon = (api_metrics or {}).get("counts", {}).get("opened_without_consent")
+        api_opened = (api_m.get("acceptance") or {}).get("denominator")
+        funnel["opened_anonymous_api"] = anon
+        funnel["opened_all_by_api"] = (api_opened + anon) if anon is not None and api_opened is not None else None
+        funnel["opened_anonymous_sim"] = sum(1 for r in recs if r["opened"] and r.get("fnew") and r["accept"] is None)
         self.final = {"metrics": table, "mismatch": mism, "funnel": funnel, "compare": compare, "api_status": st, "sources": dict(sources),
-                      "api_counts": (api_metrics or {}).get("counts"), "calls": dict(sorted(self.calls.items())), "checks": dict(self.checks),
+                      "api_counts": (api_metrics or {}).get("counts"), "extra_db_invites": extra_db, "calls": dict(sorted(self.calls.items())), "checks": dict(self.checks),
                       "examples": {k: v for k, v in self.examples.items()}, "api_errors": self.api_errors[:5], "n_api_errors": len(self.api_errors),
                       "friends": {"avg": round(sum(len(v) for v in self.graph.values()) / max(1, len(self.graph)), 2),
                                   "outside": sum(1 for v in self.graph.values() for f in v if not f.inside),

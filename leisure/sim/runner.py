@@ -958,7 +958,10 @@ def db_facts(sim: Sim) -> dict:
             ops = ps.onb.get("refine_ops") or []
             top5 = sorted(v for v, w in (pr.values or {}).items() if w == 5)
             if top5 != sorted(p.top_values):
-                mism["values"] += 1
+                if ps.onb.get("step1_skipped"):
+                    out["step1_skipped_profiles"] = out.get("step1_skipped_profiles", 0) + 1       # «Шаг 1» не показывали: ценности по умолчанию
+                else:
+                    mism["values"] += 1
             # ожидаемое в профиле: то, что человек реально ввёл в «Уточнить», иначе умолчания продукта
             exp = {"company": "с детьми" if "kids" in ops else "любая", "times": sorted(p.times) if "times" in ops else ["вечер", "день"],
                    "budget": p.budget if ps.onb.get("budget_set") else 0,
@@ -1237,9 +1240,11 @@ def growth_results(sim: Sim) -> dict:
     g["guests"] = {"digests": len(gd.get("digest_recs", [])), "plan_pushes": len(gd.get("plan_pushes", [])), "feedback_requests": sum(x["n"] for x in gd.get("feedback_sent", [])),
                    "ratings_n": len(ratings), "ratings_mean": round(sum(ratings) / len(ratings), 2) if ratings else None, "users": len(gids),
                    "decisions_taps": sum(1 for t in gd.get("taps", []) if t["kind"] == "decision")}
-    g["invites"] = [{k: r.get(k) for k in ("code", "inviter", "friend", "inside", "event_id", "day", "t", "opened", "accept", "declined", "was_new",
-                                         "consent_409", "notified", "profile_state")} for r in soc.invites]
-    g["ref"] = {"asks": soc.ref_asks, "shares": [{k: v for k, v in x.items() if k != "link"} for x in soc.ref_shares], "newcomers": soc.ref_newcomers}
+    g["invites"] = [{**{k: r.get(k) for k in ("n", "inviter", "friend", "inside", "day", "t", "opened", "accept", "declined", "was_new",
+                                            "consent_409", "notified", "profile_state")}, "event": r["event_slug"]} for r in soc.invites]
+    g["ref"] = {"asks": [{k: v for k, v in x.items() if k != "url"} for x in soc.ref_asks],
+                "shares": [{k: v for k, v in x.items() if k not in ("link", "code")} for x in soc.ref_shares],
+                "newcomers": [{k: v for k, v in x.items() if k != "code"} for x in soc.ref_newcomers]}
     g["offers"] = soc.offers
     g["onboarding_api"] = soc.onboard_api
     return g
