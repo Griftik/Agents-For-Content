@@ -1,0 +1,8 @@
+# Из контекста leisure/ в образ веба нужны только webapp/ и текст политики.
+*
+!webapp
+!web/POLICY.md
+webapp/node_modules
+webapp/.next
+webapp/.env*
+webapp/coverage

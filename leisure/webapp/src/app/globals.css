@@ -3,6 +3,8 @@
   --bg: #ECEEF1; --surface: #F6F7F9; --surface-2: #E1E4E9; --fg: #1A1D23; --muted: #5F6876; --line: #D1D6DD;
   --accent: #7A1F3D; --accent-ink: #FFFFFF; --accent-soft: #F1DFE6; --brass: #8F7128;
   --ok: #2E6B46; --ok-soft: #DCEBE1; --warn: #9A5B12; --warn-soft: #F3E6D2; --ring-track: #D8DCE2;
+  /* Текстовые варианты warn и brass: токены дизайн-системы в светлой теме дают 4.40 и 3.96:1, здесь затемнены до ≥ 5:1 */
+  --warn-ink: #8A520F; --brass-ink: #745A1A;
   --display: 'Oranienbaum', 'Times New Roman', Georgia, serif;
   --body: 'Golos Text', 'Segoe UI', Roboto, Arial, sans-serif;
   --gutter: max(16px, env(safe-area-inset-left, 0px));
@@ -13,6 +15,7 @@
     --bg: #141619; --surface: #1C1F24; --surface-2: #252930; --fg: #EAE8E3; --muted: #9BA3AE; --line: #30353D;
     --accent: #DE86A0; --accent-ink: #1A0B11; --accent-soft: #3A2330; --brass: #D2B065;
     --ok: #86C79A; --ok-soft: #22372A; --warn: #E3A65C; --warn-soft: #3B2E1B; --ring-track: #343941;
+    --warn-ink: #E3A65C; --brass-ink: #D2B065;
     color-scheme: dark;
   }
 }
@@ -20,6 +23,7 @@
   --bg: #141619; --surface: #1C1F24; --surface-2: #252930; --fg: #EAE8E3; --muted: #9BA3AE; --line: #30353D;
   --accent: #DE86A0; --accent-ink: #1A0B11; --accent-soft: #3A2330; --brass: #D2B065;
   --ok: #86C79A; --ok-soft: #22372A; --warn: #E3A65C; --warn-soft: #3B2E1B; --ring-track: #343941;
+  --warn-ink: #E3A65C; --brass-ink: #D2B065;
   color-scheme: dark;
 }
 
@@ -86,7 +90,7 @@ a:hover { text-decoration: none; }
 .btn.cal { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
 .btn.link { margin-left: auto; border-color: transparent; background: transparent; color: var(--accent); padding-inline: 8px; }
 .btn.quiet { color: var(--muted); }
-.btn.quiet:hover { color: var(--warn); }
+.btn.quiet:hover { color: var(--warn-ink); }
 .btn.small { padding: 5px 11px; font-size: 12.5px; min-height: 30px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); padding: 12px 22px; font-size: 15px; min-height: 48px; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -101,10 +105,10 @@ a:hover { text-decoration: none; }
 .filters { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
 .why { padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 500; }
 .why.learn { background: var(--ok-soft); color: var(--ok); }
-.why.neg { background: var(--warn-soft); color: var(--warn); }
+.why.neg { background: var(--warn-soft); color: var(--warn-ink); }
 .badge { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--fg); font-weight: 500; }
 .badge.free { background: var(--ok-soft); color: var(--ok); font-weight: 600; }
-.badge.check { background: var(--warn-soft); color: var(--warn); }
+.badge.check { background: var(--warn-soft); color: var(--warn-ink); }
 
 /* рекомендация */
 .slot { background: var(--surface); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
@@ -127,7 +131,7 @@ a:hover { text-decoration: none; }
 .ev h3 { font-size: 24px; }
 .ev h3 a { color: inherit; text-decoration: none; }
 .ev h3 a:hover { text-decoration: underline; }
-.ev h3 .heart { color: var(--brass); font-size: 18px; margin-left: 6px; }
+.ev h3 .heart { color: var(--brass-ink); font-size: 18px; margin-left: 6px; }
 .ev .place { font-size: 13.5px; line-height: 1.45; color: var(--muted); }
 .ev .place b { font-weight: 600; color: var(--fg); }
 .ev .desc { font-size: 15px; max-width: 70ch; }
@@ -153,9 +157,9 @@ a:hover { text-decoration: none; }
 .pi .n a:hover { text-decoration: underline; }
 .pi.maybe .n { font-weight: 500; color: var(--muted); }
 .pi .v { font-size: 13px; color: var(--muted); }
-.pi .warn { font-size: 13px; color: var(--warn); font-weight: 500; }
+.pi .warn { font-size: 13px; color: var(--warn-ink); font-weight: 500; }
 .pi .row { margin-top: 6px; }
-.stars { color: var(--brass); letter-spacing: 1px; font-size: 14px; }
+.stars { color: var(--brass-ink); letter-spacing: 1px; font-size: 14px; }
 .stars i { color: var(--muted); font-style: normal; opacity: .5; }
 .col .none { color: var(--muted); font-size: 13.5px; padding-top: 6px; }
 .horizon { display: flex; flex-direction: column; gap: 4px; }

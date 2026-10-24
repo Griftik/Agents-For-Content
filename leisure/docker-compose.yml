@@ -68,5 +68,24 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Mini App на Next.js (leisure/webapp). Сервер Next.js ходит в api с ключом; в браузер ключ не попадает.
+  web:
+    build:
+      context: .
+      dockerfile: webapp/Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000
+      API_KEY: ${API_KEY:-}
+      LEISURE_BOT_TOKEN: ${LEISURE_BOT_TOKEN:-}
+      NEXT_PUBLIC_BOT_USERNAME: ${NEXT_PUBLIC_BOT_USERNAME:-}
+      WEB_BASE_URL: ${WEB_BASE_URL:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   pgdata:
