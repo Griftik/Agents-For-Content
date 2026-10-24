@@ -1,6 +1,6 @@
 """Просьбы фронтенда к API и боту: решение и ссылки в элементах дайджеста, ручная правка affinity, диплинк /start e_<slug>.
 
-Нужны БД с seed. Тестовые профили 999_100_01x удаляются после теста.
+Нужны БД с seed. Тестовые профили (id от pid, tests/ids.py) удаляются после теста.
 """
 import os
 
@@ -16,8 +16,9 @@ from leisure.db.models import Decision, Event, Profile  # noqa: E402
 from leisure.db.session import engine, session_factory  # noqa: E402
 
 from .chat import Chat  # noqa: E402
+from .ids import user_id  # noqa: E402
 
-API_UID, LINK_UID = 999_100_011, 999_100_012
+API_UID, LINK_UID = user_id(30), user_id(31)
 H = {"X-API-Key": "test-key"}
 TODAY = {"today": "2026-10-24"}
 

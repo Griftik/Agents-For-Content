@@ -13,7 +13,9 @@ from sqlalchemy import text  # noqa: E402
 
 from leisure.db.session import engine, session_factory  # noqa: E402
 
-TEST_USER = 999_000_001
+from .ids import user_id  # noqa: E402
+
+TEST_USER = user_id(1)   # и TEST_USER + 1
 H = {"X-API-Key": "test-key"}
 
 

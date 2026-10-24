@@ -1,11 +1,12 @@
 """Дефекты Д1–Д3, Д6–Д13 и юзабилити 6–7 из sim/REPORT.md на реальной БД и настоящем диспетчере бота.
 
 Диспетчер работает с поддельным Telegram из leisure.sim.fakebot (он проверяет правила Bot API: длину callback_data,
-URL кнопок, «message is not modified»). Нужны БД с seed и тестовые профили 999_100_xxx, которые удаляются после теста.
+URL кнопок, «message is not modified»). Нужны БД с seed и тестовый профиль с id от pid (tests/ids.py), который удаляется после теста.
 Задачи воркера запускаются только для тестового профиля (подменяется выборка активных), отправка — в запись.
 """
 import asyncio
 import logging
+import os
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -447,16 +448,20 @@ def test_local_web_url_does_not_break_bot(db, user, monkeypatch):
 
 
 # ── statuses в upcoming_events ──
-def test_upcoming_events_statuses_param(db):
-    ev = _event(db)
+def test_upcoming_events_statuses_param(db, seed_raw):
+    """Свой черновик (slug от pid), а не правка seed-события: параллельный прогон не должен видеть событие скрытым."""
+    from leisure.seed.load import upsert_events
+
+    slug = f"zz-test-draft-{os.getpid()}"
+    base = next(e for e in seed_raw if "2026-10-24" in e["dates"])
+    upsert_events(db, [{**base, "slug": slug, "title": "Тестовый черновик"}], status="draft")
+    ev = db.scalar(select(Event).where(Event.slug == slug))
     today = date(2026, 10, 24)
     try:
-        ev.status = "draft"
-        db.commit()
         default = {e["id"] for e in services.upcoming_events(db, ev.city, today)}
         with_drafts = {e["id"] for e in services.upcoming_events(db, ev.city, today, statuses=("published", "draft"))}
         only_drafts = {e["id"] for e in services.upcoming_events(db, ev.city, today, statuses=["draft"])}
         assert str(ev.id) not in default and str(ev.id) in with_drafts and str(ev.id) in only_drafts
     finally:
-        ev.status = "published"
+        db.delete(ev)
         db.commit()

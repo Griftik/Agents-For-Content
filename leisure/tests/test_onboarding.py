@@ -1,5 +1,5 @@
 """Онбординг v2 (web/FLOW-ONBOARDING.md) через настоящий диспетчер: пути «ничего не меняю» (9 нажатий) и «типичный» (12),
-черновик в профиле, режим профиля, меню «Уточнить под себя», /reset. Нужны БД с seed; тестовый профиль 999_100_001."""
+черновик в профиле, режим профиля, меню «Уточнить под себя», /reset. Нужны БД с seed; тестовый профиль с id от pid (tests/ids.py)."""
 import pytest
 from sqlalchemy import select, text
 
@@ -10,8 +10,9 @@ from leisure.db.models import Digest, Profile
 from leisure.db.session import engine, session_factory
 
 from .chat import Chat as _Chat
+from .ids import user_id
 
-UID = 999_100_002
+UID = user_id(20)
 
 
 def Chat():  # noqa: N802 - свой тестовый пользователь, чтобы не пересекаться с test_defects_db

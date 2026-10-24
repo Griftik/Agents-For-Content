@@ -5,8 +5,9 @@ from leisure.bot.onboarding import markup
 from leisure.sim import fakebot
 
 from .conftest import fresh_dispatcher
+from .ids import user_id
 
-UID = 999_100_001
+UID = user_id(10)
 
 
 class Chat:

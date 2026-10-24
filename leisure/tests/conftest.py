@@ -1,5 +1,12 @@
 import json
+import os
 from pathlib import Path
+
+# Настройки читаются при первом импорте leisure.settings, поэтому значения для тестов API ставим раньше любых импортов продукта:
+# иначе результат зависит от того, какой файл тестов собран первым (отдельный прогон test_api_extras без test_api падал на 503).
+os.environ.setdefault("ADMIN_PASSWORD", "test-admin")
+os.environ.setdefault("API_KEY", "test-key")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 
 import pytest
 
@@ -57,3 +64,28 @@ def fresh_dispatcher():
     for r in (onboarding.router, decisions.router, commands.router, fallback.router):
         r._parent_router = None
     return build_dispatcher()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _purge_test_rows():
+    """Тестовые профили этого процесса (диапазон tests/ids.py) и служебные события чистятся до сессии и после неё.
+    Без доступной БД ничего не делает."""
+    import os
+
+    from .ids import RANGE
+
+    def purge():
+        try:
+            from sqlalchemy import text
+
+            from leisure.db.session import engine
+
+            with engine().begin() as c:
+                c.execute(text("delete from profiles where user_id >= :a and user_id < :b"), {"a": RANGE[0], "b": RANGE[1]})
+                c.execute(text("delete from events where slug = :s"), {"s": f"zz-test-draft-{os.getpid()}"})
+        except Exception:  # noqa: BLE001
+            pass
+
+    purge()
+    yield
+    purge()
