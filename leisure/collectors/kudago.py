@@ -378,15 +378,23 @@ class KudaGoCollector(Collector):
         if len(inside) > MAX_DATES_IN_TEXT:
             shown.append(f"… и ещё {len(inside) - MAX_DATES_IN_TEXT}")
         place = item.get("place") if isinstance(item.get("place"), dict) else {}
+        lat, lon = self._coords(place)
+        age = item.get("age_restriction")
         return RawEvent(
             source=self.name,
             url=url,
             title=title,
             date_text="; ".join(shown),
-            text=self._text(item, place),
-            venue=_clean(place.get("title")),
+            text=self._text(item),
+            venue=_clean(place.get("title")),  # place_name не заполняем: отдельного названия у места в API нет
             price_text=self._price(item),
             collected_at=collected_at,
+            address=_clean(place.get("address")),
+            metro=_clean(place.get("subway")),
+            lat=lat,
+            lon=lon,
+            age_restriction=_clean(str(age)) if age is not None else "",
+            categories=[str(c) for c in item.get("categories") or [] if isinstance(c, (str, int))],
         )
 
     @staticmethod
@@ -397,23 +405,23 @@ class KudaGoCollector(Collector):
         return "бесплатно" if item.get("is_free") is True else ""  # цены нет и не бесплатно — оставляем пусто
 
     @staticmethod
-    def _text(item: dict, place: dict) -> str:
+    def _coords(place: dict) -> tuple[float | None, float | None]:
+        """Координаты места; вне допустимых диапазонов или не числа — обе None (не угадываем)."""
+        c = place.get("coords")
+        if not isinstance(c, dict):
+            return None, None
+        lat, lon = c.get("lat"), c.get("lon")
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (lat, lon)):
+            return None, None
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return None, None
+        return round(float(lat), 5), round(float(lon), 5)
+
+    @staticmethod
+    def _text(item: dict) -> str:
+        """Свободный текст: тэглайн, описание, полный текст. Адрес, метро, возраст и категории едут отдельными полями."""
         body = _join_text(_clean(item.get("tagline")), _clean(item.get("description")), _clean(item.get("body_text")))
         if len(body) > MAX_TEXT_CHARS:
             body = body[:MAX_TEXT_CHARS].rsplit(" ", 1)[0] + "…"
-        meta: list[str] = []
-        age = item.get("age_restriction")
-        if age not in (None, ""):
-            meta.append(f"Возраст: {age}")
-        if _clean(place.get("address")):
-            meta.append(f"Адрес: {_clean(place['address'])}")
-        if _clean(place.get("subway")):
-            meta.append(f"Метро: {_clean(place['subway'])}")
-        coords = place.get("coords")
-        if isinstance(coords, dict) and isinstance(coords.get("lat"), (int, float)) and isinstance(coords.get("lon"), (int, float)):
-            meta.append(f"Координаты: {coords['lat']:.5f}, {coords['lon']:.5f}")
-        for label, key in (("Категории KudaGo", "categories"), ("Теги KudaGo", "tags")):
-            vals = [str(v) for v in item.get(key) or [] if isinstance(v, (str, int))]
-            if vals:
-                meta.append(f"{label}: {', '.join(vals)}")
-        return "\n".join(p for p in (body, "\n".join(meta)) if p)
+        tags = [str(v) for v in item.get("tags") or [] if isinstance(v, (str, int))]  # отдельного поля под тэги нет
+        return "\n".join(p for p in (body, f"Теги KudaGo: {', '.join(tags)}" if tags else "") if p)

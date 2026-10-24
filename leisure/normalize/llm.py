@@ -31,17 +31,33 @@ def make_slug(title: str, first_date: str, max_len: int = 100) -> str:
     return f"{base or 'event'}-{first_date}"
 
 
+_PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
+
+
+def raw_extra_lines(raw: RawEvent) -> str:
+    """Структурные поля карточки отдельными строками; пустые не выводим. Каждая строка заканчивается переводом строки."""
+    pairs = [
+        ("Название места в источнике", raw.place_name if raw.place_name != raw.venue else ""),
+        ("Адрес", raw.address),
+        ("Метро", raw.metro),
+        ("Координаты", f"{raw.lat}, {raw.lon}" if raw.lat is not None and raw.lon is not None else ""),
+        ("Возрастное ограничение", raw.age_restriction),
+        ("Категории источника", ", ".join(c for c in raw.categories if c)),
+    ]
+    return "".join(f"{label}: {value.strip()}\n" for label, value in pairs if value and value.strip())
+
+
 def build_prompt(raw: RawEvent, date_from: str, date_to: str) -> str:
     schema = json.dumps(EventIn.model_json_schema(), ensure_ascii=False)
     text = PROMPT_PATH.read_text(encoding="utf-8")
     repl = {
         "categories": ", ".join(ALL_CATS), "tags": ", ".join(sorted(KNOWN_TAGS)), "date_from": date_from,
         "date_to": date_to, "schema": schema, "source": raw.source, "url": raw.url, "title": raw.title,
-        "date_text": raw.date_text, "venue": raw.venue, "price_text": raw.price_text, "text": raw.text,
+        "date_text": raw.date_text, "venue": raw.venue, "price_text": raw.price_text,
+        "extra_fields": raw_extra_lines(raw), "text": raw.text,
     }
-    for k, v in repl.items():
-        text = text.replace("{{" + k + "}}", v)
-    return text
+    # Один проход: подставленный текст карточки не может сам оказаться шаблоном ({{venue}} в заголовке и т. п.).
+    return _PLACEHOLDER_RE.sub(lambda m: repl.get(m.group(1), m.group(0)), text)
 
 
 def _extract_json(s: str) -> dict:

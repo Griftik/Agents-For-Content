@@ -160,3 +160,12 @@ class RawEvent(BaseModel):
     venue: str = ""
     price_text: str = ""
     collected_at: str = ""
+    # Структурные поля: необязательные, коллектор заполняет то, что источник отдаёт отдельно от текста.
+    # Пустое значение означает «источник не сообщил», в промпт нормализатора такие поля не попадают.
+    place_name: str = ""  # название места в справочнике источника, если оно отличается от `venue` (зал, сцена)
+    address: str = ""
+    metro: str = ""
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
+    age_restriction: str = ""  # как в источнике: «6+», «18+»
+    categories: list[str] = Field(default_factory=list)  # категории источника как есть (slug или название)

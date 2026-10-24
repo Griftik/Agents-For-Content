@@ -91,10 +91,14 @@ def test_single_card_fields(run):
     assert e.date_text == "2026-10-24 12:00; 2026-10-25 12:00"  # показ 7 ноября в текст не попал
     assert e.text.count("Сказка Андерсена на сцене — для самых маленьких.") == 1  # описание не дублируется в body_text
     assert "<" not in e.text and "&mdash;" not in e.text and "1 час 10 минут" in e.text
-    for line in ("Возраст: 6+", "Адрес: Космодамианская наб., 52, стр. 8", "Метро: Павелецкая",
-                 "Категории KudaGo: theater", "Теги KudaGo: play, 6+, performances for children"):
-        assert line in e.text.splitlines()
-    assert any(l.startswith("Координаты: 55.73325, 37.64660") for l in e.text.splitlines())
+    assert e.text.splitlines()[-1] == "Теги KudaGo: play, 6+, performances for children"  # для тэгов поля нет
+    # адрес, метро, возраст, координаты и категории — отдельными полями, а не строками текста
+    assert (e.address, e.metro) == ("Космодамианская наб., 52, стр. 8", "Павелецкая")
+    assert (e.lat, e.lon) == (55.73325, 37.6466)
+    assert e.age_restriction == "6+" and e.categories == ["theater"]
+    assert e.place_name == ""
+    for label in ("Возраст:", "Адрес:", "Метро:", "Координаты:", "Категории"):
+        assert label not in e.text
 
 
 @pytest.mark.parametrize("slug,date_text", [
@@ -110,10 +114,11 @@ def test_date_text_forms(run, slug, date_text):
 def test_missing_data_stays_empty_not_invented(run):
     night = run[3]["vecherinka-noch-na-kryshe"]
     assert night.venue == "" and night.price_text == "бесплатно"  # place = null; is_free = true
-    assert "Адрес:" not in night.text and "Метро:" not in night.text
+    assert (night.address, night.metro, night.lat, night.lon) == ("", "", None, None)
+    assert night.age_restriction == "18+" and night.categories == ["party"]
     lecture = run[3]["lekciya-gorod-i-pamyat"]
     assert lecture.price_text == ""                                # цены нет, не бесплатно → пусто
-    assert "Возраст" not in lecture.text
+    assert lecture.age_restriction == ""
     assert lecture.text.startswith("Лекция & дискуссия.")          # теги и сущности вычищены
     assert run[3]["moskva-v-miniatyure"].price_text == ""
 
@@ -121,6 +126,15 @@ def test_missing_data_stays_empty_not_invented(run):
 def test_raw_event_goes_into_normalizer_prompt(run):
     prompt = build_prompt(run[3]["vystavka-shito-vyshito"], "2026-10-23", "2026-10-25")
     assert "период с 2026-10-01 по 2026-12-31" in prompt and "Музей декоративного искусства" in prompt
+    assert "\nАдрес: ул. Делегатская, 3\n" in prompt and "\nМетро: Цветной бульвар\n" in prompt
+    assert "\nКатегории источника: exhibition\n" in prompt
+
+
+def test_bad_coordinates_are_dropped_not_fatal():
+    item = {**PAGES[1]["results"][1], "place": {"title": "Где-то", "coords": {"lat": 955.0, "lon": 37.0}}}
+    col, _, _ = make(FakeKudaGo(pages=[{"count": 1, "next": None, "previous": None, "results": [item]}]))
+    (e,) = col.collect("Москва", FROM, TO)
+    assert (e.lat, e.lon) == (None, None) and e.venue == "Где-то"
 
 
 # ─── запросы, пагинация, вежливость ───
