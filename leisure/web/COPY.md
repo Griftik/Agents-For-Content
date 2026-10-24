@@ -514,6 +514,7 @@
 | T-TOASTS | `bot/decisions.py` |
 | T-STALE, T-TEXT-ANY, T-TEXT-ONB | `bot/main.py` (общие обработчики) |
 | T-INVITE-JOINED, T-REF-ASK, T-RATE-LOW | `worker/messages.py`, `bot/decisions.py` (бот) |
+| T-INVITE-AUTH-WAIT, T-INVITE-PENDING, T-INVITE-SAVE-FAIL, T-INVITE-UNAVAILABLE, T-INVITE-DONE-GONE, T-INVITE-WRITE-OK, T-INVITE-WRITE-REFUSED, T-INVITE-CONSENT-CONTINUE, T-INVITE-ONB-STEP1, T-INVITE-ONB-STEP2, T-INVITE-ONB-SAVE-FAIL | `webapp/src/components/InviteFlow.tsx`, `Onboarding.tsx` (Mini App) |
 | T-INVITE-SHARE, T-INVITE-COPIED, T-INVITE-CARD, T-INVITE-CONSENT, T-INVITE-CONSENT-NEED, T-INVITE-AUTH-FAIL, T-INVITE-BROWSER, T-INVITE-DONE, T-INVITE-OFFER, T-INVITE-LATER, T-INVITE-SELF, T-INVITE-PAST, T-INVITE-UNPUBLISHED, T-INVITE-GONE, T-INVITE-BAD, T-INVITE-TOGETHER, T-REF-SHARE, T-REF-LANDING, T-SETUP-NAME | `webapp` (Mini App) |
 
 ## 9. Позвать друга и рекомендация
@@ -589,6 +590,79 @@
 {Имя} об этом не узнает. Передумать можно в плане.
 ```
 Кнопки: `Добавить в календарь` (Google Календарь · Outlook · .ics) · `Получать план в Telegram` (запрос права писать, один диалог Telegram; показывается, пока право не выдано).
+
+### Короткие строки Mini App (перенесены из кода `webapp`, раздел «Тексты, которых нет в COPY.md»)
+Строки уже стоят в `webapp/src/components/InviteFlow.tsx` и `Onboarding.tsx`; здесь они закреплены за именами, дальше правятся только тут.
+
+### T-INVITE-AUTH-WAIT — ждём сессию Telegram (Mini App)
+Строка статуса при выбранном решении, пока `initData` не обменялся на сессию (`role="status"`):
+```
+Входим через Telegram…
+```
+
+### T-INVITE-PENDING — запись идёт (Mini App)
+Строка статуса после отправки решения:
+```
+Записываю…
+```
+
+### T-INVITE-SAVE-FAIL — запись не удалась (Mini App)
+Сервис недоступен или ответил ошибкой, выбор на странице остаётся (`role="alert"`):
+```
+Не получилось записать. Попробуй ещё раз.
+```
+
+### T-INVITE-UNAVAILABLE — событие стало недоступным при записи (Mini App)
+Ответ `410` на запись: событие сняли, пока человек выбирал. Слово «Дайджесте» — ссылка на `/digest` (`role="alert"`):
+```
+Это событие уже недоступно. Другие выходные ждут в «Дайджесте».
+```
+
+### T-INVITE-DONE-GONE — «Ты идёшь» без имени пригласившего (Mini App)
+Вариант `T-INVITE-DONE`, когда пригласивший удалил профиль: слова «вместе» нет, о пригласившем ничего не сообщается.
+```
+Ты идёшь
+«{title}», {суббота, 24 окт}, {13:00–15:00}.
+План на этот день придёт в Telegram.
+```
+Вариант «может быть» (заголовок «Записано в «может быть»»): `Передумать можно в плане.` Тот же вариант, если имя пригласившего неизвестно у «может быть».
+
+### T-INVITE-WRITE-OK / T-INVITE-WRITE-REFUSED — после диалога доступа (Mini App)
+Под кнопками «Вы идёте вместе», `role="status"`, после «Получать план в Telegram». Согласие на сообщения от бота:
+```
+Готово: план будет приходить в Telegram.
+```
+Отказ:
+```
+Хорошо. План смотри здесь, в приложении.
+```
+
+### T-INVITE-CONSENT-CONTINUE — нет галочки на приветствии (Mini App)
+Приветствие онбординга (`T-REF-LANDING`), кнопка «Начать» без галочки (`role="alert"`). В отличие от `T-INVITE-CONSENT-NEED` выбора, который можно запомнить, здесь он нет:
+```
+Отметь согласие, чтобы продолжить.
+```
+
+### T-INVITE-ONB-STEP1 — «Шаг 1 из 2» в Mini App
+```
+Шаг 1 из 2
+Что для тебя важно
+Выбери пять главных ценностей из {n}. Остальные тоже учту, но слабее.
+```
+Ошибка выбора: `Нужно выбрать ровно {5}.` (`role="alert"`).
+
+### T-INVITE-ONB-STEP2 — «Шаг 2 из 2» в Mini App
+```
+Шаг 2 из 2
+Интересы
+Восемь направлений под твои ценности. Нажми, чтобы убрать или вернуть; остальные покажу реже.
+```
+Под кнопками: `Все направления можно поправить позже в разделе «Профиль».` Кнопки: `← Назад` · `Показать подборку →`; строка бюджета — по `T-ONB-BUDGET`.
+
+### T-INVITE-ONB-SAVE-FAIL — не удалось сохранить в онбординге (Mini App)
+```
+Не получилось сохранить, попробуй ещё раз.
+```
 
 ### T-INVITE-JOINED — уведомление пригласившему (бот)
 Где: `worker/messages.py`; уходит только на «иду».
