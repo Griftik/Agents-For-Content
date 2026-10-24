@@ -4,6 +4,8 @@ from __future__ import annotations
 import importlib
 import pkgutil
 
+NOT_SOURCES = frozenset({"base", "pipeline"})  # служебные модули пакета; общий код источников лежит в _common.py
+
 
 def load_collectors() -> list[str]:
     """Импортирует все модули-источники пакета, чтобы сработали декораторы @register. Возвращает имена модулей.
@@ -12,7 +14,7 @@ def load_collectors() -> list[str]:
     """
     loaded = []
     for mod in pkgutil.iter_modules(__path__):
-        if mod.name != "base" and not mod.name.startswith("_"):
+        if mod.name not in NOT_SOURCES and not mod.name.startswith("_"):
             importlib.import_module(f"{__name__}.{mod.name}")
             loaded.append(mod.name)
     return sorted(loaded)

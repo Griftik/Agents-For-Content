@@ -19,12 +19,10 @@ COLLECTORS_RESPECT_ROBOTS, по умолчанию 0: решение владе�
 """
 from __future__ import annotations
 
-import html
 import logging
 import re
 import time as _time
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from urllib import robotparser
@@ -34,11 +32,13 @@ import httpx
 from leisure import settings
 from leisure.normalize.schema import RawEvent
 
+from ._common import MSK, CollectStats, get_with_retries
+from ._common import clean_text as _clean
+from ._common import join_text as _join_text
 from .base import Collector, CollectorError, register
 
 log = logging.getLogger(__name__)
 
-MSK = timezone(timedelta(hours=3), "MSK")  # в Москве UTC+3 круглый год с 2014 года, tzdata не нужен
 
 API_URL = "https://kudago.com/public-api/v1.4/events/"
 ROBOTS_URL = "https://kudago.com/robots.txt"
@@ -59,8 +59,6 @@ MAX_PAGES = 10           # потолок 1000 карточек за запус�
 PAUSE_SEC = 1.0          # вежливая пауза между страницами
 TIMEOUT_SEC = 20.0
 RETRIES = 2              # повторы только для сетевых сбоев и 429/5xx; 4xx (в т. ч. 403) не повторяем
-RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
-RETRY_AFTER_CAP_SEC = 30.0
 
 MAX_TEXT_CHARS = 4000    # описание длиннее обрезаем: LLM-нормализатору хватает, токены экономим
 MAX_DATES_IN_TEXT = 14   # сколько показов перечислять в date_text
@@ -86,20 +84,6 @@ class _Occurrence:
         return (self.start is None or self.start < window_end) and (self.end is None or self.end >= window_start)
 
 
-@dataclass
-class CollectStats:
-    """Итоги последнего запуска — для отчёта воркера («сколько дал источник»)."""
-
-    pages: int = 0
-    total_in_api: int | None = None
-    fetched: int = 0
-    kept: int = 0
-    outside_window: int = 0
-    skipped: int = 0
-    duplicates: int = 0
-    truncated: bool = False
-
-
 def _ts_to_msk(value: Any) -> datetime | None:
     try:
         return datetime.fromtimestamp(int(value), MSK)
@@ -111,17 +95,6 @@ def _hhmm(value: Any) -> str:
     """'13:00:00' → '13:00'; всё остальное → ''."""
     m = re.match(r"^(\d{1,2}):(\d{2})", value) if isinstance(value, str) else None
     return f"{int(m.group(1)):02d}:{m.group(2)}" if m else ""
-
-
-def _clean(value: Any) -> str:
-    """Текст без тегов и сущностей, с нормальными пробелами (text_format=plain тегов не даёт, но страхуемся)."""
-    if not isinstance(value, str):
-        return ""
-    s = re.sub(r"<[^>]+>", " ", value)
-    s = html.unescape(s).replace("\xa0", " ")
-    s = re.sub(r"[ \t]+", " ", s)
-    s = re.sub(r"\s*\n\s*", "\n", s)
-    return re.sub(r"\n{2,}", "\n\n", s).strip()
 
 
 def _parse_occurrences(dates: Any) -> list[_Occurrence]:
@@ -186,15 +159,6 @@ def _fmt_occurrence(o: _Occurrence) -> str:
     return f"период с {o.start_date} по {o.end_date}{hours}"
 
 
-def _join_text(*parts: str) -> str:
-    """Склеивает абзацы без повторов: описание часто целиком входит в полный текст."""
-    out: list[str] = []
-    for p in parts:
-        if p and not any(p in q for q in out):
-            out = [q for q in out if q not in p] + [p]
-    return "\n\n".join(out)
-
-
 @register
 class KudaGoCollector(Collector):
     name = "kudago"
@@ -257,26 +221,10 @@ class KudaGoCollector(Collector):
         return {"User-Agent": USER_AGENT, "Accept": "application/json"}
 
     def _get(self, client: httpx.Client, url: str, params: dict | None = None) -> httpx.Response:
-        reason = "нет ответа"
-        for attempt in range(self.retries + 1):
-            wait = 2.0 * (attempt + 1)
-            try:
-                resp = client.get(url, params=params, headers=self._headers())
-            except httpx.TransportError as exc:  # таймауты, обрывы, DNS, отказ соединения
-                reason = f"{type(exc).__name__}: {exc}"
-            else:
-                if resp.status_code == 200:
-                    return resp
-                if resp.status_code not in RETRY_STATUSES:
-                    raise CollectorError(self._http_error(resp))
-                reason = f"HTTP {resp.status_code}"
-                retry_after = resp.headers.get("Retry-After", "")
-                if retry_after.isdigit():
-                    wait = min(float(retry_after), RETRY_AFTER_CAP_SEC)
-            if attempt < self.retries:
-                log.warning("KudaGo: %s, повтор через %.0f с", reason, wait)
-                self._sleep(wait)
-        raise CollectorError(f"KudaGo недоступен ({reason}); попыток: {self.retries + 1}. Повторите сбор позже.")
+        return get_with_retries(
+            client, url, params=params, headers=self._headers(), retries=self.retries, sleep=self._sleep,
+            source="KudaGo", http_error=self._http_error,
+        )
 
     @staticmethod
     def _http_error(resp: httpx.Response) -> str:
