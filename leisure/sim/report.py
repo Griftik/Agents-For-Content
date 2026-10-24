@@ -439,7 +439,7 @@ def build_defects(m: dict, d: dict) -> tuple[list[dict], list[dict]]:
         if is_open:
             opened.append({"key": key, "id": key, "severity": sev, "title": title, "what": what, "where": where, "repro": repro, "count": count})
         else:
-            closed.append({"key": key, "prev": PREV_ID.get(key, ""), "prev2": PREV2_DEF.get(key, ""), "title": title, "evidence": closed_text})
+            closed.append({"key": key, "prev": PREV_ID.get(key, ""), "prev2": PREV2_DEF.get(key, ""), "prev4": PREV4_DEF.get(key, ""), "title": title, "evidence": closed_text})
 
     # Д1 день решения
     chk("day", "высокая", "«Иду» сохраняется на другой день, чем показан на карточке", dd.get("mismatch", 0) > 0,
@@ -627,20 +627,25 @@ def build_defects(m: dict, d: dict) -> tuple[list[dict], list[dict]]:
              f"(ссылку открыли {f.get('ref_codes_seen')} раз, с согласием — {f.get('ref_codes_opened')})."],
             "leisure/api/invites.py (growth_metrics, web_open: log_open_without_consent)",
             "Открыть приглашение человеком без профиля и не принимать его: `GET /api/metrics/growth` → `acceptance.denominator` не вырос, `counts.opened_without_consent` вырос.",
-            len(mism), "метрики роста совпадают с формулами §4")
+            len(mism),
+            f"принятие {growth_value(g['metrics']['acceptance']['own'])} и активация приглашённых {growth_value(g['metrics']['activation_invited']['own'])} совпадают с API "
+            f"(в знаменателях и открывшие без согласия, всего открывших {f.get('opened')}); «рекомендация» по ссылкам, которые открыли: симулятор {f.get('ref_codes_seen')}, "
+            f"API {growth_value(g['metrics']['recommendation']['api'])}; нажатий «Поделиться» сервер не видит ({f.get('ref_shares')})")
         chk("notifyhtml", "низкая", "Уведомление пригласившему не экранирует имя друга и название события (HTML)", fcount_v(d, "html_warning") > 0 and bool(ck.get("inviter_notified")),
             [f"В тексте «идёт с тобой» не экранированы `&`, `<`, `>`: нарушений формата Bot API {fcount_v(d, 'html_warning')}.",
              *[f"Пример: {x}" for x in d["violations"].get("html_warning", {}).get("examples", [])[:2]],
              "Имя берётся из профиля Telegram и бывает любым, название — из источника; при `<` Telegram отклонит сообщение, и повторные попытки `job_invite_notifications` будут падать каждую минуту."],
             "leisure/worker/messages.py (invite_joined_text, invite_joined_many_text)", "Принять приглашение на событие с `&` или `<` в названии (или с таким именем в профиле) и посмотреть текст уведомления.",
-            fcount_v(d, "html_warning"), "")
+            fcount_v(d, "html_warning"),
+            f"нарушений формата Bot API в уведомлениях 0; доставлено {ck.get('inviter_notified', 0)}, из них при <, > или & в имени друга или названии события {ck.get('notified_special_chars', 0)}")
         sk = d["db"].get("step1_skipped_profiles", 0)
         n_sk = fcount(d, "step1_skipped")
         chk("step1", "средняя", "После согласия в Mini App бот на /start пропускает «Шаг 1» и оставляет ценности по умолчанию", n_sk > 0,
             [f"{cnt(n_sk, 'человек', 'человека', 'человек')} приняли приглашение в Mini App (согласие там), потом нажали /start в боте и сразу получили «Шаг 2 из 2»: пять ценностей не выбирались, "
              f"в профиле {sk} остались значения по умолчанию, подборка строится не по их ценностям.", *[f"Лог: {x}" for x in fex(d, "step1_skipped", 2)]],
             "leisure/bot/onboarding.py (start: top_values(p) == TOP_N у профиля с согласием из Mini App)",
-            "Принять приглашение в Mini App с согласием, затем в боте /start: первым экраном приходит «Шаг 2 из 2».", n_sk, "")
+            "Принять приглашение в Mini App с согласием, затем в боте /start: первым экраном приходит «Шаг 2 из 2».", n_sk,
+            f"/start у профиля с согласием из Mini App открывает «Шаг 1 из 2»: {fcount(d, 'step1_after_miniapp')} человек, «Шаг 2» без выбора ценностей — {n_sk}")
         bad = ck.get("invite_contract_bad", 0) + ck.get("accept_bad", 0) + ck.get("view_bad", 0) + ck.get("together_name_bad", 0) + ck.get("accept_failed", 0) + ck.get("declined_has_decision", 0)
         chk("invitecontract", "высокая", "API приглашений нарушает контракт GROWTH.md §6", bad > 0 or g["n_api_errors"] > 0,
             [f"Нарушений контракта: {bad}, ответов 5xx: {g['n_api_errors']}.", *[f"Пример: {x}" for k in ("invite_contract_bad", "accept_bad", "view_bad", "accept_failed") for x in g["examples"].get(k, [])[:1]]],
@@ -665,6 +670,7 @@ PREV2_TITLE = {"proposal": "Предложенные шесть направле
                "defaults": "Не открывшие «Уточнить под себя» остаются с умолчаниями, которые им не подходят",
                "skip": "«Мимо»: причины в два шага, а блок остаётся на карточке, если не отвечать"}
 PREV2_DEF = {"params": "Д1", "persistent": "Д2", "rebuilt": "Д3"}
+PREV4_DEF = {"growthmetrics": "Д1", "step1": "Д2", "notifyhtml": "Д3"}      # открытые в четвёртом прогоне (baseline_v4.json)
 PREV_UID = {"onboarding": "У1", "interests": "У2", "days": "У3", "noback": "У4", "interest": "У5", "skip": "У6", "thin": "У7", "time": "У8",
             "digest_btn": "У9", "text": "У10", "resent": "У11", "pre": "У12", "started": "У13"}
 
@@ -853,6 +859,10 @@ def growth_lines(d: dict) -> list[str]:
          "### 5.1 Метрики таблицы §4", "",
          "«Симулятор» считает по формулам GROWTH.md из своего журнала и БД; «API» — ответ `GET /api/metrics/growth`. Расхождение — признак ошибки в метрике продукта (см. дефекты).", "",
          table(["Метрика", "Формула §4", "Цель", "Симулятор", "Статус", "API"], growth_rows(g)), ""]
+    f0 = g["funnel"]
+    L += [f"Рекомендация: «Поделиться» нажали {g['metrics']['recommendation']['own']['numerator']} из {g['metrics']['recommendation']['own']['denominator']} показов, но это URL-кнопка, и сервер нажатий не видит. "
+          f"API считает ссылки-рекомендации, которые кто-то открыл (с согласием или без): симулятор по тому же правилу — {f0.get('ref_codes_seen')} из {g['metrics']['recommendation']['own']['denominator']}, "
+          f"API — {growth_value(g['metrics']['recommendation']['api'])}. Показатели «Симулятор» и «API» в строке различаются по определению, а не из-за ошибки.", ""]
     if g["mismatch"]:
         L += ["Расходятся с API: " + ", ".join(GROWTH_NAMES[k] for k in g["mismatch"]) + ".", ""]
     L += ["### 5.2 Воронка приглашений", "",
@@ -866,12 +876,13 @@ def growth_lines(d: dict) -> list[str]:
               ["Предложение онбординга: «Давай» сразу / в повторе", f"{f['offers_yes1']} из {f['offers_round1']} / {f['offers_yes2']} из {f['offers_round2']}"],
               ["Онбординг в Mini App: начали / закончили", f"{f['onboarding_started']} / {f['onboarding_done']}"],
               ["Новых людей всего (приглашённые и по ссылке)", f"{f['guests_total']}; дали боту право писать {f['guests_can_write']}; получили хотя бы одну подборку {f['guests_with_digest']}"],
+              ["Право писать отклонено → «Открыть чат с ботом» → /start w_<код>", f"{f.get('write_fallback_ok', 0) + f.get('write_fallback_bad', 0)} человек; can_write и ответ «INVITE_WRITE_OK» верны у {f.get('write_fallback_ok', 0)}, неверно {f.get('write_fallback_bad', 0)}; после этого в боте пришли «План на сегодня» у {f.get('write_fallback_got_plan', 0)}, «План» или «Как прошло?» у {f.get('write_fallback_got_any', 0)}"],
               ["Просьба о рекомендации (T-REF-ASK)", f"{f['ref_asks']} показов у {f['ref_ask_users']} человек; «Поделиться» нажали {f['ref_shares']}; ссылку открыли {f['ref_newcomers']} человек, "
                                                     f"согласились {f['ref_newcomers_consented']}"],
           ]), ""]
-    if f.get("opened_all_by_api") is not None:
-        L += [f"Открывших без согласия API считает отдельно (`counts.opened_without_consent` = {f['opened_anonymous_api']}) и в знаменатели метрик «принятие» и «активация» не кладёт: "
-              f"по API открывших {f['opened_all_by_api'] - f['opened_anonymous_api']} с согласием, всего {f['opened_all_by_api']}.", ""]
+    if f.get("opened_anonymous_api") is not None:
+        L += [f"Открывшие без согласия входят в знаменатели «принятия» и «активации»: у API открывших {g['metrics']['acceptance']['api']['denominator']}, у симулятора {f['opened']}; "
+              f"отдельный счётчик `counts.opened_without_consent` = {f['opened_anonymous_api']} (без согласия на конец прогона; давшие согласие позже считаются как принятые).", ""]
     org, inv = cmp_["activation"]["organic"], cmp_["activation"]["invited"]
     o2, i2 = cmp_["onboarding"]["organic"], cmp_["onboarding"]["invited"]
     rt = cmp_["ratings"]
@@ -1058,7 +1069,12 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict], closed: l
               "Дефекты исходного прогона (нумерация того отчёта):", "",
               table(["Было", "Дефект", "Что показал этот прогон"], [[x["prev"], x["title"], x["evidence"] or "—"] for x in sorted(
                   (c for c in closed if c["prev"]), key=lambda x: int(x["prev"][1:]))]), ""]
+        prev4 = [c for c in closed if c.get("prev4")]
         prev2 = [c for c in closed if c.get("prev2")]
+        if prev4:
+            L += ["Дефекты, открытые в четвёртом прогоне (нумерация четвёртого отчёта, `baseline_v4.json`):", "",
+                  table(["Было", "Дефект", "Что показал этот прогон"], [[x["prev4"], x["title"], x["evidence"] or "—"] for x in sorted(
+                      prev4, key=lambda x: int(x["prev4"][1:]))]), ""]
         if prev2:
             L += ["Дефекты, открытые во втором прогоне (нумерация второго отчёта, `baseline_v2.json`):", "",
                   table(["Было", "Дефект", "Что показал этот прогон"], [[x["prev2"], x["title"], x["evidence"] or "—"] for x in sorted(

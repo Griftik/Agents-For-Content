@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+from zoneinfo import ZoneInfo
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, unquote, urlparse
@@ -22,6 +23,7 @@ from .social import NEIGHBORS, Friend, build_graph, friend_pick, p_accept, p_inv
 API_KEY = "sim-api-key"
 BOT_USERNAME = "leisure_sim_bot"
 MINIAPP = "app"
+WRITE_FALLBACK_P = 0.5        # из отказавших дать право писать: нажали «Открыть чат с ботом» (запасной путь /start w_<код>)
 WRITE_ACCESS_P = 0.6          # «Получать план в Telegram»: доля друзей, давших боту право писать (FLOW-INVITE, В2)
 CONSENT_TICK_P = 0.93         # поставил галочку согласия, а не ушёл
 DECLINE_P = 0.35              # из открывших, но не принявших: нажал «Другие выходные под меня»
@@ -257,12 +259,17 @@ class Social:
             rec["notified"] = bool(msgs)
             if msgs:
                 self.note("inviter_notified", f"u{rec['inviter']}: «{msgs[0].text[:60]}»")
+                if any(ch in persona.name for ch in "<>&") or any(ch in sim.events[rec["event_id"]]["title"] for ch in "<>&"):
+                    self.note("notified_special_chars", f"#{rec['n']}: уведомление дошло при <, > или & в имени друга или названии события")
             elif inviter_ps.status == "active" and rec["inviter"] not in sim.world.blocked:
                 self.note("inviter_not_notified", f"#{rec['n']}: пригласивший u{rec['inviter']} не получил уведомления")
             exp_name = _first_name(inviter_ps.p.name)
             self.note("together_name_ok" if js.get("together_with") in (exp_name, None) else "together_name_bad", f"#{rec['n']}: {js.get('together_with')!r}")
         # учёт решения в состоянии человека (для планов и оценок)
         eid = rec["event_id"]
+        local = self.now.astimezone(ZoneInfo(self.env["MSK"]))
+        if status == "going" and rec["day"] == local.date().isoformat() and local.hour >= 9 and ps is not None:
+            sim.lazy_plan(ps)                                     # «иду» на сегодня после 09:00: план придёт на ближайшем часовом запуске
         if ps is not None:
             ps.decisions[eid] = {"status": d.get("status"), "reason": None, "week": None, "card_day": rec["day"], "cycle": None,
                                  "redecided": False, "via_invite": rec["code"]}
@@ -285,10 +292,33 @@ class Social:
                     ps.onb["can_write"] = True
             else:
                 ps.onb["can_write"] = False
+                if rng.random() < WRITE_FALLBACK_P:                  # «Открыть чат с ботом» на экране «Вы идёте вместе»: /start w_<код>
+                    self.push(self.now + timedelta(minutes=rng.uniform(1, 60)), "open_chat", ps, rec["code"])
         if rec["profile_state"] == "new" and not ps.onb.get("completed") and not ps.onb.get("offer_round"):
             ps.onb["offer_round"] = 1
             ps.onb["offer_day"] = rec["day"]
             await self.offer(ps, fr, 1, rng)
+
+    async def open_chat(self, ps, code: str) -> None:
+        """Право писать отклонено → кнопка «Открыть чат с ботом» → /start w_<код>: бот ставит can_write и отвечает одной строкой."""
+        from leisure.bot import texts
+
+        sim = self.sim
+        uid = ps.p.user_id
+        chat = sim.world.chats[uid]
+        n0 = len(chat)
+        await sim.driver.say(ps, f"/start w_{code}")
+        replies = [m for m in chat[n0:] if not m.from_user]
+        st, prof = await self.api("get", f"/api/profile/{uid}")
+        ok_text = bool(replies) and replies[0].text == texts.INVITE_WRITE_OK
+        ok_write = st == 200 and prof.get("can_write") is True
+        if ok_write:
+            sim.world.cannot_initiate.discard(uid)
+            ps.onb["can_write"] = True
+        ps.onb["write_fallback"] = bool(ok_text and ok_write)
+        ps.onb["fallback_chat_len"] = len(chat)
+        self.note("write_fallback_ok" if ok_text and ok_write else "write_fallback_bad",
+                  f"u{uid}: /start w_… → ответ {'INVITE_WRITE_OK' if ok_text else repr(replies[0].text[:50]) if replies else 'нет'}, can_write={prof.get('can_write')}")
 
     async def offer(self, ps, fr: Friend, rnd: int, rng: random.Random) -> None:
         """«Хочешь свою подборку на выходные? Два шага»: «Давай» / «Потом» (повтор один раз вместе с «Как прошло?»)."""
@@ -428,6 +458,8 @@ class Social:
                 await self.offer(ps, fr, 2, random.Random(f"{self.seed}:{ps.p.idx}:offer2"))
         elif kind == "ref_open":
             await self.ref_open(*args)
+        elif kind == "open_chat":
+            await self.open_chat(*args)
 
     async def after_onboarding(self, ps) -> None:
         """Человек прошёл онбординг в Mini App: первая подборка придёт в ближайший четверг по расписанию (в чат её никто не шлёт)."""
@@ -519,6 +551,9 @@ class Social:
                         "together": stat(tog), "solo": stat(solo)},
         }
         # воронка приглашений
+        def ck_get(k):
+            return self.checks.get(k, 0)
+
         funnel = {
             "invites": len(made), "opened": len(opened), "accepted": len(accepted), "going": sum(1 for r in opened if r["accept"] == "going"),
             "maybe": sum(1 for r in opened if r["accept"] == "maybe"), "declined": sum(1 for r in opened if r["declined"]),
@@ -528,6 +563,11 @@ class Social:
             "offers_round1": sum(1 for o in self.offers if o["round"] == 1), "offers_yes1": sum(1 for o in self.offers if o["round"] == 1 and o["yes"]),
             "offers_round2": sum(1 for o in self.offers if o["round"] == 2), "offers_yes2": sum(1 for o in self.offers if o["round"] == 2 and o["yes"]),
             "onboarding_started": len(self.onboard_api), "onboarding_done": sum(1 for o in self.onboard_api if o["done"]),
+            "write_fallback_ok": ck_get("write_fallback_ok"), "write_fallback_bad": ck_get("write_fallback_bad"),
+            "write_fallback_got_plan": sum(1 for u in guests if sim.by_uid[u].onb.get("write_fallback") and any(
+                not m.from_user and m.text.startswith("План на сегодня") for m in sim.world.chats[u][sim.by_uid[u].onb["fallback_chat_len"]:])),
+            "write_fallback_got_any": sum(1 for u in guests if sim.by_uid[u].onb.get("write_fallback") and any(
+                not m.from_user and (m.text.startswith("План на сегодня") or m.text.startswith("Как прошло?")) for m in sim.world.chats[u][sim.by_uid[u].onb["fallback_chat_len"]:])),
             "guests_total": len(guests), "guests_can_write": sum(1 for u in guests if by_u.get(u, {}).get("can_write")),
             "guests_with_digest": len({r.uid for r in sim.digest_recs if r.uid in guests}),
             "ref_asks": len(self.ref_asks), "ref_shares": len(self.ref_shares), "ref_newcomers": len(self.ref_newcomers),

@@ -333,6 +333,7 @@ class FakeTelegram:
         return {"id": uid, "is_bot": False, "first_name": name, "username": username, "language_code": "ru"}
 
     def message_update(self, bot: Bot, uid: int, name: str, username: str, text: str) -> Update:
+        self.cannot_initiate.discard(uid)          # человек сам написал боту: диалог открыт, бот может отвечать и писать дальше (как в Telegram)
         st = self._store(uid, text, None, None, from_user=True)
         self._update_seq += 1
         msg = self.message_dict(st)

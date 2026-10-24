@@ -278,6 +278,8 @@ class Driver:
         if btn is None and ("Шаг 1 из 2" in st.text or "Шаг 2 из 2" in st.text):    # согласие уже дано в Mini App (приглашение друга)
             ps.onb["consent_in_miniapp"] = True
             close("consent")
+            if "Шаг 1 из 2" in st.text:
+                self.f.add("step1_after_miniapp", "после согласия в Mini App /start открыл «Шаг 1 из 2»", p.user_id, self.clock.now)
         elif btn is None:
             self._stuck(ps, "consent", "Принять и начать")
             return "stuck"
