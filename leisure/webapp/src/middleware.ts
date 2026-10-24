@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { DEV_PREFIX, SESSION_COOKIE, parseDevUser } from "@/lib/session-token";
+import { DEV_PREFIX, SESSION_COOKIE, parseDevUser } from "@/lib/session-consts";
 
 /**
  * Режим разработки: ?dev_user=<telegram id> без подписи ставит dev-cookie.

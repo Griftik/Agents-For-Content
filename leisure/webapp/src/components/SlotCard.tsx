@@ -1,6 +1,6 @@
 import { decide } from "@/app/actions";
 import type { Decision, DigestItem } from "@/lib/api-types";
-import { dateShort, priceLabel, shareUrl, wdFull } from "@/lib/format";
+import { dateShort, priceLabel, shareUrl, timeRange, wdFull } from "@/lib/format";
 import { Ring } from "./Ring";
 
 export function SlotCard({ item, decision, base }: { item: DigestItem; decision?: Decision; base: string }) {
@@ -8,7 +8,7 @@ export function SlotCard({ item, decision, base }: { item: DigestItem; decision?
   const cur = decision?.status;
   const chosen = cur === "иду" || item.chosen;
   const price = priceLabel(ev);
-  const meta = [ev.venue, ev.time_text, ev.free ? "" : price].filter(Boolean);
+  const meta = [ev.venue, timeRange(ev), ev.free ? "" : price].filter(Boolean);
   const day = item.day ?? ev.dates[0] ?? "";
   return (
     <article className="slot">

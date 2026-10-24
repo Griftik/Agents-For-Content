@@ -78,7 +78,7 @@ def upcoming_events(session: Session, city: str, today: date, now: datetime | No
                     statuses: Iterable[str] = ("published",)) -> list[dict]:
     """События города с датами не раньше сегодня, в формате ядра; по умолчанию только опубликованные.
 
-    now — местное время (дата + часы): сегодняшние даты событий, которые начались больше 30 минут назад, отбрасываются.
+    now — местное время (дата + часы): сегодняшние даты событий, до начала которых меньше 30 минут (или которые уже начались), отбрасываются; выставки и места — только после end_time.
     Без now времени суток не учитываем. statuses — какие статусы читать (сборщик читает ещё и черновики).
     """
     rows = session.scalars(select(Event).where(Event.status.in_(tuple(statuses)), Event.city == city)
@@ -281,7 +281,7 @@ def recently_shown_ids(session: Session, user_id: int, before_weekend: date, n: 
 
 def core_digest(session: Session, p: Profile, today: date, weekend: list[str] | None = None,
                 now: datetime | None = None) -> tuple[CoreDigest, list[dict], dict[str, ScoreResult]]:
-    """now — момент сборки: сегодняшние события, начавшиеся больше 30 минут назад, в подборку не попадают."""
+    """now — момент сборки: сегодняшние события, до начала которых меньше 30 минут, в подборку не попадают."""
     weekend = weekend or weekend_iso(today)
     events = upcoming_events(session, p.city, today, local_now(p, now).replace(tzinfo=None) if now else None)
     decs = [d.as_core() for d in user_decisions(session, p.user_id)]

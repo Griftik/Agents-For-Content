@@ -1,13 +1,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+export { DEV_PREFIX, SESSION_COOKIE, parseDevUser } from "./session-consts";
+
 /** Подписанный токен сессии в cookie: `<id>.<exp>.<подпись>`. Выдаётся после проверки initData. */
 
 export const SESSION_TTL_SEC = 24 * 60 * 60;
-export const SESSION_COOKIE = "leisure_session";
-export const DEV_PREFIX = "dev:";
 
 /** Секрет сессии: SESSION_SECRET, а если не задан — производный от токена бота (отдельный контекст, не ключ initData). */
-export function sessionSecret(env: { SESSION_SECRET?: string; LEISURE_BOT_TOKEN?: string }): string | null {
+export function sessionSecret(env: Record<string, string | undefined>): string | null {
   if (env.SESSION_SECRET) return env.SESSION_SECRET;
   if (env.LEISURE_BOT_TOKEN) return createHmac("sha256", env.LEISURE_BOT_TOKEN).update("leisure-web-session").digest("hex");
   return null;
@@ -35,11 +35,4 @@ export function readSession(token: string | undefined, secret: string | null, no
   const idN = Number(id);
   if (!Number.isInteger(expN) || expN < now) return null;
   return Number.isSafeInteger(idN) && idN > 0 ? idN : null;
-}
-
-/** Значение dev-cookie допустимо только при NODE_ENV=development. */
-export function parseDevUser(value: string | null | undefined): number | null {
-  if (!value || !/^\d{1,15}$/.test(value)) return null;
-  const n = Number(value);
-  return n > 0 ? n : null;
 }

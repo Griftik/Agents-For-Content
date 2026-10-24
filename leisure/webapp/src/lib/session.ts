@@ -1,6 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { DEV_PREFIX, SESSION_COOKIE, parseDevUser, readSession, sessionSecret } from "./session-token";
+import { DEV_PREFIX, SESSION_COOKIE, parseDevUser } from "./session-consts";
+import { readSession, sessionSecret } from "./session-token";
 
 export const isDev = process.env.NODE_ENV === "development";
 

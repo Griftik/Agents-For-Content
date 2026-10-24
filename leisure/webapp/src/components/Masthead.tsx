@@ -11,7 +11,7 @@ export function Masthead({ eyebrow, title, accent, tab, digestCount, name }: {
   name?: string;
 }) {
   const tabs: { id: Tab; href: string; label: string; count?: ReactNode }[] = [
-    { id: "digest", href: "/digest", label: "Дайджест", count: digestCount },
+    { id: "digest", href: "/digest", label: "Подборка", count: digestCount },
     { id: "plan", href: "/plan", label: "План" },
     { id: "profile", href: "/profile", label: "Профиль" },
   ];
@@ -27,7 +27,7 @@ export function Masthead({ eyebrow, title, accent, tab, digestCount, name }: {
       <nav className="tabs" aria-label="Разделы">
         {tabs.map((t) => (
           <a key={t.id} className="tab" href={t.href} aria-current={t.id === tab ? "page" : undefined}>
-            {t.label}{t.count != null ? <b>{t.count}</b> : null}
+            {t.label}{t.count != null ? <> <b>{t.count}</b></> : null}
           </a>
         ))}
       </nav>

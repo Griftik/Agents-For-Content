@@ -76,7 +76,9 @@ a:hover { text-decoration: none; }
   border: 1px solid var(--line); background: var(--surface); font: 500 13.5px/1.2 var(--body); color: var(--fg); cursor: pointer;
   text-decoration: none; min-height: 36px; transition: transform 80ms; }
 .btn:active { transform: scale(.97); }
-.btn.go, .btn[aria-pressed="true"].go { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.go { border-color: var(--accent); color: var(--accent); }
+.btn.go[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn[aria-pressed="true"]::before { content: "\2713\FE0E"; font-size: .95em; }
 .btn.maybe[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--bg); }
 .btn.like[aria-pressed="true"] { background: var(--brass); border-color: var(--brass); color: var(--accent-ink); }
 .btn.skip { background: var(--surface-2); color: var(--fg); border-color: transparent; }

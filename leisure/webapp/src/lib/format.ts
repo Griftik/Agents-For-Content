@@ -40,11 +40,17 @@ export function whenLabel(dates: string[], weekend: string[]): { num: string; su
 
 export const startTime = (ev: EventT) => ev.start_time || "";
 
+/** Время одним коротким значением: «13:00–15:00» или «19:00»; сырой time_text источника может быть длинным и с датами. */
+export function timeRange(ev: EventT): string {
+  if (ev.start_time && ev.end_time && ev.end_time !== ev.start_time) return `${ev.start_time}–${ev.end_time}`;
+  return ev.start_time || "";
+}
+
+/** Короткая цена для карточек; полный текст цены — на странице события. */
 export function priceLabel(ev: EventT): string {
   if (ev.free) return "бесплатно";
-  if (ev.price_from != null) return `от ${ev.price_from.toLocaleString("ru-RU").replace(/ /g, " ")} ₽`;
-  const t = (ev.price_text || "").trim();
-  return t && t.length <= 40 ? t : "";
+  if (ev.price_from != null) return `от ${ev.price_from.toLocaleString("ru-RU").replace(/\u00a0/g, " ")} ₽`;
+  return "";
 }
 
 export function placeLine(ev: EventT): { venue: string; rest: string } {
@@ -58,8 +64,7 @@ export const isHorizon = (ev: EventT, weekend: string[]) => !ev.dates.some((d) =
 export function shareUrl(ev: EventT, day: string | null | undefined, base: string): string {
   const d = day || ev.dates[0] || "";
   const when = [d ? `${dateLong(d)}` : "", ev.time_text].filter(Boolean).join(", ");
-  const where = [ev.venue, ev.address].filter(Boolean).join(", ");
-  const text = [ev.title, when, where, ev.why_fit_hint].filter(Boolean).join("\n").slice(0, 700);
+  const text = [ev.title, when, ev.venue].filter(Boolean).join("\n").slice(0, 300);
   return "https://t.me/share/url?" + new URLSearchParams({ url: `${base}/e/${ev.slug}`, text }).toString();
 }
 
@@ -71,3 +76,13 @@ export function parseToday(v: string | undefined): string | undefined {
 }
 
 export const first = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v);
+
+/** Подписи причин «мимо» (значения в данных не меняются). */
+export const REASON_LABEL: Record<string, string> = {
+  "не моё": "Не моё",
+  "дорого": "Дорого",
+  "далеко": "Далеко",
+  "уже был": "Уже был",
+  "не в это время": "Не то время",
+  "не та компания": "Не та компания",
+};

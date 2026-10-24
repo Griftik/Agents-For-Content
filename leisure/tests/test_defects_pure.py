@@ -62,17 +62,35 @@ def test_miss_keeps_links_and_footer_and_reasons_removed_after_choice():
     assert card_rows(after_miss, "Мимо", EID) == after_miss             # повторный «Мимо» даёт ту же клавиатуру
 
 
-# ── Д14: уже начавшиеся события ──
-def test_trim_past_drops_started_events_with_30_min_grace():
+# ── Д14: события, которые уже начались или вот-вот начнутся ──
+def _kept(events, now):
+    return {e["id"]: e["dates"] for e in trim_past(events, "2026-10-24", now)}
+
+
+def test_trim_past_hides_events_starting_within_30_minutes():
+    """Правило: на сегодня попадает событие, начало которого не раньше now + 30 минут (время доехать)."""
     ev = {"id": "a", "dates": ["2026-10-24", "2026-10-25"], "start_time": "13:00"}
     only_today = {"id": "b", "dates": ["2026-10-24"], "start_time": "13:00"}
     no_time = {"id": "c", "dates": ["2026-10-24"]}
-    ds = lambda now: {e["id"]: e["dates"] for e in trim_past([ev, only_today, no_time], "2026-10-24", now)}  # noqa: E731
-    assert ds(datetime(2026, 10, 24, 12, 0)) == {"a": ["2026-10-24", "2026-10-25"], "b": ["2026-10-24"], "c": ["2026-10-24"]}
-    assert "b" in ds(datetime(2026, 10, 24, 13, 30))                    # начало 13:00, запас 30 минут
-    assert "b" not in ds(datetime(2026, 10, 24, 13, 31))
-    assert ds(datetime(2026, 10, 24, 14, 0)) == {"a": ["2026-10-25"], "c": ["2026-10-24"]}   # завтрашняя дата остаётся
-    assert ds(None) == {"a": ["2026-10-24", "2026-10-25"], "b": ["2026-10-24"], "c": ["2026-10-24"]}   # без now — по дате
+    evs = [ev, only_today, no_time]
+    assert _kept(evs, datetime(2026, 10, 24, 12, 0)) == {"a": ["2026-10-24", "2026-10-25"], "b": ["2026-10-24"], "c": ["2026-10-24"]}
+    assert "b" in _kept(evs, datetime(2026, 10, 24, 12, 30))                  # ровно за 30 минут — ещё можно
+    assert "b" not in _kept(evs, datetime(2026, 10, 24, 12, 31))              # меньше 30 минут до начала — уже нет
+    late = _kept(evs, datetime(2026, 10, 24, 14, 0))                           # давно началось: сегодняшняя дата уходит
+    assert late == {"a": ["2026-10-25"], "c": ["2026-10-24"]}                  # завтрашняя дата и событие без времени остаются
+    assert _kept(evs, None) == {"a": ["2026-10-24", "2026-10-25"], "b": ["2026-10-24"], "c": ["2026-10-24"]}   # без now — по дате
+
+
+def test_trim_past_exhibitions_and_places_hidden_only_after_end_time():
+    """Для kind «выставка» и «место» start_time не применяется: прячем, только когда прошёл end_time."""
+    expo = {"id": "x", "kind": "выставка", "dates": ["2026-10-24"], "start_time": "11:00", "end_time": "20:00"}
+    place = {"id": "p", "kind": "место", "dates": ["2026-10-24"], "start_time": "10:00", "end_time": "18:00"}
+    no_end = {"id": "n", "kind": "выставка", "dates": ["2026-10-24"], "start_time": "10:00"}
+    evs = [expo, place, no_end]
+    assert set(_kept(evs, datetime(2026, 10, 24, 15, 0))) == {"x", "p", "n"}   # давно открыты, но ещё работают
+    assert set(_kept(evs, datetime(2026, 10, 24, 19, 59))) == {"x", "n"}        # место закрылось в 18:00
+    assert set(_kept(evs, datetime(2026, 10, 24, 20, 0))) == {"n"}              # выставка закрылась; без end_time — остаётся
+    assert "x" not in _kept([{**expo, "kind": "событие"}], datetime(2026, 10, 24, 15, 0))   # обычное событие — по start_time
 
 
 def test_trim_past_ignores_now_on_other_day():

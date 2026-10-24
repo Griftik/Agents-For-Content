@@ -1,6 +1,6 @@
 import { decide } from "@/app/actions";
 import type { Decision, EventT, Why } from "@/lib/api-types";
-import { dateShort, placeLine, priceLabel, shareUrl, startTime, wdShort, whenLabel } from "@/lib/format";
+import { REASON_LABEL, dateShort, placeLine, priceLabel, shareUrl, startTime, wdShort, whenLabel } from "@/lib/format";
 import { Ring } from "./Ring";
 
 const whyClass = (w: Why) => (w.c === "learn" ? "why learn" : w.c === "neg" ? "why neg" : "why");
@@ -57,7 +57,7 @@ function FollowUp({ ev, decision, reasons, weekend }: { ev: EventT; decision?: D
           <input type="hidden" name="status" value="мимо" />
           <span className="eyebrow">Почему мимо ·</span>
           {reasons.map((r) => (
-            <button key={r} type="submit" name="reason" value={r} className="btn small" aria-pressed={decision.reason === r}>{r}</button>
+            <button key={r} type="submit" name="reason" value={r} className="btn small" aria-pressed={decision.reason === r}>{REASON_LABEL[r] ?? r}</button>
           ))}
         </form>
       ) : null}

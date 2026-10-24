@@ -136,37 +136,45 @@ def is_horizon(ev: Mapping, weekend: Sequence[str]) -> bool:
     return not weekend_days(ev, weekend)
 
 
-STARTED_GRACE_MIN = 30  # событие, начавшееся не больше 30 минут назад, ещё показываем (можно успеть)
+LEAD_MIN = 30                      # событие попадает в подборку на сегодня, если начинается не раньше now + 30 минут (время доехать)
+OPEN_KINDS = ("выставка", "место")  # работают в течение дня: прячем только после окончания (end_time), а не после начала
 
 
-def _start_minutes(ev: Mapping) -> int | None:
-    """Начало по start_time ('HH:MM[:SS]' или time) в минутах от полуночи; нет времени — None."""
-    st = ev.get("start_time")
-    if not st:
+def _minutes(t) -> int | None:
+    """'HH:MM[:SS]' или time → минуты от полуночи; пусто или мусор — None."""
+    if not t:
         return None
-    if isinstance(st, str):
+    if isinstance(t, str):
         try:
-            h, m = st.split(":")[:2]
+            h, m = t.split(":")[:2]
             return int(h) * 60 + int(m)
         except ValueError:
             return None
-    return st.hour * 60 + st.minute
+    return t.hour * 60 + t.minute
+
+
+def _gone_today(ev: Mapping, now_min: int) -> bool:
+    """Сегодняшняя дата события уже не годится для подборки: началось или начнётся меньше чем через LEAD_MIN минут;
+    для выставок и мест — только если end_time уже прошёл."""
+    if ev.get("kind") in OPEN_KINDS:
+        end = _minutes(ev.get("end_time"))
+        return end is not None and now_min >= end
+    start = _minutes(ev.get("start_time"))
+    return start is not None and start < now_min + LEAD_MIN
 
 
 def trim_past(events: Iterable[Mapping], today_iso: str, now: datetime | None = None) -> list[dict]:
     """Как в прототипе: прошедшие даты выкидываем, события без будущих дат — целиком.
 
-    now — местное время (используются только дата и часы). Если сегодняшняя дата совпадает с датой now, то «сегодня»
-    у события, начавшегося по start_time больше STARTED_GRACE_MIN минут назад, тоже выкидывается. Без now — по дате.
+    now — местное время (используются только дата и часы). Если дата now совпадает с today_iso, то «сегодня» у события,
+    которое по start_time начинается раньше now + LEAD_MIN, тоже выкидывается (см. _gone_today). Без now — по дате.
     """
     now_min = now.hour * 60 + now.minute if now is not None and now.date().isoformat() == today_iso else None
     out: list[dict] = []
     for ev in events:
         ds = [d for d in event_dates(ev) if d >= today_iso]
-        if now_min is not None and today_iso in ds:
-            start = _start_minutes(ev)
-            if start is not None and now_min > start + STARTED_GRACE_MIN:
-                ds = [d for d in ds if d != today_iso]
+        if now_min is not None and today_iso in ds and _gone_today(ev, now_min):
+            ds = [d for d in ds if d != today_iso]
         if not ds:
             continue
         e = dict(ev)
