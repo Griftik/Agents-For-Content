@@ -1,6 +1,7 @@
 import { decide } from "@/app/actions";
 import type { Decision, EventT, Why } from "@/lib/api-types";
 import { REASON_LABEL, dateShort, placeLine, priceLabel, shareUrl, startTime, wdShort, whenLabel } from "@/lib/format";
+import { InviteButton } from "./InviteButton";
 import { Ring } from "./Ring";
 
 const whyClass = (w: Why) => (w.c === "learn" ? "why learn" : w.c === "neg" ? "why neg" : "why");
@@ -42,7 +43,11 @@ export function DecisionButtons({ ev, decision, day, base, shareDay }: { ev: Eve
       {btn("интересно", "Интересно", "like")}
       {btn("мимо", "Мимо", "skip")}
       <a className="btn link" href={`/e/${ev.slug}`}>Подробнее</a>
-      <a className="btn small" href={shareUrl(ev, shareDay ?? day, base)} target="_blank" rel="noopener noreferrer">Другу</a>
+      {cur === "иду" ? (
+        <InviteButton slug={ev.slug} day={decision?.day ?? shareDay ?? day ?? null} />
+      ) : (
+        <a className="btn small" href={shareUrl(ev, shareDay ?? day, base)} target="_blank" rel="noopener noreferrer">Другу</a>
+      )}
     </form>
   );
 }

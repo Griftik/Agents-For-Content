@@ -160,6 +160,9 @@ class ProfileIn(BaseModel):
     tz: str | None = Field(default=None, max_length=64)
     digest_day: int | None = Field(default=None, ge=1, le=7)
     digest_hour: int | None = Field(default=None, ge=0, le=23)
+    show_name: bool | None = None         # показывать ли имя друзьям (приглашения)
+    can_write: bool | None = None         # бот может писать человеку (Mini App: после requestWriteAccess true)
+    offer_seen: int | None = Field(default=None, ge=0, le=2)   # предложение своей подборки приглашённому: 0 / 1 («Потом») / 2 (повтор показан)
     consent: bool | None = None
     onboarded: bool | None = None  # бот ставит в конце онбординга; иначе считаем по шагу «интересы»
 
@@ -216,6 +219,10 @@ class ProfileOut(BaseModel):
     learned: dict
     learned_text: str
     onboarded: bool
+    show_name: bool = True
+    can_write: bool = True
+    offer_seen: int = 0
+    source: str = "organic"
     affinity_manual_at: str | None = None   # когда пользователь последний раз правил affinity вручную
 
 
@@ -267,6 +274,7 @@ class PlanItemOut(BaseModel):
     status: str
     day: str
     conflict: bool = False
+    companions: list[str] = []      # с кем идёт по приглашениям («вдвоём с Имя»); скрытое имя — «другом»
     links: LinksOut
 
 
@@ -276,6 +284,51 @@ class PlanOut(BaseModel):
     days: dict[str, list[PlanItemOut]]
     horizon: list[PlanItemOut]
     text: str
+
+
+class InviteCreateIn(BaseModel):
+    user_id: int | None = None          # из сессии Mini App; можно передать заголовком X-User-Id
+    event_slug: str | None = Field(default=None, description="slug (или uuid) события; для kind=ref не нужен", max_length=120)
+    day: date | None = None
+    kind: str = Field(default="event", pattern="^(event|ref)$")
+
+
+class InviteCreatedOut(BaseModel):
+    code: str
+    kind: str
+    url: str | None                     # https://t.me/<бот>/<app>?startapp=inv_<код>; null, пока не заданы бот и MINIAPP_SHORT_NAME
+    web_url: str                        # <WEB_BASE_URL>/e/<slug>?inv=<код>
+    share_text: str                     # от первого лица, со ссылкой: для «Поделиться» и «Скопировать»
+
+
+class InviteOut(BaseModel):
+    code: str
+    kind: str
+    event: DigestItemOut | None         # карточка как в дайджесте (без оценки); null, если событие удалено
+    day: str | None
+    event_slug: str | None = None       # slug события (есть и когда событие снято: страница покажет «событие убрали»)
+    inviter_name: str | None            # null, если пригласивший скрыл имя (show_name)
+    is_own: bool = False                # приглашение создал тот, кто спрашивает (?user_id=): T-INVITE-SELF
+    status: str                         # active | past | unpublished | gone
+    accepted: int
+    my_status: str | None = None        # для ?user_id=: opened | going | maybe | declined
+
+
+class InviteOpenIn(BaseModel):
+    user_id: int | None = None
+    name: str = Field(default="", max_length=200)
+    username: str = Field(default="", max_length=100)
+
+
+class InviteAcceptIn(InviteOpenIn):
+    status: str = Field(pattern="^(going|maybe)$")
+    consent: bool = False               # согласие на обработку данных при первом касании (когда профиля или согласия нет)
+
+
+class InviteAcceptOut(BaseModel):
+    decision: DecisionOut
+    together_with: str | None           # имя пригласившего (если не скрыто)
+    profile_state: str                  # new | onboarded
 
 
 class CatalogOut(BaseModel):

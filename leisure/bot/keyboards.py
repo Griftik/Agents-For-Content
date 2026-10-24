@@ -134,16 +134,16 @@ def profile_keyboard() -> list[list[Button]]:
 
 
 # ─── причины «Мимо» ───
-def reasons_keyboard(event_id: str, more: bool = False) -> list[list[Button]]:
+def reasons_keyboard(event_id: str, more: bool = False, prefix: str = "r", caption: bool = True) -> list[list[Button]]:
     """Подпись «Почему мимо? Можно не отвечать», затем причины: Не моё · Дорого · Далеко · Уже был и «Ещё…» (остальные две)."""
-    caption = [{"text": REASON_CAPTION, "callback_data": "ob:noop"}]  # подпись, не кнопка действия
+    head = [[{"text": REASON_CAPTION, "callback_data": "ob:noop"}]] if caption else []  # подпись, не кнопка действия
 
     def b(reason: str) -> Button:
-        return {"text": REASON_LABEL[reason], "callback_data": f"r:{REASON_CODES[reason]}:{event_id}"}
+        return {"text": REASON_LABEL[reason], "callback_data": f"{prefix}:{REASON_CODES[reason]}:{event_id}"}
 
     if more:
-        return [caption, [b("не в это время"), b("не та компания")]]
-    return [caption, [b("не моё"), b("дорого"), b("далеко"), b("уже был")], [{"text": "Ещё…", "callback_data": f"r:m:{event_id}"}]]
+        return head + [[b("не в это время"), b("не та компания")]]
+    return head + [[b("не моё"), b("дорого"), b("далеко"), b("уже был")], [{"text": "Ещё…", "callback_data": f"{prefix}:m:{event_id}"}]]
 
 
 def mark_keyboard(rows: list[list[Button]], active_text: str | None) -> list[list[Button]]:

@@ -37,7 +37,7 @@ export type EventT = {
 export type ScoredEvent = EventT & { score: number; why: Why[] };
 export type DigestItem = { event: EventT; day: string | null; slot: string; score: number | null; why: Why[]; chosen: boolean; links: Links };
 export type Digest = { user_id: number; weekend: string[]; title: string; items: DigestItem[]; horizon: DigestItem[] };
-export type PlanItem = { event: EventT; status: string; day: string; conflict: boolean; links: Links };
+export type PlanItem = { event: EventT; status: string; day: string; conflict: boolean; links: Links; companions?: string[] };
 export type Plan = { weekend: string[]; title: string; days: Record<string, PlanItem[]>; horizon: PlanItem[]; text: string };
 export type Decision = { event_id: string | null; event_slug: string; status: string; reason: string | null; day: string | null; rating: number | null };
 export type Learned = { likes?: unknown[]; dislikes?: unknown[]; reasons?: Record<string, number>; n?: number } & Record<string, unknown>;
@@ -65,13 +65,50 @@ export type Profile = {
   learned: Learned;
   learned_text: string;
   onboarded: boolean;
+  /** Показывать имя друзьям в приглашениях (по умолчанию true). */
+  show_name?: boolean;
+  source?: string;
 };
 export type Catalog = {
   values: string[];
   categories: string[];
+  business_categories?: string[];
   reasons: string[];
   company: string[];
   areas: string[];
   times: string[];
+  /** Группы ценностей для экрана онбординга: «Познание» → [...]. */
+  value_clusters?: Record<string, string[]>;
+  /** Короткие подписи ценностей на кнопках. */
+  value_short?: Record<string, string>;
+  /** Таблица «направление → ценности» (вес 0–1) для подбора восьми направлений; пока бэкенд её не отдаёт (см. README). */
+  category_values?: Record<string, Record<string, number>>;
 };
-export type ProfilePatch = Partial<Pick<Profile, "notes" | "values" | "interests">> & { params?: Profile["params"] };
+export type ProfilePatch = Partial<Pick<Profile, "notes" | "values" | "interests">> & {
+  params?: Profile["params"];
+  name?: string;
+  username?: string;
+  show_name?: boolean;
+  consent?: boolean;
+  onboarded?: boolean;
+  /** Код рекомендации `ref_<код>` из start_param: передаётся при первом касании (имя поля согласуется с бэкендом). */
+  ref_code?: string;
+};
+
+// ─── Приглашения (leisure/docs/GROWTH.md, раздел 6) ───
+export type InviteStatus = "active" | "past" | "unpublished" | "gone";
+/** POST /api/invites */
+export type InviteCreated = { code: string; url: string; web_url: string; share_text: string };
+/** GET /api/invites/{code} */
+export type InviteView = {
+  event: EventT | null;
+  day: string | null;
+  inviter_name: string | null;
+  status: InviteStatus;
+  accepted: number;
+  /** Не из §6: бэкенд отдаёт, если передан user_id; тогда автор видит «Это твоё приглашение». */
+  inviter_is_me?: boolean;
+};
+export type InviteAcceptStatus = "going" | "maybe";
+/** POST /api/invites/{code}/accept */
+export type InviteAccepted = { decision: Decision; together_with: string | null; profile_state: "new" | "onboarded" };

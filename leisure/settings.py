@@ -43,6 +43,10 @@ DEFAULT_CITY = _opt("LEISURE_CITY", "Москва")
 DEFAULT_TZ = _opt("LEISURE_TZ", "Europe/Moscow")
 WEB_BASE_URL = _opt("WEB_BASE_URL", "http://localhost:8000")  # публичные страницы событий /e/<slug>
 
+# Mini App (приглашения, docs/GROWTH.md): имя бота без @ и короткое имя приложения из @BotFather → https://t.me/<бот>/<app>?startapp=…
+BOT_USERNAME = _opt("NEXT_PUBLIC_BOT_USERNAME").lstrip("@")
+MINIAPP_SHORT_NAME = _opt("MINIAPP_SHORT_NAME")
+
 # ─── Админка ───
 ADMIN_USER = _opt("ADMIN_USER", "admin")
 ADMIN_PASSWORD = _opt("ADMIN_PASSWORD", "")  # пустой пароль = админка выключена

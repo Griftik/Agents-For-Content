@@ -1,6 +1,8 @@
 import "server-only";
-import { apiBase, apiKey } from "./config";
-import type { Catalog, Decision, Digest, EventT, Plan, Profile, ProfilePatch, ScoredEvent } from "./api-types";
+import { apiBase, apiKey, botUsername, miniAppShortName } from "./config";
+import type { Catalog, Decision, Digest, EventT, InviteAcceptStatus, InviteAccepted, InviteCreated, InviteView, Plan, Profile, ProfilePatch, ScoredEvent } from "./api-types";
+import { toInviteAccepted, toInviteCreated, toInviteView } from "./invite-api";
+import { MockError, mockCall, mockEnabled } from "./mock";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -11,6 +13,14 @@ export class ApiError extends Error {
 const TIMEOUT_MS = 8000;
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (mockEnabled()) {
+    try {
+      return mockCall(path, init) as T;
+    } catch (e) {
+      if (e instanceof MockError) throw new ApiError(e.status, e.message);
+      throw e;
+    }
+  }
   const res = await fetch(apiBase() + path, {
     ...init,
     cache: "no-store",
@@ -52,6 +62,34 @@ export const api = {
   digest: (uid: number, today?: string) => call<Digest>(`/api/digest/${uid}/preview${q({ today })}`),
   digestAll: (uid: number, today?: string) => call<ScoredEvent[]>(`/api/digest/${uid}/all${q({ today })}`),
   plan: (uid: number, today?: string) => call<Plan>(`/api/plan/${uid}${q({ today })}`),
+  /** GET /api/invites/{code}; user_id (необязательно) нужен только чтобы автор узнал своё приглашение. */
+  invite: async (code: string, uid?: number): Promise<InviteView> =>
+    toInviteView(await call<unknown>(`/api/invites/${encodeURIComponent(code)}${q({ user_id: uid ? String(uid) : undefined })}`)),
+  /** POST /api/invites: код и ссылка для события и дня (повторный вызов возвращает то же приглашение). */
+  createInvite: async (uid: number, ev: EventT, day: string | null): Promise<InviteCreated> =>
+    toInviteCreated(
+      await call<unknown>("/api/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // user_id — сессия Mini App (§6); event_slug по контракту, event — имя поля в текущей схеме бэкенда.
+        body: JSON.stringify({ user_id: uid, event_slug: ev.slug, event: ev.slug, day: day ?? undefined }),
+      }),
+      { event: ev, day, bot: botUsername(), app: miniAppShortName() },
+    ),
+  /** POST /api/invites/{code}/accept; consent=true при первом касании. */
+  acceptInvite: async (
+    code: string,
+    body: { user_id: number; status: InviteAcceptStatus; consent: boolean; name?: string; username?: string },
+    profileState: "new" | "onboarded",
+  ): Promise<InviteAccepted> =>
+    toInviteAccepted(
+      await call<unknown>(`/api/invites/${encodeURIComponent(code)}/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      profileState,
+    ),
   ics: async (slug: string, day?: string) => {
     const res = await fetch(`${apiBase()}/api/events/${encodeURIComponent(slug)}/ics${q({ day })}`, {
       cache: "no-store",

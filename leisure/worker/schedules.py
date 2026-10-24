@@ -47,6 +47,12 @@ def _active_profiles(session):
     return session.scalars(select(Profile).where(Profile.active.is_(True), Profile.onboarded_at.is_not(None))).all()
 
 
+def _remindable_profiles(session):
+    """Кому идут «План на сегодня» и «Как прошло?»: активные с согласием, в том числе принявшие приглашение друга в вебе и ещё
+    не прошедшие онбординг (у них есть решения, подборки им пока не шлём)."""
+    return session.scalars(select(Profile).where(Profile.active.is_(True), Profile.consent_at.is_not(None))).all()
+
+
 def due_weekend(local_now: datetime, digest_day: int, digest_hour: int) -> list[str] | None:
     """Уикенд, для которого дайджест уже пора отправить: последняя наступившая отметка (день ISO, час)
     определяет уикенд; если он уже прошёл — None."""
@@ -60,10 +66,10 @@ def due_weekend(local_now: datetime, digest_day: int, digest_hour: int) -> list[
     return [d.isoformat() for d in weekend]
 
 
-def _for_each_profile(session, now_utc: datetime, fn) -> int:
+def _for_each_profile(session, now_utc: datetime, fn, profiles=None) -> int:
     """fn(profile, local_now) → bool; исключения логируются по пользователю и не валят остальных."""
     n = 0
-    for p in _active_profiles(session):
+    for p in (_active_profiles(session) if profiles is None else profiles(session)):
         try:
             if fn(p, _local_now(p.tz, now_utc)):
                 n += 1
@@ -110,7 +116,7 @@ def digest_messages(p: Profile, view: dict, first: bool = False) -> list[tuple[i
 def _handle_blocked(s, res: SendResult) -> None:
     """Заблокировавшим бота выключаем рассылки (вернутся по /start)."""
     for uid in res.blocked:
-        if services.set_active(s, uid, False):
+        if services.mark_blocked(s, uid):
             log.info("пользователь %s заблокировал бота — рассылки выключены", uid)
 
 
@@ -193,7 +199,7 @@ def job_plan_today(now_utc: datetime | None = None) -> int:
             if local.hour < PLAN_HOUR:
                 return False
             decs = services.decisions_to_remind(s, p.user_id, local.date())
-            plan = services.day_plan(decs, local.date())
+            plan = services.day_plan(decs, local.date(), s)
             today = local.date().isoformat()
             items = plan["days"][today]
             text = plan_today_text(plan, today)
@@ -204,15 +210,15 @@ def job_plan_today(now_utc: datetime | None = None) -> int:
                 msgs.append((p.user_id, f"<b>{escape(it['event']['title'])}</b>", plan_item_keyboard(it)))
             res = send_sync(msgs)
             _handle_blocked(s, res)
-            if 0 in res.undelivered:
+            if 0 in res.undelivered and not res.blocked:
                 return False
-            shown = {it["event"]["id"] for it in items}
+            shown = {it["event"]["id"] for it in items}   # Forbidden: молча пропускаем (человек из Mini App не писал боту), повторять каждый час нечего
             for d in decs:
                 if str(d.event_id) in shown:
                     d.reminded_at = now_utc
             s.commit()
-            return True
-        n = _for_each_profile(s, now_utc, send)
+            return res.sent > 0
+        n = _for_each_profile(s, now_utc, send, _remindable_profiles)
     log.info("планов на сегодня отправлено: %d", n)
     return n
 
@@ -233,13 +239,28 @@ def job_how_was_it(now_utc: datetime | None = None) -> int:
             res = send_sync(msgs)
             _handle_blocked(s, res)
             for i, d in enumerate(decs):
-                if i not in res.undelivered:
+                if i not in res.undelivered or res.blocked:
                     d.feedback_asked_at = now_utc
             s.commit()
             return res.sent > 0
-        n = _for_each_profile(s, now_utc, send)
+        n = _for_each_profile(s, now_utc, send, _remindable_profiles)
     log.info("«как прошло» отправлено: %d", n)
     return n
+
+
+def job_invite_notifications(now_utc: datetime | None = None) -> int:
+    """Страховка: пригласивший узнаёт, что друг идёт с ним, даже если мгновенная отправка из API не удалась (бот был недоступен).
+    Уведомление уходит один раз; удалившему профиль и заблокировавшему бота больше не пытаемся."""
+    from leisure.api import invites as inv_service
+
+    sent = 0
+    with session_factory()() as s:
+        for acc in inv_service.pending_notifications(s):
+            if inv_service.notify_inviter(s, acc.invite, acc.user_id):
+                sent += 1
+        sent += inv_service.notify_many(s, now_utc or datetime.now(timezone.utc))
+    log.info("уведомлений о принятых приглашениях: %d", sent)
+    return sent
 
 
 def main() -> None:
@@ -251,6 +272,7 @@ def main() -> None:
     sched.add_job(job_send_digests, CronTrigger(minute=0, timezone=tz), id="send_digests")
     sched.add_job(job_plan_today, CronTrigger(minute=0, timezone=tz), id="plan_today")
     sched.add_job(job_how_was_it, CronTrigger(minute=0, timezone=tz), id="how_was_it")
+    sched.add_job(job_invite_notifications, CronTrigger(minute="*", timezone=tz), id="invite_notifications")
     log.info("воркер запущен, tz=%s", settings.DEFAULT_TZ)
     sched.start()
 

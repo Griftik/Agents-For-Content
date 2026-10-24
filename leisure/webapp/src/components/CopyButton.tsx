@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { copyToClipboard } from "@/lib/clipboard";
 
 /** «Скопировать план» — единственное действие на странице плана, которому нужен JS. Без JS остаётся текст в <details>. */
 export function CopyButton({ text, label = "Скопировать план", done = "План скопирован" }: { text: string; label?: string; done?: string }) {
@@ -14,22 +15,7 @@ export function CopyButton({ text, label = "Скопировать план", do
   }, []);
 
   async function copy() {
-    let ok = false;
-    try {
-      await navigator.clipboard.writeText(text);
-      ok = true;
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        ok = document.execCommand("copy");
-      } catch {}
-      ta.remove();
-    }
+    const ok = await copyToClipboard(text);
     setState(ok ? "ok" : "fail");
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setState(""), 1800);

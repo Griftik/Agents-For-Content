@@ -34,7 +34,7 @@ def rating_cb(stars: int, event_id: str) -> str:
 
 
 class Parsed(NamedTuple):
-    kind: str            # 'decision' | 'reason' | 'more_reasons' | 'day' | 'rating'
+    kind: str            # 'decision' | 'reason' | 'more_reasons' | 'lowreason' | 'lowmore' | 'day' | 'rating'
     value: str
     event_id: str
     day: date | None = None
@@ -62,6 +62,10 @@ def parse_cb(data: str) -> Parsed | None:
         return Parsed("reason", "", event_id)            # «Без причины» из старых сообщений
     if kind == "r" and val == "m":
         return Parsed("more_reasons", "", event_id)
+    if kind == "rl" and val in CODES_REASON:                 # причина низкой оценки (1–2), статус решения не меняется
+        return Parsed("lowreason", CODES_REASON[val], event_id)
+    if kind == "rl" and val == "m":
+        return Parsed("lowmore", "", event_id)
     if kind == "y" and val in ("0", "1", "2"):
         return Parsed("day", val, event_id)
     if kind == "s" and val.isdigit() and 1 <= int(val) <= 5:

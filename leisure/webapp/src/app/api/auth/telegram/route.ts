@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, issueSession, sessionSecret } from "@/lib/session-token";
+import { encodeWho } from "@/lib/cookies";
+import { SESSION_COOKIE, WHO_COOKIE, cookieOpts } from "@/lib/session-consts";
+import { issueSession, sessionSecret } from "@/lib/session-token";
 import { verifyInitData } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
@@ -28,5 +30,7 @@ export async function POST(req: NextRequest) {
     sameSite: prod ? "none" : "lax",
     partitioned: prod,
   });
+  const name = [res.user.first_name, res.user.last_name].filter(Boolean).join(" ");
+  out.cookies.set(WHO_COOKIE, encodeWho(name, res.user.username ?? ""), cookieOpts(24 * 60 * 60, prod));
   return out;
 }

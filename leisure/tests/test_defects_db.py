@@ -267,6 +267,7 @@ def test_save_digest_does_not_overwrite_sent_items(db, user):
 
 def test_build_job_skips_sent_digest(db, user, monkeypatch):
     monkeypatch.setattr(schedules, "_active_profiles", lambda s: [s.get(Profile, UID)])
+    monkeypatch.setattr(schedules, "_remindable_profiles", lambda s: [s.get(Profile, UID)])
     now = datetime(2026, 10, 21, 19, 5, tzinfo=timezone.utc)                         # среда 22:05 МСК
     row = services.digest_row(db, user, date(2026, 10, 23))
     row.items, row.sent_at = [{"event_id": "marker"}], now
@@ -312,6 +313,7 @@ THU = datetime(2026, 10, 22, 16, 5, tzinfo=timezone.utc)                        
 def _patch_send(monkeypatch, result_fn):
     sent = []
     monkeypatch.setattr(schedules, "_active_profiles", lambda s: [s.get(Profile, UID)])
+    monkeypatch.setattr(schedules, "_remindable_profiles", lambda s: [s.get(Profile, UID)])
 
     def fake(msgs):
         sent.append(msgs)
@@ -363,6 +365,7 @@ def test_card_lost_after_all_retries_is_resent_on_next_pass(db, user, monkeypatc
     from leisure.worker import send as send_mod
 
     monkeypatch.setattr(schedules, "_active_profiles", lambda s: [s.get(Profile, UID)])
+    monkeypatch.setattr(schedules, "_remindable_profiles", lambda s: [s.get(Profile, UID)])
     monkeypatch.setattr(send_mod, "RETRY_DELAYS", (0, 0, 0))
     monkeypatch.setattr(send_mod, "SEND_INTERVAL", 0)
     fail_on = {"text": None}

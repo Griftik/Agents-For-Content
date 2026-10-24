@@ -5,7 +5,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse
 
-from .timeutil import DAY_FULL, event_dates, event_times, fmt_date, start_hour, time_text, weekend_title
+from .timeutil import DAY_FULL, day_phrase, event_dates, event_times, fmt_date, start_hour, time_for_day, time_text, weekend_title
 
 DEFAULT_CITY = "Москва"
 DEFAULT_TZ = "Europe/Moscow"
@@ -143,6 +143,39 @@ def tg_share_url(ev: Mapping, day: str | None = None, url: str | None = None, ma
         if extra and fits(lines + [extra]):
             lines.append(extra)
     return _share_url(link, "\n".join(x for x in lines if x))
+
+
+SHARE_TEXT_MAX = 300      # T-INVITE-SHARE: целиком, вместе со ссылкой
+
+
+def _first_sentence(text: str, limit: int) -> str:
+    t = " ".join((text or "").split())
+    cut = t.find(". ")
+    t = t[: cut + 1] if cut > 0 else t
+    if len(t) > limit:
+        t = t[: limit - 1].rstrip(" ,;:—-") + "…"
+    return t
+
+
+def invite_text(ev: Mapping, day: str | None, link: str, why: str | None = None) -> str:
+    """Приглашение от первого лица (T-INVITE-SHARE, web/COPY.md): «Иду на «…»: день, время, площадка. Почему стоит.» и строка
+    «Пойдёшь со мной? ссылка». Не длиннее 300 знаков вместе со ссылкой: название — до 60, площадка — до 40, подсказка — первое
+    предложение до 70; не влезло — подсказка уходит первой."""
+    title = ev.get("title") or ""
+    title = title if len(title) <= 60 else title[:59].rstrip() + "…"
+    d = day or (event_dates(ev)[0] if event_dates(ev) else "")
+    venue = ev.get("venue") or ""
+    venue = venue if len(venue) <= 40 else venue[:39].rstrip() + "…"
+    when = ", ".join(x for x in (day_phrase(d) if d else "", time_for_day(ev, d) if d else "", venue) if x)
+    hint = _first_sentence(why or ev.get("why_fit_hint") or "", 70)
+    if hint and not hint.endswith((".", "…", "!", "?")):
+        hint += "."
+    tail = f"\nПойдёшь со мной? {link}"
+    head = f"Иду на «{title}»" + (f": {when}." if when else ".")
+    text = head + (f" {hint}" if hint else "") + tail
+    if len(text) > SHARE_TEXT_MAX:
+        text = head + tail
+    return text[:SHARE_TEXT_MAX] if len(text) > SHARE_TEXT_MAX else text
 
 
 def _ics_fold(line: str, limit: int = 75) -> str:

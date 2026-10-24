@@ -170,6 +170,32 @@ def card_rows(event_id: str, days: Sequence[str], day: str | None, status: str |
     return rows + (link_rows or [])
 
 
+def _cap(text: str) -> str:
+    """Первая буква заглавная, остальное как есть (str.capitalize портит имена)."""
+    return text[:1].upper() + text[1:]
+
+
+def companions_phrase(names: Sequence[str]) -> str:
+    """T-INVITE-TOGETHER: «вдвоём с Имя» (скрытое имя — «вдвоём с другом»), несколько друзей — «с друзьями (n)». Пусто — пустая строка."""
+    names = list(names)
+    if not names:
+        return ""
+    if len(names) == 1:
+        return f"вдвоём с {names[0]}"
+    return f"с друзьями ({len(names)})"
+
+
+def invite_joined_text(name: str | None, title: str, day: str | None) -> str:
+    """T-INVITE-JOINED (бот, пригласивший): «Имя идёт с тобой: «…», суббота, 24 окт.»; скрытое имя — «Друг»."""
+    return f"{name or 'Друг'} идёт с тобой: «{title}»" + (f", {day_phrase(day)}." if day else ".")
+
+
+def invite_joined_many_text(n: int, title: str, day: str | None) -> str:
+    """T-INVITE-JOINED-MANY: сводное, раз в день, без имён."""
+    return (f"Ещё {n} {plural(n, 'друг идёт', 'друга идут', 'друзей идут')} с тобой: «{title}»"
+            + (f", {day_phrase(day)}." if day else "."))
+
+
 def card_link_rows(item: Mapping, url_buttons: bool | None = None) -> list[list[Button]]:
     if url_buttons is None:
         url_buttons = services.web_links_enabled()
@@ -216,7 +242,8 @@ def plan_overview_text(plan: Mapping) -> str:
         for it in items:
             t = _event_time(it["event"], day)
             maybe = " (может быть)" if it["status"] == "может" else ""
-            lines.append(escape((t + " · " if t else "") + it["event"]["title"] + maybe))
+            with_ = f" · {companions_phrase(it.get('companions') or [])}" if it.get("companions") else ""
+            lines.append(escape((t + " · " if t else "") + it["event"]["title"] + maybe + with_))
     horizon = list(plan.get("horizon", []))
     if horizon:
         lines += ["", "<b>Дальше</b>"]
@@ -250,6 +277,8 @@ def plan_card_text(it: Mapping, day: str | None = None) -> str:
         place += f" · м. {ev['metro']}" if place else f"м. {ev['metro']}"
     if place:
         lines.append(escape(place))
+    if it.get("companions"):
+        lines.append(escape(_cap(companions_phrase(it["companions"])) + "."))
     if it.get("conflict"):
         other = it.get("conflict_with")
         lines.append(f"Пересекается по времени с «{escape(other)}»." if other else "Пересекается по времени.")
@@ -292,6 +321,8 @@ def plan_today_text(plan: Mapping, day: str) -> str:
         place = _place(ev)
         lines += ["", f"<b>{escape(ev['title'])}</b>",
                   escape(f"{t} · {place}" if t else f"Время уточни на странице события · {place}")]
+        if it.get("companions"):
+            lines.append(escape(_cap(companions_phrase(it["companions"])) + "."))
         if it.get("conflict"):
             other = it.get("conflict_with")
             lines.append(f"Пересекается по времени с «{escape(other)}»." if other else "Пересекается по времени.")

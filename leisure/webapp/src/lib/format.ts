@@ -86,3 +86,6 @@ export const REASON_LABEL: Record<string, string> = {
   "не в это время": "Не то время",
   "не та компания": "Не та компания",
 };
+
+/** Сегодня по Москве (YYYY-MM-DD): день, по которому события считаются прошедшими. */
+export const moscowToday = (now = Date.now()) => new Date(now + 3 * 3600_000).toISOString().slice(0, 10);

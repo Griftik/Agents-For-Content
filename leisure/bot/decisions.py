@@ -183,7 +183,32 @@ async def _edit_markup(cb: CallbackQuery, rows) -> bool:
     return True
 
 
-@router.callback_query(F.data.regexp(r"^[drsy]:"))
+def _ref_moment(session, user_id: int):
+    """Оценка 4–5: не чаще раза в 14 дней просим рекомендацию (T-REF-ASK). Показ пишется в журнал роста. Возвращает (ссылка на
+    «Поделиться», текст T-REF-SHARE) или None, если сейчас просить нельзя."""
+    from leisure.api import invites
+    from leisure.core.links import plan_share_url
+
+    if services.get_profile(session, user_id) is None or not invites.ref_ask_due(session, user_id):
+        return None
+    out = invites.create_for_api(session, user_id, None, None, "ref")
+    invites.log_growth(session, user_id, "ref_ask")
+    link = out["url"] or out["web_url"]
+    return plan_share_url(out["share_text"].replace(link, "").strip(), link)
+
+
+def _low_reason(session, user_id: int, event_key: str, reason: str) -> bool:
+    """Причина низкой оценки: пишем в Decision.reason, статус «иду» и оценка остаются."""
+    ev = services.get_event(session, event_key)
+    d = session.scalar(select(Decision).where(Decision.user_id == user_id, Decision.event_id == ev.id)) if ev else None
+    if d is None:
+        return False
+    d.reason = reason
+    session.commit()
+    return True
+
+
+@router.callback_query(F.data.regexp(r"^(rl|[drsy]):"))
 async def on_card_button(cb: CallbackQuery) -> None:
     data = cb.data or ""
     parsed = parse_cb(data)
@@ -254,6 +279,19 @@ async def on_card_button(cb: CallbackQuery) -> None:
                 await cb.answer()
                 return
             await cb.answer(f"Оценка изменена: {n} из 5." if previous and previous != n else f"Оценка {n} из 5.")
+            share = await run_db(_ref_moment, uid) if n >= 4 else None   # довольный: единственное место, где просим рекомендацию
+            if share:
+                await cb.message.answer(texts.REF_ASK, reply_markup=markup([[{"text": texts.REF_SHARE_BUTTON, "url": share}]]))
+            elif n <= 2:                                               # недовольный: что было не так, причины как у «Мимо»
+                await cb.message.answer(texts.RATE_LOW, reply_markup=markup(kb.reasons_keyboard(event_id, prefix="rl", caption=False)))
+        elif kind in ("lowreason", "lowmore"):
+            if kind == "lowmore":
+                await _edit_markup(cb, kb.reasons_keyboard(event_id, more=True, prefix="rl", caption=False))
+                await cb.answer()
+            else:
+                await run_db(_low_reason, uid, event_id, value)
+                await _edit_markup(cb, None)
+                await cb.answer(TOAST_REASON)
     except services.ProfileMissing:
         await cb.answer(PROFILE_GONE)
     except Exception:  # noqa: BLE001

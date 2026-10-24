@@ -143,6 +143,8 @@ def act(session, uid: int, parts: list[str], mode_hint: str | None, dirty: bool,
         if p.onboarded_at is not None:
             return Out(texts.START_AGAIN, [])
         d = default_profile()
+        from leisure.api import invites as invites_service
+        invites_service.mark_ref_joined(session, uid)
         services.update_profile(session, p, {"consent": True, "values": weights_from_top([]),
                                              "params": d["params"]}, auto_onboarded=False)
         p = services.get_profile(session, uid)
@@ -315,6 +317,25 @@ async def send_digest(message: Message, user_id: int, first: bool) -> None:
 
 
 # ─── обработчики ───
+def _note_ref(session, uid: int, code: str) -> None:
+    from leisure.api import invites
+
+    inv = invites.get_invite(session, code)
+    p = services.get_profile(session, uid)
+    if inv is None or inv.kind != "ref" or p is None or inv.inviter_id == uid:
+        return
+    invites.open_invite(session, inv, uid)
+    invites.adopt_new_profile(session, p, inv)
+
+
+def _note_share(session, uid: int) -> None:
+    """Пришёл по диплинку «Отправить другу» (e_<slug>): источник «share» новому профилю."""
+    p = services.get_profile(session, uid)
+    if p is not None and p.onboarded_at is None and p.consent_at is None and p.source == "organic":
+        p.source = "share"
+        session.commit()
+
+
 def _deeplink_card(session, uid: int, slug: str):
     """Карточка события по диплинку /start e_<slug>: (текст, ряды) или None, если события нет. Оценка — только у настроенного профиля."""
     from leisure.core.timeutil import weekend_iso
@@ -353,9 +374,14 @@ async def start(message: Message, state: FSMContext, command: CommandObject | No
     p = await run_db(services.get_or_create_profile, u.id, u.full_name or "", u.username or "")
     if not p.active:
         await run_db(services.set_active, u.id, True)  # вернулся после блокировки бота — рассылки снова включены
+    if not p.can_write:
+        await run_db(lambda s, uid: services.update_profile(s, services.get_profile(s, uid), {"can_write": True}, auto_onboarded=False), u.id)
     await state.clear()
     arg = (command.args or "").strip() if command else ""
+    if arg.startswith("ref_") and len(arg) > 4:        # ссылка-рекомендация: обычный онбординг, источник «ref» и пригласивший
+        await run_db(_note_ref, u.id, arg[4:])
     if arg.startswith("e_") and len(arg) > 2:         # диплинк «Отправить другу»: t.me/<бот>?start=e_<slug>
+        await run_db(_note_share, u.id)
         if await _send_deeplink(message, arg[2:], p) or p.onboarded_at is not None:
             return
     if p.onboarded_at is not None:

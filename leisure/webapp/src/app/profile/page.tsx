@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
 import { saveProfile } from "@/app/actions";
-import { api } from "@/lib/api";
+import { redirect } from "next/navigation";
+import { api, ApiError } from "@/lib/api";
+import type { Profile } from "@/lib/api-types";
 import { first } from "@/lib/format";
+import { parseStep } from "@/lib/onboarding";
 import { load } from "@/lib/load";
 import { getUserId } from "@/lib/session";
 import { ApiDown, AuthGate, NoProfile } from "@/components/Gate";
 import { Masthead } from "@/components/Masthead";
+import { Onboarding } from "@/components/Onboarding";
+import { ShowNameSwitch } from "@/components/ShowNameSwitch";
 import { Slider } from "@/components/Slider";
 
 export const metadata: Metadata = { title: "Профиль" };
@@ -22,6 +27,24 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const uid = await getUserId();
   if (!uid) return <AuthGate />;
+
+  // Онбординг в Mini App: /profile?onboarding=welcome|1|2. Профиль здесь может ещё не существовать.
+  const step = parseStep(first(sp.onboarding));
+  if (step) {
+    let prof: Profile | null = null;
+    try {
+      prof = await api.profile(uid);
+    } catch (e) {
+      if (!(e instanceof ApiError)) throw e;
+      if (e.status !== 404) return <ApiDown message={e.status ? String(e.status) : "нет связи"} />;
+    }
+    if (prof?.onboarded) redirect("/digest");
+    const eff = step === "welcome" ? (prof ? "1" : "welcome") : prof ? step : "welcome";
+    const cat = await load(() => api.catalog());
+    if (cat.kind !== "ok") return <ApiDown message={cat.kind === "down" ? cat.message : undefined} />;
+    return <Onboarding step={eff} profile={prof} catalog={cat.data} error={first(sp.error)} needConsent={first(sp.need) === "consent"} />;
+  }
+
   const loaded = await load(() => Promise.all([api.profile(uid), api.catalog(), api.digestAll(uid).then((a) => a.length)]));
   if (loaded.kind === "no-profile") return <NoProfile />;
   if (loaded.kind === "down") return <ApiDown message={loaded.message} />;
@@ -92,6 +115,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
 
           <section className="card" aria-labelledby="prm">
             <h2 id="prm" style={{ fontSize: 24 }}>Параметры</h2>
+            <ShowNameSwitch initial={p.show_name !== false} />
             <div className="prow">
               <label className="nm" htmlFor="aesthetics">Красота места и формата обязательна</label>
               <span className="sw"><input id="aesthetics" type="checkbox" name="aesthetics" defaultChecked={!!prm.aesthetics} /><i /></span>

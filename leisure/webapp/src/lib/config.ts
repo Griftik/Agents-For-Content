@@ -1,5 +1,6 @@
 import "server-only";
 import { headers } from "next/headers";
+import { miniAppLink } from "./invite-share";
 
 export const apiBase = () => (process.env.API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
 export const apiKey = () => process.env.API_KEY || "";
@@ -15,6 +16,13 @@ export async function webBaseUrl(): Promise<string> {
   const proto = h.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
   return `${proto}://${host}`;
 }
+
+// Короткое имя Mini App в BotFather (t.me/<бот>/<app>): читается на старте так же, как имя бота.
+const APP_ENV = "NEXT_PUBLIC_MINIAPP_SHORT_NAME";
+export const miniAppShortName = () => (process.env[APP_ENV] || "").replace(/^\/+|\/+$/g, "");
+
+/** Ссылка на Mini App с start_param: `t.me/<бот>/<app>?startapp=inv_<код>`; null, если бот не задан. */
+export const miniLink = (kind: "inv" | "ref", code: string): string | null => miniAppLink(botUsername(), miniAppShortName(), kind, code);
 
 export function botLink(start?: string): string | null {
   const bot = botUsername();

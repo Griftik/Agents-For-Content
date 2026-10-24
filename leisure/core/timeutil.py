@@ -156,6 +156,15 @@ def weekend_title(weekend: Sequence[str]) -> str:
     return f"{a.day} {MONTHS_GEN[a.month - 1]} – {b.day} {MONTHS_GEN[b.month - 1]}"
 
 
+WEEKDAYS_RU = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+
+
+def day_phrase(iso_s: str) -> str:
+    """«суббота, 24 окт»."""
+    d = date.fromisoformat(str(iso_s)[:10])
+    return f"{WEEKDAYS_RU[d.weekday()]}, {d.day} {MONTHS[d.month - 1]}"
+
+
 def fmt_date(iso_s: str) -> str:
     d = date.fromisoformat(str(iso_s)[:10])
     return f"{d.day} {MONTHS[d.month - 1]}"

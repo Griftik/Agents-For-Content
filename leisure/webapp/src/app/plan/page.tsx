@@ -7,6 +7,7 @@ import { load } from "@/lib/load";
 import { getUserId, isDev } from "@/lib/session";
 import { ApiDown, AuthGate, NoProfile } from "@/components/Gate";
 import { CopyButton } from "@/components/CopyButton";
+import { InviteButton } from "@/components/InviteButton";
 import { Masthead } from "@/components/Masthead";
 
 export const metadata: Metadata = { title: "План" };
@@ -22,6 +23,7 @@ function Item({ it, conflictWith }: { it: PlanItem; conflictWith?: string }) {
       <div className="t">{time}{maybe ? " · может быть" : ""}</div>
       <div className="n"><a href={`/e/${ev.slug}`}>{ev.title}</a></div>
       <div className="v">{where}</div>
+      {it.companions?.length ? <div className="v">{it.companions.length > 1 ? `С друзьями (${it.companions.length})` : `Вдвоём с ${it.companions[0]}`}</div> : null}
       {it.conflict ? <div className="warn">Пересекается по времени{conflictWith ? ` с ${conflictWith}` : ""}</div> : null}
       <div className="row">
         {maybe ? (
@@ -37,9 +39,9 @@ function Item({ it, conflictWith }: { it: PlanItem; conflictWith?: string }) {
             <a className="btn small cal" href={it.links.gcal} target="_blank" rel="noopener noreferrer">Google Календарь</a>
             <a className="btn small cal" href={it.links.outlook} target="_blank" rel="noopener noreferrer">Outlook</a>
             <a className="btn small cal" href={`/api/events/${ev.slug}/ics?day=${it.day}`} download>.ics</a>
-            <a className="btn small" href={it.links.tg} target="_blank" rel="noopener noreferrer">Отправить</a>
           </>
         ) : null}
+        <InviteButton slug={ev.slug} day={it.day} />
         <form action={removeFromPlan} style={{ display: "contents" }}>
           <input type="hidden" name="slug" value={ev.slug} />
           <button type="submit" className="btn small quiet">Убрать</button>

@@ -1,6 +1,7 @@
 import { decide } from "@/app/actions";
 import type { Decision, DigestItem } from "@/lib/api-types";
 import { dateShort, priceLabel, shareUrl, timeRange, wdFull } from "@/lib/format";
+import { InviteButton } from "./InviteButton";
 import { Ring } from "./Ring";
 
 export function SlotCard({ item, decision, base }: { item: DigestItem; decision?: Decision; base: string }) {
@@ -26,7 +27,11 @@ export function SlotCard({ item, decision, base }: { item: DigestItem; decision?
           <button type="submit" name="status" value="иду" className="btn small go" aria-pressed={chosen}>Иду</button>
           <button type="submit" name="status" value="пропуск" className="btn small" aria-pressed={cur === "пропуск"}>Другое</button>
           <button type="submit" name="status" value="мимо" className="btn small skip" aria-pressed={cur === "мимо"}>Не моё</button>
-          <a className="btn small" href={shareUrl(ev, day, base)} target="_blank" rel="noopener noreferrer">Другу</a>
+          {chosen ? (
+            <InviteButton slug={ev.slug} day={decision?.day ?? day ?? null} />
+          ) : (
+            <a className="btn small" href={shareUrl(ev, day, base)} target="_blank" rel="noopener noreferrer">Другу</a>
+          )}
         </span>
       </form>
     </article>

@@ -115,12 +115,13 @@ def get_profile(session: Session, user_id: int) -> Profile | None:
     return session.get(Profile, user_id)
 
 
-def get_or_create_profile(session: Session, user_id: int, name: str = "", username: str = "") -> Profile:
+def get_or_create_profile(session: Session, user_id: int, name: str = "", username: str = "", via_bot: bool = True) -> Profile:
+    """via_bot=False — профиль создаёт Mini App/API: бот этому человеку ещё писать не может (can_write=False до /start или права)."""
     p = session.get(Profile, user_id)
     if p is None:
         d = default_profile()
         p = Profile(user_id=user_id, name=name, username=username, city=settings.DEFAULT_CITY, values=d["values"],
-                    interests=d["interests"], params=d["params"], notes="", tz=settings.DEFAULT_TZ)
+                    interests=d["interests"], params=d["params"], notes="", tz=settings.DEFAULT_TZ, can_write=via_bot)
         session.add(p)
         session.commit()
         session.refresh(p)
@@ -137,11 +138,20 @@ def set_active(session: Session, user_id: int, active: bool) -> bool:
     return True
 
 
+def mark_blocked(session: Session, user_id: int) -> bool:
+    """Telegram ответил Forbidden. Заблокировавшему бота выключаем рассылки; человеку, которому бот ещё не мог писать
+    (профиль из Mini App, can_write=False), — ничего: молча пропускаем. True — рассылки выключены."""
+    p = session.get(Profile, user_id)
+    if p is None or not p.can_write:
+        return False
+    return set_active(session, user_id, False)
+
+
 def update_profile(session: Session, p: Profile, data: dict, auto_onboarded: bool = True) -> Profile:
     """data — словарь из ProfileIn.model_dump(exclude_none=True); словари сливаются, остальное заменяется.
 
     auto_onboarded=False: запись черновика (шаги онбординга бота) не помечает профиль готовым — только явный onboarded."""
-    for k in ("name", "username", "city", "notes", "tz", "digest_day", "digest_hour"):
+    for k in ("name", "username", "city", "notes", "tz", "digest_day", "digest_hour", "show_name", "can_write", "offer_seen"):
         if data.get(k) is not None:
             setattr(p, k, data[k])
     if data.get("values") is not None:
@@ -181,7 +191,8 @@ def profile_view(p: Profile, decisions: list[Decision] | None = None) -> dict:
         "interests": p.interests or {}, "params": p.params or {}, "notes": p.notes, "tz": p.tz,
         "digest_day": p.digest_day, "digest_hour": p.digest_hour, "plan": p.plan, "affinity": aff,
         "learned": describe_affinity(aff, decs), "learned_text": describe_affinity_text(aff, decs),
-        "onboarded": p.onboarded_at is not None,
+        "onboarded": p.onboarded_at is not None, "show_name": p.show_name, "source": p.source, "can_write": p.can_write,
+        "offer_seen": p.offer_seen,
         "affinity_manual_at": p.affinity_manual_at.isoformat() if p.affinity_manual_at else None,
     }
 
@@ -237,7 +248,7 @@ def _default_day(ev: Event, today: date) -> date | None:
 
 
 def set_decision(session: Session, user_id: int, ev: Event, status: str, reason: str | None = None,
-                 day: date | None = None, rating: int | None = None) -> Decision:
+                 day: date | None = None, rating: int | None = None, invite_id: int | None = None) -> Decision:
     """Записать решение. Профиль не создаём: после /delete старая кнопка не должна воскрешать данные (ProfileMissing).
 
     day — день с карточки; если передан, обновляет Decision.day и при повторном решении. Смена дня сбрасывает флаги
@@ -260,6 +271,8 @@ def set_decision(session: Session, user_id: int, ev: Event, status: str, reason:
         d.reminded_at = d.feedback_asked_at = None
     if rating is not None:
         d.rating = rating
+    if invite_id is not None:
+        d.invite_id = invite_id
     d.event_slug, d.event_category, d.event_tags = ev.slug, ev.category, list(ev.tags or [])
     session.commit()
     recompute_affinity(session, p)
@@ -354,12 +367,12 @@ def first_day(ev: Event, today: date) -> date | None:
     return _default_day(ev, today)
 
 
-def card_item(session: Session, p: Profile, ev: Event, day: str | None, weekend: list[str], scored: bool = True) -> dict:
+def card_item(session: Session, p: Profile | None, ev: Event, day: str | None, weekend: list[str], scored: bool = True) -> dict:
     """Элемент карточки для одного события (перерисовка при выборе дня, диплинк): тот же формат, что в digest_view.
     scored=False — без «совпадения» и причин (профиль ещё не настроен, оценивать нечем)."""
     core = ev.as_core()
-    r = score_events([core], p.as_core(), aff=p.affinity or None)[core["id"]] if scored else None
-    dm = decision_map(session, p.user_id)
+    r = score_events([core], p.as_core(), aff=p.affinity or None)[core["id"]] if scored and p is not None else None
+    dm = decision_map(session, p.user_id) if p is not None else {}
     slot = reco_slot(core)
     return _item(core, day, slot, r, False, int(scoring_config()["why"]["max_total"]), weekend, dm)
 
@@ -404,6 +417,12 @@ def scored_events(session: Session, p: Profile, today: date | None = None) -> li
     return out
 
 
+def companion_names(session: Session, user_id: int, d: Decision) -> list[str]:
+    """С кем человек идёт на событие по приглашениям: имена (или «другом», если имя скрыто). Лениво импортирует модуль приглашений."""
+    from . import invites
+    return invites.companion_names(session, user_id, d)
+
+
 # ─── план ───
 def _mark_conflicts(items: list[dict], day: str) -> None:
     """Сортирует события дня по началу и ставит conflict у пересекающихся «иду»."""
@@ -420,7 +439,7 @@ def _mark_conflicts(items: list[dict], day: str) -> None:
                 a.setdefault("conflict_with", b["event"]["title"])
 
 
-def day_plan(decisions: Iterable[Decision], day: date) -> dict:
+def day_plan(decisions: Iterable[Decision], day: date, session: Session | None = None) -> dict:
     """План на один произвольный день (будни, события «на горизонте») по решениям «иду» с этим днём.
 
     Формат как у plan(): {'weekend': [день], 'days': {день: [items]}}, годится для plan_today_text.
@@ -433,7 +452,8 @@ def day_plan(decisions: Iterable[Decision], day: date) -> dict:
         if ev is None or ev.status != "published" or d.status != "иду":
             continue
         core = ev.as_core()
-        items.append({"event": event_view(core), "status": d.status, "day": iso, "links": links_for(core, iso)})
+        items.append({"event": event_view(core), "status": d.status, "day": iso, "links": links_for(core, iso),
+                      "companions": companion_names(session, d.user_id, d) if session is not None else []})
     _mark_conflicts(items, iso)
     return {"weekend": [iso], "days": {iso: items}}
 
@@ -462,11 +482,13 @@ def plan(session: Session, p: Profile, today: date | None = None) -> dict:
         ev = events[str(d.event_id)]
         if is_horizon(ev, weekend):
             hday = d.day.isoformat() if d.day and d.day.isoformat() in event_dates(ev) else event_dates(ev)[0]
-            horizon.append({"event": event_view(ev), "status": d.status, "day": hday, "links": links_for(ev, hday)})
+            horizon.append({"event": event_view(ev), "status": d.status, "day": hday, "links": links_for(ev, hday),
+                            "companions": companion_names(session, p.user_id, d)})
             continue
         wd = weekend_days(ev, weekend)
         day = d.day.isoformat() if d.day and d.day.isoformat() in wd else wd[0]
-        days[day].append({"event": event_view(ev), "status": d.status, "day": day, "links": links_for(ev, day)})
+        days[day].append({"event": event_view(ev), "status": d.status, "day": day, "links": links_for(ev, day),
+                          "companions": companion_names(session, p.user_id, d)})
     for day, items in days.items():
         _mark_conflicts(items, day)
     text = plan_text({d: [it["event"] for it in items if it["status"] == "иду"] for d, items in days.items()}, weekend,

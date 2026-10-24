@@ -14,7 +14,8 @@ from sqlalchemy import (BigInteger, Boolean, Date, DateTime, Enum, Float, Foreig
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
-from leisure.core.catalog import CONFIDENCE, CROWD, DECISION_STATUSES, EVENT_STATUSES, KINDS, PLANS
+from leisure.core.catalog import (CONFIDENCE, CROWD, DECISION_STATUSES, EVENT_STATUSES, INVITE_KINDS, INVITE_STATUSES, KINDS, PLANS,
+                                  PROFILE_SOURCES)
 
 from .types import DateList, JSONType, TextList
 
@@ -134,6 +135,14 @@ class Profile(Base, TimestampMixin):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # рост через друзей (docs/GROWTH.md): откуда пришёл, кто позвал, показывать ли имя друзьям
+    source: Mapped[str] = mapped_column(_enum(PROFILE_SOURCES, "profile_source"), default="organic", server_default="organic", nullable=False)
+    referred_by: Mapped[int | None] = mapped_column(ForeignKey("profiles.user_id", ondelete="SET NULL"), nullable=True)
+    show_name: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    # Профиль создан в Mini App, а бот человеку ещё не писал и писать не может (не запускал бота / не дал права): Forbidden тогда не
+    # значит «заблокировал», профиль остаётся активным. True ставит /start или requestWriteAccess (PUT can_write).
+    can_write: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    offer_seen: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0", nullable=False)   # предложение своей подборки приглашённому: 0 не показывали, 1 показали («Потом»), 2 повтор показан или «Не нужно»
 
     decisions: Mapped[list["Decision"]] = relationship(back_populates="profile", cascade="all, delete-orphan")
     digests: Mapped[list["Digest"]] = relationship(back_populates="profile", cascade="all, delete-orphan")
@@ -163,6 +172,7 @@ class Decision(Base, TimestampMixin):
     reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     day: Mapped[date | None] = mapped_column(Date, nullable=True)
     rating: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    invite_id: Mapped[int | None] = mapped_column(ForeignKey("invites.id", ondelete="SET NULL"), nullable=True)   # решение пришло через приглашение
     reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)        # «План на сегодня» отправлен
     feedback_asked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # «Как прошло?» отправлено
     # снимок события — обучение переживает удаление события
@@ -197,3 +207,49 @@ class Digest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     profile: Mapped[Profile] = relationship(back_populates="digests")
+
+
+class Invite(Base):
+    """Приглашение (docs/GROWTH.md): kind='event' — «Позвать друга на мероприятие», kind='ref' — рекомендация сервиса."""
+    __tablename__ = "invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(8), unique=True, index=True, nullable=False)
+    inviter_id: Mapped[int] = mapped_column(ForeignKey("profiles.user_id", ondelete="CASCADE"), index=True, nullable=False)
+    event_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
+    event_slug: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    kind: Mapped[str] = mapped_column(_enum(INVITE_KINDS, "invite_kind"), default="event", nullable=False)
+    opened: Mapped[int] = mapped_column(Integer, default=0, nullable=False)       # сколько разных людей открыло
+    accepted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)     # сколько приняло («иду» / «может быть»; для ref — начали онбординг)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    inviter: Mapped[Profile] = relationship(foreign_keys=[inviter_id])
+    event: Mapped[Event | None] = relationship()
+    accepts: Mapped[list["InviteAccept"]] = relationship(back_populates="invite", cascade="all, delete-orphan")
+
+
+class InviteAccept(Base):
+    __tablename__ = "invite_accepts"
+    __table_args__ = (UniqueConstraint("invite_id", "user_id", name="uq_invite_accepts_invite_user"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    invite_id: Mapped[int] = mapped_column(ForeignKey("invites.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("profiles.user_id", ondelete="CASCADE"), index=True, nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(_enum(INVITE_STATUSES, "invite_status"), default="opened", nullable=False)
+    was_new: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)      # на момент открытия профиля или согласия не было
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)   # пригласивший уведомлён, что друг идёт
+
+    invite: Mapped[Invite] = relationship(back_populates="accepts")
+
+
+class GrowthEvent(Base):
+    """Журнал событий роста, которые нельзя восстановить из других таблиц: показ момента рекомендации, нажатие «Поделиться»."""
+    __tablename__ = "growth_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("profiles.user_id", ondelete="CASCADE"), index=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)    # ref_ask | ref_share | invite_share
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
