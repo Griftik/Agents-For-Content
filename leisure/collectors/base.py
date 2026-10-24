@@ -13,6 +13,10 @@ from leisure.normalize.schema import RawEvent
 REGISTRY: dict[str, type["Collector"]] = {}
 
 
+class CollectorError(RuntimeError):
+    """Источник недоступен или ответил не так, как ждали. Сообщение — по-русски, для лога воркера и куратора."""
+
+
 class Collector(ABC):
     name: str = ""
     cities: tuple[str, ...] = ("Москва",)
