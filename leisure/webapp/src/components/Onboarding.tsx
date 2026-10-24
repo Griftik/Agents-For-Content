@@ -11,7 +11,7 @@ export function Onboarding({ step, profile, catalog, error, needConsent }: { ste
   return (
     <div className="wrap">
       <main id="main" className="onb">
-        {step === "welcome" ? <Welcome hasProfile={!!profile} error={error} needConsent={needConsent} /> : null}
+        {step === "welcome" ? <Welcome hasConsent={!!profile?.has_consent} error={error} needConsent={needConsent} /> : null}
         {step === "1" ? <StepValues catalog={catalog} profile={profile} error={error} /> : null}
         {step === "2" && profile ? <StepInterests catalog={catalog} profile={profile} error={error} /> : null}
         <p className="foot"><a href="/policy">Политика обработки данных</a></p>
@@ -20,7 +20,7 @@ export function Onboarding({ step, profile, catalog, error, needConsent }: { ste
   );
 }
 
-function Welcome({ hasProfile, error, needConsent }: { hasProfile: boolean; error?: string; needConsent?: boolean }) {
+function Welcome({ hasConsent, error, needConsent }: { hasConsent: boolean; error?: string; needConsent?: boolean }) {
   return (
     <>
       <h1>Выходные под то, что для тебя важно</h1>
@@ -28,7 +28,7 @@ function Welcome({ hasProfile, error, needConsent }: { hasProfile: boolean; erro
         Каждый четверг присылаю 5–7 событий и объясняю, почему они подходят именно тебе. Нужны два шага: пять главных ценностей и интересы, около минуты.
       </p>
       <form action={startOnboardingAction} className="stack">
-        {!hasProfile ? (
+        {!hasConsent ? (
           <label className="consent">
             <input type="checkbox" name="consent" aria-describedby={needConsent ? "need" : undefined} />
             <span>
@@ -36,7 +36,7 @@ function Welcome({ hasProfile, error, needConsent }: { hasProfile: boolean; erro
             </span>
           </label>
         ) : null}
-        {!hasProfile ? <input type="hidden" name="needs_consent" value="1" /> : null}
+        {!hasConsent ? <input type="hidden" name="needs_consent" value="1" /> : null}
         {needConsent ? <p id="need" role="alert" className="field-error">Отметь согласие, чтобы продолжить.</p> : null}
         {error ? <p role="alert" className="field-error">Не получилось сохранить, попробуй ещё раз.</p> : null}
         <div className="row"><button type="submit" className="btn primary">Начать</button></div>

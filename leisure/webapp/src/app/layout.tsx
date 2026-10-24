@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import { TelegramBoot } from "@/components/TelegramBoot";
 import { LaterOffer } from "@/components/LaterOffer";
 import { api, ApiError } from "@/lib/api";
-import { readOffer } from "@/lib/cookies";
 import { moscowToday } from "@/lib/format";
+import { offerAgain } from "@/lib/offer";
 import { getUserId } from "@/lib/session";
 import "./globals.css";
 
@@ -26,12 +26,13 @@ const FONTS =
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const uid = await getUserId();
-  // Повтор предложения подборки: «Потом» запомнило день события; показываем один раз, когда этот день прошёл, и только без готового профиля.
+  // Повтор предложения подборки: API ставит profile.offer_due (день события + 1) при принятии приглашения. Показываем один раз
+  // (LaterOffer сразу отмечает offer_seen = 2), если срок настал и своей подборки у человека ещё нет.
   let offer = false;
-  const offerDay = uid ? await readOffer() : null;
-  if (uid && offerDay && offerDay < moscowToday()) {
+  if (uid) {
     try {
-      offer = !(await api.profile(uid)).onboarded;
+      const p = await api.profile(uid);
+      offer = offerAgain(p, moscowToday());
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
     }

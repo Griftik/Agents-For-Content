@@ -20,7 +20,10 @@ describe("мок-режим MOCK_INVITES", () => {
   it("GET приглашения: имя, скрытое имя и статусы", () => {
     const ok = mockCall("/api/invites/MOCKOK01") as { inviter_name: string; status: string; event_slug: string; event: { event: { slug: string } } };
     expect(ok).toMatchObject({ inviter_name: "Алина", status: "active", event_slug: "karmannyj-ongon", event: { event: { slug: "karmannyj-ongon" } } });
-    expect((mockCall("/api/invites/MOCKGONE") as { status: string; event: null }).event).toBeNull();
+    expect(mockCall("/api/invites/MOCKGONE")).toMatchObject({ status: "gone", inviter_name: null });
+    // совпадение и причины — только для друга с настроенным профилем
+    expect(mockCall("/api/invites/MOCKOK01?user_id=1001")).toMatchObject({ score: 84, why: [{ t: "Творчество" }, { t: "Руками" }] });
+    expect(mockCall("/api/invites/MOCKOK01?user_id=1002")).toMatchObject({ score: null, why: null });
     expect((mockCall("/api/invites/MOCKOK01?user_id=9001") as { is_own: boolean }).is_own).toBe(true);
     expect((mockCall("/api/invites/MOCKANON") as { inviter_name: null }).inviter_name).toBeNull();
     expect((mockCall("/api/invites/MOCKPAST") as { status: string }).status).toBe("past");
@@ -36,6 +39,8 @@ describe("мок-режим MOCK_INVITES", () => {
     };
     expect(r).toMatchObject({ decision: { status: "иду" }, together_with: "Алина", profile_state: "new" });
     expect(() => mockCall("/api/profile/5001")).not.toThrow();
+    // «иду» поставило повтор предложения на день события + 1, а согласие записано
+    expect(mockCall("/api/profile/5001")).toMatchObject({ has_consent: true, offer_due: "2026-10-25" });
     // повторное принятие уже без галочки
     expect(() => mockCall("/api/invites/MOCKOK01/accept", post({ user_id: 5001, status: "maybe", consent: false }))).not.toThrow();
     // в план попало событие со ссылками календарей и подписью «вдвоём»

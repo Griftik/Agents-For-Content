@@ -72,6 +72,10 @@ export type Profile = {
   can_write?: boolean;
   /** Предложение своей подборки приглашённому: 0 не показывали, 1 «Потом», 2 повтор показан. */
   offer_seen?: number;
+  /** YYYY-MM-DD: когда повторить предложение онбординга приглашённому (день события + 1) или null. */
+  offer_due?: string | null;
+  /** Согласие на обработку данных дано (профиль-заготовка без согласия — false). */
+  has_consent?: boolean;
 };
 export type Catalog = {
   values: string[];
@@ -94,6 +98,7 @@ export type ProfilePatch = Partial<Pick<Profile, "notes" | "values" | "interests
   username?: string;
   show_name?: boolean;
   can_write?: boolean;
+  offer_seen?: number;
   consent?: boolean;
   onboarded?: boolean;
   /** Код рекомендации `ref_<код>` из start_param: передаётся при первом касании (имя поля согласуется с бэкендом). */
@@ -118,6 +123,9 @@ export type InviteView = {
   status: InviteStatus;
   accepted: number;
   my_status: string | null;
+  /** Для ?user_id= с настроенным профилем: совпадение 0–100 и причины (те же, что на карточке дайджеста); иначе null. */
+  score: number | null;
+  why: Why[] | null;
 };
 export type InviteAcceptStatus = "going" | "maybe" | "declined";
 /** POST /api/invites/{code}/accept. Для declined решения нет. */

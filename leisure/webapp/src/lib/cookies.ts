@@ -1,6 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { OFFER_COOKIE, REF_COOKIE, WHO_COOKIE, cookieOpts } from "./session-consts";
+import { REF_COOKIE, WHO_COOKIE, cookieOpts } from "./session-consts";
 import { CODE_RE } from "./start-param";
 
 const prod = () => process.env.NODE_ENV === "production";
@@ -30,11 +30,3 @@ export async function readWho(): Promise<Who> {
 }
 export const encodeWho = (name: string, username: string) =>
   Buffer.from(JSON.stringify({ n: name.slice(0, 200), u: username.slice(0, 100) }), "utf8").toString("base64url");
-
-export async function readOffer(): Promise<string | null> {
-  const v = (await cookies()).get(OFFER_COOKIE)?.value;
-  return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
-}
-export async function setOffer(day: string) {
-  (await cookies()).set(OFFER_COOKIE, day, cookieOpts(60 * DAY, prod()));
-}

@@ -82,6 +82,33 @@ describe("acceptInviteAction", () => {
   });
 });
 
+describe("предложение подборки и учёт открытия", () => {
+  it("«Потом» и «Не нужно» пишут offer_seen в профиль (cookie не используется)", async () => {
+    login(1002);
+    const { postponeOfferAction, dropOfferAction } = await actions();
+    const { api } = await import("@/lib/api");
+    await postponeOfferAction();
+    expect((await api.profile(1002)).offer_seen).toBe(1);
+    await dropOfferAction();
+    expect((await api.profile(1002)).offer_seen).toBe(2);
+    expect([...jar.keys()].some((k) => k.includes("offer"))).toBe(false);
+  });
+  it("открытие приглашения не создаёт профиль без согласия", async () => {
+    login(5100);
+    const { openInviteAction } = await actions();
+    const { api } = await import("@/lib/api");
+    await openInviteAction("MOCKOK01");
+    await expect(api.profile(5100)).rejects.toThrow();
+  });
+  it("«иду» ставит offer_due = день события + 1", async () => {
+    login(5101);
+    const { acceptInviteAction } = await actions();
+    const { api } = await import("@/lib/api");
+    await acceptInviteAction({ phase: "idle" }, form({ ...base, status: "going", needs_consent: "1", consent: "on" }));
+    expect((await api.profile(5101)).offer_due).toBe("2026-10-25");
+  });
+});
+
 describe("«Другие выходные под меня»", () => {
   it("помечает declined и ведёт в дайджест (есть профиль) или в онбординг (нет)", async () => {
     const { declineInviteAction } = await actions();

@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useEffect, useRef, useState, type ReactNode } from "react";
-import { acceptInviteAction, declineInviteAction, markWriteAccessAction, postponeOfferAction, type AcceptState } from "@/app/actions";
+import { acceptInviteAction, declineInviteAction, markWriteAccessAction, openInviteAction, postponeOfferAction, type AcceptState } from "@/app/actions";
 import type { InviteAcceptStatus } from "@/lib/api-types";
 import { inTelegram, requestWriteAccess } from "@/lib/tg-client";
 
@@ -14,8 +14,11 @@ export type InviteFlowProps = {
   dayText: string;
   timeText: string;
   inviterName: string | null;
+  /** Пригласивший удалил профиль (status gone): шапка «Тебя зовут на событие», кнопки без слова «вместе». */
+  gone: boolean;
   authed: boolean;
-  hasProfile: boolean;
+  /** Согласие на обработку данных уже дано (profile.has_consent): галочка не нужна. */
+  hasConsent: boolean;
   /** Прежний ответ друга: «иду, суббота». */
   prior: string | null;
   /** t.me/<бот>/<app>?startapp=inv_<код> для браузера без Telegram. */
@@ -40,12 +43,23 @@ export function InviteFlow(p: InviteFlowProps) {
   const last = useRef<InviteAcceptStatus | null>(null);
   const box = useRef<HTMLInputElement>(null);
 
-  const consentNeeded = forceConsent || !p.hasProfile;
+  const consentNeeded = forceConsent || !p.hasConsent;
   const ready = p.authed && (!consentNeeded || consent);
 
   useEffect(() => {
     if (!p.authed) setMode(inTelegram() ? "telegram" : "browser");
   }, [p.authed]);
+
+  // Страница приглашения показана в Mini App: учёт открытия, один раз на код за вкладку. Профиль без согласия API не создаёт.
+  useEffect(() => {
+    if (!p.authed) return;
+    const key = `leisure:open:${p.code}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+    void openInviteAction(p.code);
+  }, [p.authed, p.code]);
 
   // Запись: выбор запомнен, и все условия выполнены.
   useEffect(() => {
@@ -78,7 +92,7 @@ export function InviteFlow(p: InviteFlowProps) {
   if (state.phase === "done") return <Done {...p} state={state} />;
 
   const choose = (s: InviteAcceptStatus) => setWanted(s);
-  const names = { going: "Иду вместе", title: `${p.inviterName ?? "Друг"} зовёт тебя` };
+  const names = p.gone ? { going: "Иду", title: "Тебя зовут на событие" } : { going: "Иду вместе", title: `${p.inviterName ?? "Друг"} зовёт тебя` };
   const authFail = state.phase === "error" && state.error === "no-session" && !p.authed;
 
   return (
@@ -153,9 +167,11 @@ function Done(p: InviteFlowProps & { state: Extract<AcceptState, { phase: "done"
   useEffect(() => setTg(inTelegram()), []);
 
   const day = p.dayText;
-  const lead = going
-    ? `${who ?? "Друг"} увидит, что ты идёшь. План на этот день придёт в Telegram.`
-    : `${who ?? "Друг"} об этом не узнает. Передумать можно в плане.`;
+  const lead = p.gone
+    ? going ? "План на этот день придёт в Telegram." : "Передумать можно в плане."
+    : going
+      ? `${who ?? "Друг"} увидит, что ты идёшь. План на этот день придёт в Telegram.`
+      : `${who ?? "Друг"} об этом не узнает. Передумать можно в плане.`;
 
   async function ask() {
     const granted = await requestWriteAccess();
@@ -167,7 +183,7 @@ function Done(p: InviteFlowProps & { state: Extract<AcceptState, { phase: "done"
     <div className="wrap">
       <main id="main" className="public done">
         <section className="stack" aria-labelledby="done-h">
-          <h1 id="done-h">{going ? "Вы идёте вместе" : "Записано в «может быть»"}</h1>
+          <h1 id="done-h">{going ? (p.gone ? "Ты идёшь" : "Вы идёте вместе") : "Записано в «может быть»"}</h1>
           <p>«{p.title}», {day}{going && p.timeText ? `, ${p.timeText}` : ""}.</p>
           <p className="muted">{lead}</p>
         </section>
@@ -201,7 +217,7 @@ function Done(p: InviteFlowProps & { state: Extract<AcceptState, { phase: "done"
                   className="btn"
                   onClick={() => {
                     setLater(true);
-                    void postponeOfferAction(p.day);
+                    void postponeOfferAction();
                   }}
                 >
                   Потом

@@ -97,6 +97,12 @@ const accepted = await act("acceptInviteAction", [{ phase: "idle" }], cookie(FRI
 check(accepted.text.includes('"phase":"done"') && accepted.text.includes('"togetherWith":"Алина"'), "с галочкой: «Вы идёте вместе», вместе с Алина", accepted.text.match(/"profileState":"\w+"/)?.[0]);
 check(/"ics":"\/api\/events\/[^"]+\/ics\?day=2026-10-25"/.test(accepted.text), "в ответе есть ссылки календарей");
 
+const withConsent = await page(`/e/${SLUG}?inv=${code}`, cookie(FRIEND, "Борис Друг"));
+check(withConsent.text.includes("Иду вместе") && !withConsent.text.includes("Даю согласие"), "у друга с согласием (has_consent) галочки нет");
+const friendProfile = (await api(`/api/profile/${FRIEND}`)).body;
+const nextDay = new Date(Date.parse(`${DAY}T00:00:00Z`) + 86400_000).toISOString().slice(0, 10);
+check(friendProfile.has_consent === true && friendProfile.offer_due === nextDay, "профиль друга: has_consent, offer_due = день события + 1", `${friendProfile.has_consent} ${friendProfile.offer_due}`);
+
 // 4. у пригласившего в плане «вдвоём»
 const plan = await api(`/api/plan/${INVITER}?today=2026-10-24`);
 const item = Object.values(plan.body?.days ?? {}).flat().concat(plan.body?.horizon ?? []).find((x) => x.event.slug === SLUG);
@@ -119,6 +125,14 @@ await act("setShowNameAction", [true], cookie(INVITER));
 const hidden = await api(`/api/invites/${code}`);
 check(hidden.body?.inviter_name === "Алина", "после включения имя снова отдаётся");
 
+// 5а. открытие и отказ без согласия не создают профиль
+const STRANGER = 880004;
+await api(`/api/profile/${STRANGER}`, { method: "DELETE" }).catch(() => {});
+await act("openInviteAction", [code], cookie(STRANGER, "Пётр Гость"));
+check((await api(`/api/profile/${STRANGER}`)).status === 404, "/open без согласия профиль не создаёт");
+const strangerDecl = await act("declineInviteAction", [], cookie(STRANGER, "Пётр Гость"), { code });
+check(strangerDecl.redirect?.startsWith("/profile?onboarding=welcome") && (await api(`/api/profile/${STRANGER}`)).status === 404, "declined без согласия: переход в онбординг, профиля нет", strangerDecl.redirect);
+
 // 6. онбординг в два шага (друг после «Давай»)
 const FRIEND_CK = cookie(FRIEND, "Борис Друг");
 const catalog = (await api("/api/catalog")).body;
@@ -133,6 +147,8 @@ const fin = await act("finishOnboardingAction", [], FRIEND_CK, { budget: "2500" 
 check(fin.redirect?.startsWith("/digest"), "шаг 2 из 2: «Показать подборку» ведёт в /digest", fin.redirect ?? fin.status);
 const done = (await api(`/api/profile/${FRIEND}`)).body;
 check(done.onboarded === true && done.params.budget === 2500, "профиль готов, бюджет 2500", `onboarded=${done.onboarded} budget=${done.params?.budget}`);
+const matched = await page(`/e/${SLUG}?inv=${code}`, FRIEND_CK);
+check(/Совпадение \d+ %/.test(matched.text) && matched.text.includes("Почему тебе"), "друг с готовым профилем видит «Совпадение N %» и «Почему тебе»", matched.text.match(/Совпадение \d+ %/)?.[0]);
 check(catalog.categories.length > 8 && Object.keys(done.interests).length >= 8, "интересы записаны по всем направлениям");
 check(Boolean(catalog.category_values), "каталог отдаёт category_values (иначе восемь направлений по текущим интересам)", catalog.category_values ? "да" : "нет, запасной вариант");
 

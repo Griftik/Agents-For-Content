@@ -4,8 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { InviteAcceptStatus } from "@/lib/api-types";
-import { OFFER_COOKIE, REF_COOKIE } from "@/lib/session-consts";
-import { clearCookie, readRef, readWho, setOffer } from "@/lib/cookies";
+import { REF_COOKIE } from "@/lib/session-consts";
+import { clearCookie, readRef, readWho } from "@/lib/cookies";
 import { CODE_RE } from "@/lib/start-param";
 import { BUDGETS, PROPOSED_N, TOP_VALUES, interestLevels, pickTop, rankCategories, weightsFromTop } from "@/lib/onboarding";
 import { getUserId } from "@/lib/session";
@@ -179,9 +179,9 @@ export async function declineInviteAction(formData: FormData): Promise<void> {
   const uid = await getUserId();
   const code = str(formData, "code");
   if (!uid) redirect("/digest");
-  let hasProfile = false;
+  let hasProfile = false; // профиль после declined не ожидаем: без согласия API его не создаёт
   try {
-    hasProfile = !!(await api.profile(uid));
+    hasProfile = !!(await api.profile(uid)).has_consent;
   } catch (e) {
     if (!(e instanceof ApiError)) throw e;
   }
@@ -207,13 +207,34 @@ export async function markWriteAccessAction(): Promise<void> {
   }
 }
 
-/** «Потом» на предложении подборки: запоминаем день события, после него предложение покажется ещё раз. */
-export async function postponeOfferAction(day: string): Promise<void> {
-  if (DAY_RE.test(day)) await setOffer(day);
+/** «Потом» на предложении подборки: offer_seen = 1; повтор покажет layout, когда наступит profile.offer_due (день события + 1). */
+export async function postponeOfferAction(): Promise<void> {
+  await setOfferSeen(1);
 }
-/** «Не нужно» или «Давай» на повторе: больше не предлагаем. */
+/** Повтор показан, «Давай» или «Не нужно»: больше не предлагаем (offer_seen = 2). */
 export async function dropOfferAction(): Promise<void> {
-  await clearCookie(OFFER_COOKIE);
+  await setOfferSeen(2);
+}
+async function setOfferSeen(n: 1 | 2): Promise<void> {
+  const uid = await getUserId();
+  if (!uid) return;
+  try {
+    await api.saveProfile(uid, { offer_seen: n });
+  } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+  }
+}
+
+/** Страница приглашения показана: учёт открытия (POST /api/invites/{код}/open). Без согласия профиль не создаётся, считается только открытие. */
+export async function openInviteAction(code: string): Promise<void> {
+  const uid = await getUserId();
+  if (!uid || !CODE_RE.test(code)) return;
+  const who = await readWho();
+  try {
+    await api.openInvite(code, { user_id: uid, name: who.name || undefined, username: who.username || undefined });
+  } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+  }
 }
 
 /** Переключатель «Показывать имя друзьям» в профиле: PUT /api/profile show_name. */
@@ -241,11 +262,11 @@ export async function startOnboardingAction(formData: FormData): Promise<void> {
   const who = await readWho();
   const ref = await readRef();
   try {
-    // Код рекомендации учитывает POST /api/invites/{код}/open (source=ref, referred_by); ошибка кода не должна мешать онбордингу.
+    // Согласие, имя и код рекомендации одним PUT (профиль создаётся здесь); затем /open учитывает открытие ref-ссылки.
+    await api.saveProfile(uid, { consent: consent || undefined, name: who.name || undefined, username: who.username || undefined, ref_code: ref ?? undefined });
     if (ref) await api.openInvite(ref, { user_id: uid, name: who.name || undefined, username: who.username || undefined }).catch((e) => {
       if (!(e instanceof ApiError)) throw e;
     });
-    await api.saveProfile(uid, { consent: consent || undefined, name: who.name || undefined, username: who.username || undefined, ref_code: ref ?? undefined });
   } catch (e) {
     if (!(e instanceof ApiError)) throw e;
     redirect("/profile?onboarding=welcome&error=1");
@@ -295,7 +316,6 @@ export async function finishOnboardingAction(formData: FormData): Promise<void> 
     if (!(e instanceof ApiError)) throw e;
     redirect("/profile?onboarding=2&error=save");
   }
-  await clearCookie(OFFER_COOKIE);
   revalidatePath("/digest");
   redirect("/digest");
 }

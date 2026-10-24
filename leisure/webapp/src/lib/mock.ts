@@ -34,7 +34,7 @@ export const MOCK_CODES: Record<string, { slug: string; day: string; name: strin
   MOCKANON: { slug: "dzhaz-na-kryshe", day: "2026-10-23", name: null, status: "active", inviter: 9002 },
   MOCKPAST: { slug: "stary-spektakl", day: "2026-10-10", name: "Алина", status: "past", inviter: 9001 },
   MOCKUNPB: { slug: "usadba-progulka", day: "2026-10-25", name: "Алина", status: "unpublished", inviter: 9001 },
-  MOCKGONE: { slug: "karmannyj-ongon", day: "2026-10-24", name: "Алина", status: "gone", inviter: 9001 }, // событие удалено
+  MOCKGONE: { slug: "karmannyj-ongon", day: "2026-10-24", name: null, status: "gone", inviter: 0 }, // пригласивший удалил профиль, событие доступно
 };
 
 const CATEGORIES = ["Джаз", "Концерты", "Театр", "Современное искусство", "Кино", "Винные бары", "Вечеринки", "Своими руками", "Природа и усадьбы", "Волейбол", "Волейбол: матчи", "ИИ и технологии", "Управление и стратегия", "Предприниматели и клубы", "Нетривиальное"];
@@ -101,6 +101,7 @@ function profile(uid: number, name: string, onboarded: boolean): Profile {
     user_id: uid, name, username: "", city: "Москва", values: Object.fromEntries(VALUES.map((v, i) => [v, i < 5 ? 5 : 2])),
     interests: Object.fromEntries(CATEGORIES.map((c) => [c, 2])), params: { budget: 0, company: "любая", times: ["день", "вечер"], areas: ["любой"] },
     notes: "", tz: "Europe/Moscow", digest_day: 4, digest_hour: 18, plan: "", learned: {}, learned_text: "", onboarded, show_name: true, source: "organic",
+    has_consent: true, offer_seen: 0, offer_due: null, can_write: false,
   };
 }
 
@@ -148,7 +149,7 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
     const uid = Number(m[1]);
     if (method === "PUT") {
       const b = j(init);
-      const cur = st.profiles.get(uid) ?? profile(uid, b.name ?? "", false);
+      const cur = st.profiles.get(uid) ?? { ...profile(uid, b.name ?? "", false), has_consent: false };
       const next: Profile = {
         ...cur,
         name: b.name ?? cur.name,
@@ -159,6 +160,9 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
         show_name: b.show_name ?? cur.show_name,
         onboarded: cur.onboarded || b.onboarded === true || b.interests !== undefined,
         source: b.ref_code ? "ref" : cur.source,
+        has_consent: cur.has_consent || b.consent === true,
+        offer_seen: b.offer_seen ?? cur.offer_seen,
+        can_write: b.can_write ?? cur.can_write,
       };
       st.profiles.set(uid, next);
       return next;
@@ -210,11 +214,12 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
     return { code, kind: "event", url: `https://t.me/mock_bot/app?startapp=inv_${code}`, web_url: `http://localhost:3000/e/${e.slug}?inv=${code}`, share_text: `Иду на «${e.title.slice(0, 59)}»: ${day}. ${e.why_fit_hint}\nПойдёшь со мной? https://t.me/mock_bot/app?startapp=inv_${code}` };
   }
 
-  if ((m = /^\/api\/invites\/(REF[A-Za-z0-9]*)\/open$/.exec(p)) && method === "POST") {
-    // ref-ссылка: новому человеку ставится источник ref (профиль-заготовка без согласия)
+  if ((m = /^\/api\/invites\/([A-Za-z0-9]+)\/open$/.exec(p)) && method === "POST") {
+    // Без согласия профиль не создаётся, открытие только считается; ref-код человеку с согласием ставит source=ref.
     const b = j(init);
-    if (!st.profiles.has(b.user_id)) st.profiles.set(b.user_id, { ...profile(b.user_id, b.name ?? "", false), source: "ref" });
-    return { code: m[1], kind: "ref", event: null, day: null, event_slug: null, inviter_name: null, is_own: false, status: "active", accepted: 0, my_status: "opened" };
+    const prof = st.profiles.get(b.user_id);
+    if (prof?.has_consent && m[1].startsWith("REF") && prof.source === "organic") st.profiles.set(b.user_id, { ...prof, source: "ref" });
+    return { code: m[1], kind: m[1].startsWith("REF") ? "ref" : "event", event: null, day: null, event_slug: null, inviter_name: null, is_own: false, status: "active", accepted: 0, my_status: null, score: null, why: null };
   }
 
   if ((m = /^\/api\/invites\/([A-Za-z0-9]+)(\/accept)?$/.exec(p))) {
@@ -224,18 +229,21 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
       return own ? { slug: own.slug, day: own.day, name: st.profiles.get(own.inviter)?.name ?? null, status: "active", inviter: own.inviter } : undefined;
     })();
     if (!known) throw new MockError(404, "приглашение не найдено");
-    const e = known.status === "gone" ? null : (bySlug(known.slug) ?? null);
+    const e = bySlug(known.slug) ?? null;
     if (!m[2]) {
       const viewer = Number(url.searchParams.get("user_id")) || 0;
       const item: DigestItem | null = e ? { event: e, day: known.day, slot: e.slot, score: null, why: [], chosen: false, links: links(e, known.day) } : null;
+      const ready = !!viewer && !!st.profiles.get(viewer)?.onboarded;
+      const why = ready ? [{ t: "Творчество", c: "" }, { t: "Руками", c: "learn" }] : null;
+      if (item && ready) Object.assign(item, { score: 84, why: why! });
       return {
         code, kind: "event", event: item, day: known.day, event_slug: known.slug, inviter_name: known.name, is_own: !!viewer && viewer === known.inviter,
-        status: known.status, accepted: 0, my_status: null,
+        status: known.status, accepted: 0, my_status: null, score: ready ? 84 : null, why,
       };
     }
     // accept
     const b = j(init);
-    if (known.status !== "active") throw new MockError(410, known.status);
+    if (known.status !== "active" && known.status !== "gone") throw new MockError(410, known.status);
     const uid = Number(b.user_id);
     if (uid === known.inviter) throw new MockError(400, "своё приглашение принять нельзя");
     let prof = st.profiles.get(uid);
@@ -243,8 +251,13 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
       if (b.consent !== true && b.status !== "declined") throw new MockError(409, "consent_required");
       prof = profile(uid, b.name ?? "", false);
       prof.source = "invite";
+      prof.has_consent = b.consent === true;
       if (b.status === "declined") return { decision: null, together_with: null, profile_state: "new" };
       st.profiles.set(uid, prof);
+    }
+    if (!prof.has_consent && b.status !== "declined") {
+      if (b.consent !== true) throw new MockError(409, "consent_required");
+      prof.has_consent = true;
     }
     const state: "new" | "onboarded" = prof.onboarded ? "onboarded" : "new";
     if (b.status === "declined") return { decision: null, together_with: null, profile_state: state };
@@ -252,6 +265,11 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
     const d: Decision = { event_id: e?.id ?? null, event_slug: known.slug, status, reason: null, day: known.day, rating: null };
     st.decisions.set(uid, [...(st.decisions.get(uid) ?? []).filter((x) => x.event_slug !== known.slug), d]);
     if (status === "иду" && known.name) st.together.set(`${uid}:${known.slug}`, known.name);
+    if (!prof.offer_due) {
+      const d = new Date(`${known.day}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + 1);
+      prof.offer_due = d.toISOString().slice(0, 10); // повтор предложения: день события + 1
+    }
     return { decision: d, together_with: status === "иду" ? known.name : null, profile_state: state };
   }
 

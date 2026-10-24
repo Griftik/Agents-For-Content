@@ -4,6 +4,7 @@ import { cache } from "react";
 import { ApiDown } from "@/components/Gate";
 import { InviteButton } from "@/components/InviteButton";
 import { InviteFlow } from "@/components/InviteFlow";
+import { InviteMatch } from "@/components/InviteMatch";
 import { InviteStatus } from "@/components/InviteStatus";
 import { PublicEvent } from "@/components/PublicEvent";
 import { ApiError, api } from "@/lib/api";
@@ -77,16 +78,15 @@ export default async function EventPage({ params, searchParams }: Props) {
   if (code && !invite) {
     // Код неизвестен: показываем событие по слагу, если оно есть, иначе «Эта ссылка не работает».
     const { ev } = await getEvent(slug);
-    if (!ev) return <InviteStatus kind="bad" hasProfile={!!view.profile} />;
+    if (!ev) return <InviteStatus kind="bad" hasProfile={!!view.profile?.has_consent} />;
   }
   if (invite) {
     const ev = invite.event?.event ?? null;
     const evSlug = invite.event_slug ?? ev?.slug ?? null;
     if (evSlug && evSlug !== slug) redirect(inviteHref(evSlug, code!));
-    if (invite.status === "past") return <InviteStatus kind="past" hasProfile={!!view.profile} title={ev?.title} />;
-    // gone: событие удалено — для друга то же, что «убрали из афиши»
-    if (invite.status === "unpublished" || invite.status === "gone") return <InviteStatus kind="unpublished" hasProfile={!!view.profile} title={ev?.title} />;
-    if (!ev) return <InviteStatus kind="bad" hasProfile={!!view.profile} />;
+    if (invite.status === "past") return <InviteStatus kind="past" hasProfile={!!view.profile?.has_consent} title={ev?.title} />;
+    if (invite.status === "unpublished") return <InviteStatus kind="unpublished" hasProfile={!!view.profile?.has_consent} title={ev?.title} />;
+    if (!ev) return <InviteStatus kind="bad" hasProfile={!!view.profile?.has_consent} />;
     if (invite.is_own) {
       return (
         <div className="wrap">
@@ -108,11 +108,17 @@ export default async function EventPage({ params, searchParams }: Props) {
         dayText={day ? `${wdFull(day).toLowerCase()}, ${dateShort(day)}` : ""}
         timeText={timeRange(ev)}
         inviterName={invite.inviter_name}
+        gone={invite.status === "gone"}
         authed={uid != null}
-        hasProfile={!!view.profile}
+        hasConsent={!!view.profile?.has_consent}
         prior={prior && PRIOR[prior.status] ? `${PRIOR[prior.status]}${prior.day ? `, ${wdFull(prior.day).toLowerCase()}` : ""}` : null}
         openUrl={miniLink("inv", code!)}
-        card={<PublicEvent ev={ev} heading="h2" />}
+        card={
+          <>
+            <PublicEvent ev={ev} heading="h2" />
+            {invite.score != null ? <InviteMatch score={invite.score} why={invite.why ?? []} /> : null}
+          </>
+        }
       />
     );
   }

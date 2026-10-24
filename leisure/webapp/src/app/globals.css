@@ -267,3 +267,4 @@ textarea { width: 100%; min-height: 96px; resize: vertical; }
 .pick input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pick input:disabled + span { opacity: .45; }
 .sw-row { display: flex; align-items: center; gap: 12px; }
+.ring-wrap { display: flex; align-items: center; gap: 10px; }

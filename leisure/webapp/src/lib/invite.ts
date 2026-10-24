@@ -6,12 +6,12 @@ export type ProfileState = "new" | "onboarded";
 export type Viewer = {
   /** Страница открыта в Telegram (есть initData). В браузере без Telegram «иду» записать нельзя. */
   inTelegram: boolean;
-  /** Профиль уже есть (значит, согласие на обработку данных дано). */
-  hasProfile: boolean;
+  /** Согласие на обработку данных уже дано (profile.has_consent). */
+  hasConsent: boolean;
 };
 
-/** Галочку согласия показываем, пока профиля нет. */
-export const needsConsent = (v: Pick<Viewer, "hasProfile">): boolean => !v.hasProfile;
+/** Галочку согласия показываем, пока согласия нет. */
+export const needsConsent = (v: Pick<Viewer, "hasConsent">): boolean => !v.hasConsent;
 
 export type Tap = "link" | "open-in-telegram" | "consent" | "accept";
 

@@ -39,7 +39,8 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
       if (e.status !== 404) return <ApiDown message={e.status ? String(e.status) : "нет связи"} />;
     }
     if (prof?.onboarded) redirect("/digest");
-    const eff = step === "welcome" ? (prof ? "1" : "welcome") : prof ? step : "welcome";
+    // согласие есть — приветствие пропускаем; нет (профиля нет или заготовка без согласия) — начинаем с него
+    const eff = prof?.has_consent ? (step === "welcome" ? "1" : step) : "welcome";
     const cat = await load(() => api.catalog());
     if (cat.kind !== "ok") return <ApiDown message={cat.kind === "down" ? cat.message : undefined} />;
     return <Onboarding step={eff} profile={prof} catalog={cat.data} error={first(sp.error)} needConsent={first(sp.need) === "consent"} />;
