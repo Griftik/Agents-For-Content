@@ -4,6 +4,8 @@ import { TelegramBoot } from "@/components/TelegramBoot";
 import { LaterOffer } from "@/components/LaterOffer";
 import { api, ApiError } from "@/lib/api";
 import { moscowToday } from "@/lib/format";
+import { chatLink } from "@/lib/config";
+import { readLastInvite } from "@/lib/cookies";
 import { offerAgain } from "@/lib/offer";
 import { getUserId } from "@/lib/session";
 import "./globals.css";
@@ -29,10 +31,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   // Повтор предложения подборки: API ставит profile.offer_due (день события + 1) при принятии приглашения. Показываем один раз
   // (LaterOffer сразу отмечает offer_seen = 2), если срок настал и своей подборки у человека ещё нет.
   let offer = false;
+  let chatUrl: string | null = null;
   if (uid) {
     try {
       const p = await api.profile(uid);
       offer = offerAgain(p, moscowToday());
+      // бот ещё не может писать этому человеку — в баннере повтора даём запасной путь «Открыть чат с ботом»
+      if (offer && p.can_write === false) chatUrl = chatLink(await readLastInvite());
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
     }
@@ -48,7 +53,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <a className="skip-link" href="#main">К содержимому</a>
         <TelegramBoot authed={uid != null} />
         {children}
-        {offer ? <LaterOffer /> : null}
+        {offer ? <LaterOffer chatUrl={chatUrl} /> : null}
       </body>
     </html>
   );

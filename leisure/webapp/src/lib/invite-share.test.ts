@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { copyText, miniAppLink, splitShare, tgShareLink } from "./invite-share";
+import { copyText, miniAppLink, splitShare, tgShareLink, writeChatLink } from "./invite-share";
 
 const link = "https://t.me/dosug_bot/app?startapp=inv_k3m9x2ab";
 
@@ -24,5 +24,18 @@ describe("поделиться", () => {
     expect(miniAppLink("dosug_bot", "app", "inv", "ABCD1234")).toBe("https://t.me/dosug_bot/app?startapp=inv_ABCD1234");
     expect(miniAppLink("dosug_bot", "", "ref", "ABCD1234")).toBe("https://t.me/dosug_bot?startapp=ref_ABCD1234");
     expect(miniAppLink("", "app", "inv", "ABCD1234")).toBeNull();
+  });
+});
+
+describe("запасная ссылка на чат с ботом", () => {
+  it("с кодом приглашения: ?start=w_<код>", () => {
+    expect(writeChatLink("dosug_bot", "ABCD1234")).toBe("https://t.me/dosug_bot?start=w_ABCD1234");
+  });
+  it("без кода или с повреждённым кодом: просто чат с ботом", () => {
+    expect(writeChatLink("dosug_bot")).toBe("https://t.me/dosug_bot");
+    expect(writeChatLink("dosug_bot", "../x")).toBe("https://t.me/dosug_bot");
+  });
+  it("без имени бота ссылки нет", () => {
+    expect(writeChatLink("", "ABCD1234")).toBeNull();
   });
 });

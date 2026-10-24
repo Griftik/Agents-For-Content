@@ -187,12 +187,12 @@ def companions_phrase(names: Sequence[str]) -> str:
 
 def invite_joined_text(name: str | None, title: str, day: str | None) -> str:
     """T-INVITE-JOINED (бот, пригласивший): «Имя идёт с тобой: «…», суббота, 24 окт.»; скрытое имя — «Друг»."""
-    return f"{name or 'Друг'} идёт с тобой: «{title}»" + (f", {day_phrase(day)}." if day else ".")
+    return f"{escape(name or 'Друг')} идёт с тобой: «{escape(title)}»" + (f", {day_phrase(day)}." if day else ".")
 
 
 def invite_joined_many_text(n: int, title: str, day: str | None) -> str:
     """T-INVITE-JOINED-MANY: сводное, раз в день, без имён."""
-    return (f"Ещё {n} {plural(n, 'друг идёт', 'друга идут', 'друзей идут')} с тобой: «{title}»"
+    return (f"Ещё {n} {plural(n, 'друг идёт', 'друга идут', 'друзей идут')} с тобой: «{escape(title)}»"
             + (f", {day_phrase(day)}." if day else "."))
 
 

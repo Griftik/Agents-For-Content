@@ -334,6 +334,19 @@ def _note_ref(session, uid: int, code: str) -> None:
     invites.adopt_new_profile(session, p, inv)
 
 
+def _reset_default_values(session, uid: int):
+    p = services.get_profile(session, uid)
+    return _set_values(session, p, [])
+
+
+def _note_write_access(session, uid: int, code: str) -> None:
+    """/start w_<код> из Mini App (запасной путь, когда requestWriteAccess отклонён): код нужен только для учёта в growth_events."""
+    from leisure.api import invites
+
+    if code and len(code) <= 8 and invites.get_invite(session, code) is not None:
+        invites.log_growth(session, uid, "write_access", code)
+
+
 def _note_share(session, uid: int) -> None:
     """Пришёл по диплинку «Отправить другу» (e_<slug>): источник «share» новому профилю."""
     p = services.get_profile(session, uid)
@@ -386,6 +399,11 @@ async def start(message: Message, state: FSMContext, command: CommandObject | No
     arg = (command.args or "").strip() if command else ""
     if arg.startswith("ref_") and len(arg) > 4:        # ссылка-рекомендация: обычный онбординг, источник «ref» и пригласивший
         await run_db(_note_ref, u.id, arg[4:])
+    if arg.startswith("w_"):                          # запасной путь Mini App: «Открыть чат с ботом» после отказа в доступе
+        await run_db(_note_write_access, u.id, arg[2:])
+        if p.consent_at is not None:                  # can_write уже выставлен выше; согласие есть — онбординг не нужен
+            await message.answer(texts.INVITE_WRITE_OK)
+            return
     if arg.startswith("e_") and len(arg) > 2:         # диплинк «Отправить другу»: t.me/<бот>?start=e_<slug>
         await run_db(_note_share, u.id)
         if await _send_deeplink(message, arg[2:], p) or p.onboarded_at is not None:
@@ -395,8 +413,13 @@ async def start(message: Message, state: FSMContext, command: CommandObject | No
         return
     if p.consent_at is not None:  # согласие уже дано: показываем экран, на котором остановился
         await state.update_data(mode="start")
+        # профиль из Mini App: согласие есть, а ценности в боте ещё не подтверждались (нет interests_basis) — начинаем с Шага 1;
+        # пять значений по умолчанию не выдаём за выбор человека: сбрасываем, как после согласия в боте
+        confirmed = bool((p.params or {}).get("interests_basis"))
+        if not confirmed and (p.values or {}) in ({}, default_profile()["values"]):
+            p = await run_db(_reset_default_values, u.id)
         top = top_values(p)
-        out = screen_values(p) if len(top) != kb.TOP_N else await run_db(lambda s, uid: screen_interests(services.get_profile(s, uid), "start"), u.id)
+        out = screen_values(p) if len(top) != kb.TOP_N or not confirmed else await run_db(lambda s, uid: screen_interests(services.get_profile(s, uid), "start"), u.id)
         await message.answer(out.text, reply_markup=markup(out.rows))
         return
     text, rows = hello_message()

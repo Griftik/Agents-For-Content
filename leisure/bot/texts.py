@@ -18,6 +18,7 @@ HELLO = ("Я подбираю события на выходные под то, 
          "Удалить их можно в любой момент: /delete.")                                                       # T-HELLO
 RESET_PREFIX = "Настроим заново. Новые ответы заменят прежние, а решения по событиям останутся.\n\n"        # T-RESET
 START_AGAIN = "Профиль уже настроен. Подборка на эти выходные: /digest. Твой план: /plan. Поменять ответы: /profile."  # T-START-AGAIN
+INVITE_WRITE_OK = "Готово: план будет приходить в Telegram."                                                 # T-INVITE-WRITE-OK
 NOT_READY = "Сначала короткая настройка. Нажми /start, это около двух минут."                             # T-NOT-READY
 VALUES_FULL = "Уже пять. Сними одну, чтобы выбрать другую."                                               # T-VALUES-FULL
 TOAST_BUILD = "Собираю подборку."                                                                         # T-TOAST-BUILD

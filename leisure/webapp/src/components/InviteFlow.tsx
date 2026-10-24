@@ -4,6 +4,7 @@ import { startTransition, useActionState, useEffect, useRef, useState, type Reac
 import { acceptInviteAction, declineInviteAction, markWriteAccessAction, openInviteAction, postponeOfferAction, type AcceptState } from "@/app/actions";
 import type { InviteAcceptStatus } from "@/lib/api-types";
 import { inTelegram, requestWriteAccess } from "@/lib/tg-client";
+import { OpenChat } from "./OpenChat";
 
 export type InviteFlowProps = {
   code: string;
@@ -23,6 +24,8 @@ export type InviteFlowProps = {
   prior: string | null;
   /** t.me/<бот>/<app>?startapp=inv_<код> для браузера без Telegram. */
   openUrl: string | null;
+  /** t.me/<бот>?start=w_<код>: запасной путь к праву писать, если requestWriteAccess отклонён или недоступен. */
+  chatUrl: string | null;
   /** Карточка события, отрисованная на сервере. */
   card: ReactNode;
 };
@@ -163,8 +166,8 @@ function Done(p: InviteFlowProps & { state: Extract<AcceptState, { phase: "done"
   const who = state.togetherWith ?? p.inviterName;
   const [write, setWrite] = useState<"idle" | "granted" | "refused">("idle");
   const [later, setLater] = useState(false);
-  const [tg, setTg] = useState(false);
-  useEffect(() => setTg(inTelegram()), []);
+  // Done появляется только после нажатия, то есть уже в браузере: window доступен
+  const [tg] = useState(() => typeof window !== "undefined" && inTelegram());
 
   const day = p.dayText;
   const lead = p.gone
@@ -202,6 +205,8 @@ function Done(p: InviteFlowProps & { state: Extract<AcceptState, { phase: "done"
         <p role="status" aria-live="polite" className="muted" style={{ fontSize: 13.5 }}>
           {write === "granted" ? "Готово: план будет приходить в Telegram." : write === "refused" ? "Хорошо. План смотри здесь, в приложении." : ""}
         </p>
+
+        {(write === "refused" || !tg) && p.chatUrl ? <OpenChat url={p.chatUrl} /> : null}
 
         {state.profileState === "new" ? (
           later ? (

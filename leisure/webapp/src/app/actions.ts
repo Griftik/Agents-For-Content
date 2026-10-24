@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import type { InviteAcceptStatus } from "@/lib/api-types";
 import { REF_COOKIE } from "@/lib/session-consts";
-import { clearCookie, readRef, readWho } from "@/lib/cookies";
+import { clearCookie, readRef, readWho, setLastInvite } from "@/lib/cookies";
 import { CODE_RE } from "@/lib/start-param";
 import { BUDGETS, PROPOSED_N, TOP_VALUES, interestLevels, pickTop, rankCategories, weightsFromTop } from "@/lib/onboarding";
 import { getUserId } from "@/lib/session";
@@ -169,6 +169,7 @@ export async function acceptInviteAction(_prev: AcceptState, formData: FormData)
       if (!(e instanceof ApiError)) throw e;
     }
   }
+  await setLastInvite(code);
   revalidatePath("/digest");
   revalidatePath("/plan");
   return { phase: "done", status, togetherWith: accepted.together_with, profileState: accepted.profile_state, links };

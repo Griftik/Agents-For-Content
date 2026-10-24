@@ -1,11 +1,13 @@
 """Приглашения друзей и рекомендация сервиса (docs/GROWTH.md): коды, принятие, «вдвоём с», метрики роста."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 import secrets
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from leisure import settings
@@ -100,6 +102,8 @@ def open_invite(session: Session, inv: Invite, user_id: int, was_new: bool | Non
     acc = InviteAccept(invite_id=inv.id, user_id=user_id, status="opened", was_new=was_new)
     session.add(acc)
     inv.opened += 1
+    session.execute(delete(GrowthEvent).where(GrowthEvent.invite_code == inv.code, GrowthEvent.visitor == _visitor(inv.code, user_id),
+                                              GrowthEvent.kind.in_(ANON_KINDS)))     # был без согласия — теперь считается по invite_accepts
     session.commit()
     return acc, True
 
@@ -160,8 +164,8 @@ def companion_names(session: Session, user_id: int, d: Decision) -> list[str]:
 
 
 # ─── момент рекомендации ───
-def log_growth(session: Session, user_id: int, kind: str) -> None:
-    session.add(GrowthEvent(user_id=user_id, kind=kind))
+def log_growth(session: Session, user_id: int, kind: str, invite_code: str | None = None) -> None:
+    session.add(GrowthEvent(user_id=user_id, kind=kind, invite_code=invite_code))
     session.commit()
 
 
@@ -182,10 +186,14 @@ def growth_metrics(session: Session, since: datetime | None = None) -> dict:
     c = lambda q: int(session.scalar(q) or 0)   # noqa: E731
     going = c(select(func.count()).select_from(Decision).where(Decision.status == "иду", Decision.created_at >= since))
     invites_made = c(select(func.count()).select_from(Invite).where(Invite.kind == "event", Invite.created_at >= since))
-    opened = c(select(func.count()).select_from(InviteAccept).join(Invite).where(Invite.kind == "event", InviteAccept.opened_at >= since))
+    # открывшие без согласия (строки invite_open / invite_declined, по одной на человека и ссылку) входят в знаменатели как все открывшие
+    anon_event = c(select(func.count()).select_from(GrowthEvent).join(Invite, Invite.code == GrowthEvent.invite_code).where(
+        GrowthEvent.kind.in_(ANON_KINDS), Invite.kind == "event", GrowthEvent.created_at >= since))
+    opened = anon_event + c(select(func.count()).select_from(InviteAccept).join(Invite).where(
+        Invite.kind == "event", InviteAccept.opened_at >= since))
     accepted = c(select(func.count()).select_from(InviteAccept).join(Invite).where(
         Invite.kind == "event", InviteAccept.opened_at >= since, InviteAccept.status.in_(("going", "maybe"))))
-    new_opened = c(select(func.count()).select_from(InviteAccept).join(Invite).where(
+    new_opened = anon_event + c(select(func.count()).select_from(InviteAccept).join(Invite).where(
         Invite.kind == "event", InviteAccept.opened_at >= since, InviteAccept.was_new.is_(True)))
     new_activated = c(select(func.count()).select_from(InviteAccept).join(Invite).where(
         Invite.kind == "event", InviteAccept.opened_at >= since, InviteAccept.was_new.is_(True), InviteAccept.accepted_at.is_not(None)))
@@ -199,10 +207,13 @@ def growth_metrics(session: Session, since: datetime | None = None) -> dict:
     active = c(select(func.count(func.distinct(Decision.user_id))).where(Decision.updated_at >= since))
     rated = c(select(func.count()).select_from(Decision).where(Decision.rating.is_not(None), Decision.updated_at >= since))
     rated_good = c(select(func.count()).select_from(Decision).where(Decision.rating >= 4, Decision.updated_at >= since))
-    opened_anon = c(select(func.count()).select_from(GrowthEvent).where(GrowthEvent.kind == "invite_open", GrowthEvent.created_at >= since))
+    opened_anon = c(select(func.count()).select_from(GrowthEvent).where(GrowthEvent.kind.in_(ANON_KINDS), GrowthEvent.created_at >= since))
     ref_asks = c(select(func.count()).select_from(GrowthEvent).where(GrowthEvent.kind == "ref_ask", GrowthEvent.created_at >= since))
     # «Поделиться» в T-REF-ASK — URL-кнопка, бот нажатий не видит: считаем показы, после которых по ссылке пришёл человек
-    ref_shares = c(select(func.count()).select_from(Invite).where(Invite.kind == "ref", Invite.opened > 0, Invite.created_at >= since))
+    # (ссылку открыли и с согласием, и без него)
+    seen_anon = select(GrowthEvent.invite_code).where(GrowthEvent.kind.in_(ANON_KINDS), GrowthEvent.invite_code.is_not(None))
+    ref_shares = c(select(func.count()).select_from(Invite).where(
+        Invite.kind == "ref", Invite.created_at >= since, (Invite.opened > 0) | Invite.code.in_(seen_anon)))
     together = 2 * c(select(func.count()).select_from(InviteAccept).join(Invite).where(
         Invite.kind == "event", InviteAccept.status == "going", InviteAccept.opened_at >= since))
 
@@ -285,10 +296,26 @@ def view(session: Session, inv: Invite, user_id: int | None = None) -> dict:
             "why": item["why"] if item and item["score"] is not None else None}
 
 
-def log_open_without_consent(session: Session, inv: Invite, kind: str = "invite_open") -> None:
-    """Открытие или отказ без профиля и согласия: профиль не создаём и персональных данных не храним, только строка в
-    growth_events по коду (invite_open | invite_declined)."""
-    session.add(GrowthEvent(user_id=None, kind=kind, invite_code=inv.code))
+def _visitor(code: str, user_id: int) -> str:
+    """Необратимый псевдоним человека для одной ссылки: без ключа сервера user_id по нему не восстановить."""
+    key = (settings.API_KEY or "leisure-visitor").encode()
+    return hmac.new(key, f"{code}:{user_id}".encode(), hashlib.sha256).hexdigest()[:16]
+
+
+ANON_KINDS = ("invite_open", "invite_declined")
+
+
+def log_open_without_consent(session: Session, inv: Invite, kind: str = "invite_open", user_id: int | None = None) -> None:
+    """Открытие или отказ без профиля и согласия: профиль не создаём, user_id не храним — строка в growth_events по коду
+    (invite_open | invite_declined) с псевдонимом `visitor`. Один человек на ссылку — одна строка: повтор не множит счётчики,
+    отказ заменяет открытие. Когда человек даёт согласие, строка удаляется (open_invite): дальше его считает invite_accepts."""
+    v = _visitor(inv.code, user_id) if user_id is not None else None
+    row = session.scalar(select(GrowthEvent).where(GrowthEvent.invite_code == inv.code, GrowthEvent.visitor == v,
+                                                   GrowthEvent.kind.in_(ANON_KINDS))) if v else None
+    if row is None:
+        session.add(GrowthEvent(user_id=None, kind=kind, invite_code=inv.code, visitor=v))
+    elif kind == "invite_declined":
+        row.kind = kind
     session.commit()
 
 
@@ -301,7 +328,7 @@ def web_open(session: Session, inv: Invite, user_id: int, name: str = "", userna
         raise OwnInvite()
     p = services.get_profile(session, user_id)
     if p is None or p.consent_at is None:
-        log_open_without_consent(session, inv, kind)
+        log_open_without_consent(session, inv, kind, user_id)
         return None
     p = services.get_or_create_profile(session, user_id, name, username, via_bot=False)
     acc, _ = open_invite(session, inv, user_id)

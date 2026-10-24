@@ -9,7 +9,7 @@ import { InviteStatus } from "@/components/InviteStatus";
 import { PublicEvent } from "@/components/PublicEvent";
 import { ApiError, api } from "@/lib/api";
 import type { Decision, InviteView, Profile } from "@/lib/api-types";
-import { botLink, miniLink } from "@/lib/config";
+import { botLink, chatLink, miniLink } from "@/lib/config";
 import { dateShort, first, moscowToday, timeRange, wdFull } from "@/lib/format";
 import { getUserId } from "@/lib/session";
 import { CODE_RE, inviteHref } from "@/lib/start-param";
@@ -113,6 +113,7 @@ export default async function EventPage({ params, searchParams }: Props) {
         hasConsent={!!view.profile?.has_consent}
         prior={prior && PRIOR[prior.status] ? `${PRIOR[prior.status]}${prior.day ? `, ${wdFull(prior.day).toLowerCase()}` : ""}` : null}
         openUrl={miniLink("inv", code!)}
+        chatUrl={chatLink(code)}
         card={
           <>
             <PublicEvent ev={ev} heading="h2" />

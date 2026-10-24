@@ -584,9 +584,9 @@ def test_open_without_consent_creates_no_profile_and_counts_in_growth_events(cli
     client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": F1})
     db.expire_all()
     assert db.get(Profile, F1) is None and db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1)) is None
-    assert _anon_opens(db, code) == 2 and inv.opened == 0
+    assert _anon_opens(db, code) == 1 and inv.opened == 0                 # один человек на ссылку — одна строка
     gevent = db.scalar(select(GrowthEvent).where(GrowthEvent.invite_code == code))
-    assert gevent.user_id is None                                       # персональных данных в журнале нет
+    assert gevent.user_id is None and str(F1) not in (gevent.visitor or "")      # user_id в журнале нет, только псевдоним
     # ref-ссылка: то же
     assert client.post(f"/api/invites/{ref}/open", headers=H, json={"user_id": F2}).status_code == 200
     db.expire_all()
@@ -595,7 +595,7 @@ def test_open_without_consent_creates_no_profile_and_counts_in_growth_events(cli
     client.put(f"/api/profile/{F3}", headers=H, json={"name": "Без согласия"})
     client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": F3})
     db.expire_all()
-    assert db.scalar(select(InviteAccept).where(InviteAccept.user_id == F3)) is None and _anon_opens(db, code) == 3
+    assert db.scalar(select(InviteAccept).where(InviteAccept.user_id == F3)) is None and _anon_opens(db, code) == 2
     assert db.get(Profile, F3).source == "organic"
     # принятие без согласия: 409 и по-прежнему ни профиля, ни записей
     assert _accept(client, code, F1, consent=False).status_code == 409
@@ -606,17 +606,18 @@ def test_open_without_consent_creates_no_profile_and_counts_in_growth_events(cli
     db.expire_all()
     acc = db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1))
     assert db.get(Profile, F1).consent_at is not None and acc.was_new is True and acc.status == "going"
+    assert _anon_opens(db, code) == 1                                   # F1 теперь считается по invite_accepts, его строка журнала снята
     # человек с согласием: открытие учитывается как раньше (InviteAccept), журнал не растёт
     p = db.get(Profile, F4) or services.get_or_create_profile(db, F4, "Дарья", "d", via_bot=False)
     services.update_profile(db, p, {"consent": True})
     client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": F4})
     db.expire_all()
     acc4 = db.scalar(select(InviteAccept).where(InviteAccept.user_id == F4))
-    assert acc4 is not None and acc4.status == "opened" and acc4.was_new is False and _anon_opens(db, code) == 3
+    assert acc4 is not None and acc4.status == "opened" and acc4.was_new is False and _anon_opens(db, code) == 1
     # своё открытие не считается
     client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": INVITER})
-    assert _anon_opens(db, code) == 3
-    assert client.get("/api/metrics/growth", headers=H).json()["counts"]["opened_without_consent"] >= 4
+    assert _anon_opens(db, code) == 1
+    assert client.get("/api/metrics/growth", headers=H).json()["counts"]["opened_without_consent"] >= 2
 
 
 def test_invite_gives_score_and_why_only_for_ready_profile(client, db, event):
@@ -654,3 +655,109 @@ def test_accept_sets_offer_due_to_event_day_plus_one_once(client, db, event, sen
     # PUT offer_seen работает как раньше, offer_due им не трогается
     r = client.put(f"/api/profile/{F2}", headers=H, json={"offer_seen": 1}).json()
     assert r["offer_seen"] == 1 and r["offer_due"] == "2026-10-26"
+
+
+def _gm(client):
+    j = client.get("/api/metrics/growth", headers=H).json()["metrics"]
+    return {k: (j[k]["numerator"], j[k]["denominator"]) for k in ("acceptance", "activation_invited", "recommendation")}
+
+
+def test_growth_metrics_count_openers_without_consent_in_denominators(client, db, event, sent):
+    code = _create(client, event)["code"]
+    ref = client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()["code"]
+    # человек с профилем и согласием (не новый)
+    p4 = services.get_or_create_profile(db, F4, "Дарья", "d", via_bot=False)
+    services.update_profile(db, p4, {"consent": True})
+    before = _gm(client)
+    op = lambda u, c=code: client.post(f"/api/invites/{c}/open", headers=H, json={"user_id": u})   # noqa: E731
+    op(F1); op(F1)                                                    # открыл без согласия, дважды: считается один раз
+    op(F2); assert _accept(client, code, F2, status="declined", consent=False).status_code == 200     # открыл и отказался: один
+    op(F3); assert _accept(client, code, F3).status_code == 200                                         # открыл и принял с согласием: один
+    op(F4); assert _accept(client, code, F4, status="maybe").status_code == 200                         # человек с профилем: не новый
+    after = _gm(client)
+    d = lambda k: (after[k][0] - before[k][0], after[k][1] - before[k][1])   # noqa: E731
+    assert d("acceptance") == (2, 4)                                  # приняли F3, F4 из четверых открывших
+    assert d("activation_invited") == (1, 3)                          # новых F1, F2, F3; согласие и решение — у F3
+    # ссылка-рекомендация: открытие без согласия тоже считается, повтор и второй человек — нет
+    op(F1, ref); op(F5, ref)
+    rec = _gm(client)["recommendation"]
+    assert rec[0] - before["recommendation"][0] == 1 and rec[1] == before["recommendation"][1]
+
+
+# ── ТЗ-11: Шаг 1 для профиля из Mini App, HTML в уведомлениях, /start w_<код> ──
+def test_start_after_miniapp_consent_opens_step_one_with_values_unset(client, db):
+    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True, "name": "Из Mini App"})
+    assert services.get_profile(db, F1).values or True
+    chat = Chat(F1)
+    chat.say("/start")
+    txt = chat.last_text()
+    assert "Шаг 1 из 2" in txt and "Шаг 2 из 2" not in txt
+    assert not any(b["text"] == "Дальше →" for r in chat.world.get(F1, chat.last_mid()).rows for b in r)   # пять по умолчанию не выбраны
+    db.expire_all()
+    p = db.get(Profile, F1)
+    assert not [v for v, w in (p.values or {}).items() if w == 5] and p.onboarded_at is None
+    # дальше обычный путь: пятое значение открывает Шаг 2
+    mid = chat.last_mid()
+    for label in ("Творчество", "Забота", "Развитие", "Свобода", "Семья"):
+        chat.tap(mid, label)
+    assert "Шаг 2 из 2" in chat.last_text()
+
+
+def test_start_with_chosen_values_still_continues_on_step_two(client, db):
+    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True})
+    chat = Chat(F1)
+    chat.say("/start")
+    mid = chat.last_mid()
+    for label in ("Творчество", "Забота", "Развитие", "Свобода", "Семья"):
+        chat.tap(mid, label)
+    chat2 = Chat(F1)
+    chat2.say("/start")
+    assert "Шаг 2 из 2" in chat2.last_text()
+
+
+def test_notifications_escape_html_in_title_and_name():
+    t = msg.invite_joined_text("Б&<Борис", "Рок & <Ролл>", DAY)
+    assert "Б&amp;&lt;Борис" in t and "Рок &amp; &lt;Ролл&gt;" in t and "<Ролл>" not in t
+    many = msg.invite_joined_many_text(2, "Рок & <Ролл>", DAY)
+    assert "&amp;" in many and "&lt;Ролл&gt;" in many and "<Ролл>" not in many
+    assert msg.invite_joined_text(None, "A", None).startswith("Друг идёт с тобой")
+
+
+def test_accept_notification_is_escaped_end_to_end(client, db, event, sent):
+    old = event.title
+    event.title = "Рок & <Ролл>"
+    db.commit()
+    try:
+        code = _create(client, event)["code"]
+        assert _accept(client, code, F1, name="Б&<Борис").status_code == 200
+        assert len(sent) == 1 and "Б&amp;&lt;Борис" in sent[0][1] and "Рок &amp; &lt;Ролл&gt;" in sent[0][1]
+        assert "<Ролл>" not in sent[0][1]
+    finally:
+        event.title = old
+        db.commit()
+
+
+def test_start_w_code_gives_write_access_and_short_reply_when_consent_exists(client, db, event):
+    code = _create(client, event)["code"]
+    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True, "name": "Гость"})
+    assert db.get(Profile, F1).can_write is False
+    chat = Chat(F1)
+    chat.say(f"/start w_{code}")
+    assert chat.last_text() == "Готово: план будет приходить в Telegram."
+    assert len([m for m in chat.world.chats[F1] if not m.from_user]) == 1       # один ответ бота, онбординга нет
+    db.expire_all()
+    assert db.get(Profile, F1).can_write is True and db.get(Profile, F1).onboarded_at is None
+    ev = db.scalars(select(GrowthEvent).where(GrowthEvent.user_id == F1, GrowthEvent.kind == "write_access")).all()
+    assert len(ev) == 1 and ev[0].invite_code == code
+    # неизвестный код: тот же ответ, в журнал ничего
+    chat2 = Chat(F2)
+    client.put(f"/api/profile/{F2}", headers=H, json={"consent": True})
+    chat2.say("/start w_NOSUCH00")
+    assert chat2.last_text() == "Готово: план будет приходить в Telegram."
+    assert db.scalar(select(func.count()).select_from(GrowthEvent).where(GrowthEvent.user_id == F2)) == 0
+    # без согласия обычное приветствие, can_write всё равно включён
+    chat3 = Chat(F3)
+    chat3.say(f"/start w_{code}")
+    assert chat3.last_text().startswith("Я подбираю события")
+    db.expire_all()
+    assert db.get(Profile, F3).can_write is True

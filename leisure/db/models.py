@@ -257,4 +257,7 @@ class GrowthEvent(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("profiles.user_id", ondelete="CASCADE"), index=True, nullable=True)
     kind: Mapped[str] = mapped_column(String(24), nullable=False)    # ref_ask | ref_share | invite_share | invite_open
     invite_code: Mapped[str | None] = mapped_column(String(8), index=True, nullable=True)
+    # Псевдоним человека без согласия для одной ссылки (HMAC от кода и user_id с серверным ключом, 16 знаков): чтобы повторные
+    # открытия не множили знаменатели метрик. Удаляется вместе со строкой, когда человек даёт согласие (появляется invite_accepts).
+    visitor: Mapped[str | None] = mapped_column(String(16), index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

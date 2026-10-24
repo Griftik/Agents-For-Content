@@ -14,6 +14,9 @@ export const REF_COOKIE = "leisure_ref";
 /** Имя и username из Telegram (для записи приглашённого и пустого профиля); не секрет, подпись не нужна. */
 export const WHO_COOKIE = "leisure_who";
 
+/** Код последнего принятого приглашения: нужен ссылке «Открыть чат с ботом» (?start=w_<код>) на баннере повтора. */
+export const INVITE_COOKIE = "leisure_inv";
+
 /** Атрибуты cookie. В вебе Telegram Mini App живёт во фрейме: в production нужны SameSite=None и Partitioned. */
 export function cookieOpts(maxAgeSec: number, prod: boolean) {
   return { httpOnly: true, path: "/", maxAge: maxAgeSec, secure: prod, sameSite: (prod ? "none" : "lax") as "none" | "lax", partitioned: prod };
