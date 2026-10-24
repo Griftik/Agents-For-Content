@@ -9,6 +9,7 @@ Event): название, ссылка на карточку, даты нача�
 - у спектаклей и выставок `startDate` — ближайшая дата, `endDate` — конец проката; расписание по дням в разметке нет,
   поэтому `date_text` это «период с … по …», а конкретные даты показа нормализатор не выдумывает (confidence «нужно проверить»);
 - у части событий площадка «Неизвестно» (так в источнике) — оставляем пустой;
+- цена 0 в разметке неотличима от «не указана», поэтому `price_text` в таких случаях пустой;
 - постоянные экспозиции без `endDate` и со стартом в прошлом в окно не попадают (бессрочность нам неизвестна).
 
 robots.txt (проверено 2026-10-24): разделы `/msk/…/` разрешены (закрыты служебные пути квестов, фильтров, бронирования);
@@ -224,7 +225,7 @@ class AfishaCollector(Collector):
             date_text=format_span(start, end, with_time=with_time),
             text=text,
             venue=_known(loc.get("name")),
-            price_text=f"от {price:g} ₽" if price is not None else "",
+            price_text=f"от {price:g} ₽" if price else "",  # 0 в разметке — «бесплатно» или «не указано», не угадываем
             collected_at=collected_at,
             address=_known(addr.get("streetAddress")),
             categories=cats,

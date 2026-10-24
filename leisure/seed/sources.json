@@ -1,263 +1,5135 @@
 {
+ "version": 2,
  "city": "Москва",
- "sites": [
+ "checked": "2026-10-24",
+ "checked_from": "окружение разработки (облачный контейнер, исходящий трафик через агентский прокси), запросы GET с User-Agent LeisurePlannerBot, таймаут 10 с, пауза 1 с между запросами к одному хосту",
+ "legend": {
+  "type": "aggregator — агрегаторы и билетные операторы; venue — площадки (музеи, театры, концертные залы, парки); club — клубы, бары, джаз; edu — образовательные, деловые и спортивные организации; media — медиа с афишами; tg — Telegram-канал",
+  "access": "api / rss / ics / json (структурные данные, в том числе JSON-LD и серверная выдача Next.js внутри HTML) / html / tg (публичное превью t.me/s/) / manual (только руками)",
+  "needs_key": "нет — открытая страница или превью; токен — выдаёт владелец; вход — нужна авторизация",
+  "robots_section": "открыт / закрыт — разрешён ли для User-agent: * адрес из поля url; неизвестно — robots.txt недоступен",
+  "free_now": "true: ответил 2xx с этого хоста, ключ не нужен, robots.txt не закрывает раздел (для tg: превью открыто и канал публиковал за последние 45 дней)",
+  "rank": "по ценности для продукта: сначала работающие коллекторы и то, что даёт много событий без ключа"
+ },
+ "sources": [
   {
-   "name": "Афиша",
+   "id": "afisha",
+   "legal_status": "прочитаны",
+   "name": "Афиша (afisha.ru)",
    "url": "https://www.afisha.ru/msk/",
+   "type": "aggregator",
+   "access": "json",
+   "categories": [
+    "Концерты",
+    "Театр",
+    "Современное искусство",
+    "Кино",
+    "Джаз"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия использования (afisha.ru/article/usloviya-ispolzovaniya/, прочитаны 2026-10-24): п. 3.3 «Сервис предназначен для личного некоммерческого использования»; про автоматический сбор и ссылку на источник нет ни запрета, ни разрешения. Сбор по решению владельца 24.10.2026.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.afisha.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": "afisha",
+   "note": "По одному запросу на раздел 3-117 событий с датами, площадкой, ценой «от»; у спектаклей и выставок даты — период проката.",
+   "access_url": "https://www.afisha.ru/msk/<раздел>/ (JSON-LD schema.org в HTML)",
+   "jsonld_events_on_page": 43,
+   "page_title": "Афиша – куда сходить в Москве, все развлечения и билеты на Afisha.ru",
+   "legacy": {
+    "name": "Афиша",
+    "url": "https://www.afisha.ru/msk/",
+    "collector": "afisha",
+    "focus": "концерты, театр, выставки, кино"
+   },
    "focus": "концерты, театр, выставки, кино",
-   "collector": "afisha"
+   "rank": 1,
+   "free_now": true
   },
   {
-   "name": "Яндекс Афиша",
-   "url": "https://afisha.yandex.ru/moscow",
-   "focus": "билеты, рейтинги и отзывы",
-   "collector": "yandex_afisha"
+   "id": "club16tons",
+   "legal_status": "прочитаны",
+   "name": "16 Тонн",
+   "url": "https://www.16tons.ru/",
+   "type": "club",
+   "access": "json",
+   "categories": [
+    "Концерты",
+    "Вечеринки"
+   ],
+   "needs_key": "нет",
+   "legal": "Условий использования нет; в подвале: «Все материалы © www.16tons.ru. При цитировании ссылка на сайт обязательна» (ссылку на страницу концерта даём).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.16tons.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://www.16tons.ru/"
+   },
+   "collector": "club16tons",
+   "note": "Одна страница = анонс на полгода (118 концертов), время начала в разметке не указано (T00:00).",
+   "access_url": "https://www.16tons.ru/ (JSON-LD MusicEvent)",
+   "jsonld_events_on_page": 118,
+   "page_title": "Официальный сайт клуба «16 Тонн». Только здесь билеты без наценки",
+   "rank": 2,
+   "free_now": true
   },
   {
-   "name": "KudaGo Москва",
-   "url": "https://kudago.com/msk/",
-   "focus": "бесплатные и необычные события",
-   "collector": "kudago"
-  },
-  {
-   "name": "Timepad",
-   "url": "https://timepad.ru/",
-   "focus": "лекции, мастер-классы, нетворкинг",
-   "collector": "timepad"
-  },
-  {
-   "name": "Афиша mos.ru",
-   "url": "https://www.mos.ru/afisha/",
+   "id": "bilet_mos",
+   "legal_status": "прочитаны",
+   "name": "Мосбилет (bilet.mos.ru)",
+   "url": "https://bilet.mos.ru/",
+   "type": "aggregator",
+   "access": "json",
+   "categories": [
+    "Театр",
+    "Концерты",
+    "Современное искусство",
+    "Кино",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия использования на сайте не нашли: в HTML нет ссылок на соглашение, mos.ru/legal отвечает 404. Решение владельца.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://bilet.mos.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": "mosbilet",
+   "note": "Официальная афиша города; mos.ru/afisha перенаправляет сюда. SSR отдаёт ближайшие 12 событий раздела; глубже — только внутренний постраничный запрос (?page закрыт robots.txt).",
+   "access_url": "https://bilet.mos.ru/<раздел>/ (__NEXT_DATA__ в HTML)",
+   "page_title": "Афиша Москвы — куда сходить, мероприятия и билеты без наценки | Мосбилет",
+   "legacy": {
+    "name": "Афиша mos.ru",
+    "url": "https://www.mos.ru/afisha/",
+    "collector": "mos",
+    "focus": "городские события, усадьбы, парки"
+   },
    "focus": "городские события, усадьбы, парки",
-   "collector": "mos"
+   "rank": 3,
+   "free_now": true
   },
   {
-   "name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов",
-   "url": "https://ges-2.org/",
-   "focus": "современное искусство, кино, лекции",
-   "collector": "venues"
-  },
-  {
-   "name": "Клуб Бутмана · Эссе · Клуб Козлова",
-   "url": "https://butmanclub.ru/",
-   "focus": "джаз",
-   "collector": "jazz"
-  },
-  {
-   "name": "Сколково · РАНХиГС · ВШЭ",
-   "url": "https://www.skolkovo.ru/events/",
-   "focus": "лекции, конференции, сообщество",
-   "collector": "business"
-  }
- ],
- "telegram_channels": [
-  {
-   "name": "Куда сегодня (quda_today)",
-   "username": "quda_today",
-   "url": "https://t.me/quda_today",
-   "focus": "Ежедневные анонсы вечеринок, маркетов, поп-апов, listening-сессий, лекций и баров центра Москвы; по пятницам — сводный дайджест на выходные",
-   "useful": true,
-   "why": "Живой, но на 23–25.10 свежего сводного гида нет (пост 10256 — про прошлые выходные); дал вечеринку в «8 шарах» 24.10 и хэллоуин REBELS в Substance 31.10 (пост 10243)"
-  },
-  {
-   "name": "Две в Москве",
-   "username": "dvevmoskve",
-   "url": "https://t.me/dvevmoskve",
-   "focus": "Еженедельная афиша «событие дня» на 7 дней, подборки на выходные, выставки, фермы, усадебные концерты",
-   "useful": true,
-   "why": "Живой; на эти выходные — только концерты при свечах в «Другом деле» 23–24.10 (уже в индексе) и анонс «Усадьба джаз» 29.10"
-  },
-  {
-   "name": "Привет, пойдём?",
-   "username": "privetpoidem",
-   "url": "https://t.me/privetpoidem",
-   "focus": "Городской гид: пятничные планы на выходные, рестораны, музеи, новости институций",
-   "useful": true,
-   "why": "Живой, но пятничный план на выходные (пост 28080) к утру 23.10 ещё не вышел — виден прошлый (Хлебный уикенд, Tame Impala в 1к4 16.10); смотреть днём в пятницу"
-  },
-  {
-   "name": "Timepad",
-   "username": "TimepadRU",
-   "url": "https://t.me/TimepadRU",
-   "focus": "Подборки событий с Timepad: планы на неделю, деловые события, мастер-классы, экскурсии",
-   "useful": true,
-   "why": "Живой, 2–3 подборки в неделю, даёт ссылки на камерные лекции и мастер-классы; сам Timepad часто не открывается — ссылки проверять отдельно"
-  },
-  {
+   "id": "tg_freeartnewsletter",
+   "legal_status": "прочитаны (условия Telegram)",
    "name": "Бюллетень Лучаны Киселевой",
-   "username": "freeartnewsletter",
    "url": "https://t.me/freeartnewsletter",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/freeartnewsletter",
+   "categories": [
+    "Современное искусство",
+    "Кино",
+    "Концерты",
+    "Театр"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/freeartnewsletter: постов на странице 20, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "freeartnewsletter",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 20,
+    "subscribers": "3.25K",
+    "channel_title": "Бюллетень Лучаны Киселевой | театры, концерты, выставки, досуг, Москва"
+   },
    "focus": "Бесплатные культурные события: вернисажи, Кино в Третьяковке, музейные программы, «Ночь искусств»",
    "useful": true,
-   "why": "Живой; дал вернисаж «Русское шитьё жемчугом» в РГБИ 23.10 18:30 (по регистрации) и «Ночь искусств» 3–4.11"
+   "why": "Живой; дал вернисаж «Русское шитьё жемчугом» в РГБИ 23.10 18:30 (по регистрации) и «Ночь искусств» 3–4.11",
+   "legacy": {
+    "name": "Бюллетень Лучаны Киселевой",
+    "url": "https://t.me/freeartnewsletter"
+   },
+   "rank": 4,
+   "free_now": true
   },
   {
-   "name": "ДК Рассвет",
-   "username": "dkrassvet",
-   "url": "https://t.me/dkrassvet",
-   "focus": "Афиша камерного зала на Пресне: неоклассика, французская музыка, современная академическая сцена, Rassvet Book Fair, благотворительные концерты",
+   "id": "kassir",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Kassir.ru Москва",
+   "url": "https://msk.kassir.ru/",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Концерты",
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://www.alfastrah.ru/docs/terms_188.pdf (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://msk.kassir.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Афиша Москвы 2026-2027. Куда сходить в Москве сегодня, завтра, выходные: купить билеты",
+   "rank": 5,
+   "free_now": true
+  },
+  {
+   "id": "concert_ru",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Concert.ru",
+   "url": "https://www.concert.ru/",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Концерты",
+    "Джаз"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /offer/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.concert.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Купить билеты на концерты, в театры, на спортивные мероприятия — Концерт.ру",
+   "rank": 6,
+   "free_now": true
+  },
+  {
+   "id": "gorodzovet",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "ГородЗовёт",
+   "url": "https://gorodzovet.ru/msk/",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Образование для управленцев",
+    "Конференции и форумы",
+    "Предприниматели и клубы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://gorodzovet.ru/cities/"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "ГородЗовёт - Афиша города",
+   "rank": 7,
+   "free_now": true
+  },
+  {
+   "id": "leaderid",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Leader-ID",
+   "url": "https://leader-id.ru/events",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Конференции и форумы",
+    "Предприниматели и клубы",
+    "ИИ и технологии"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /page/user/agreement (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Мероприятия — Leader-ID",
+   "rank": 8,
+   "free_now": true
+  },
+  {
+   "id": "tg_mscculture",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Куда сходить в Москве",
+   "url": "https://t.me/mscculture",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/mscculture",
+   "categories": [
+    "Нетривиальное",
+    "Концерты",
+    "Современное искусство"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/mscculture: постов на странице 17, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "mscculture",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 17,
+    "subscribers": "159K",
+    "channel_title": "Куда сходить в Москве"
+   },
+   "focus": "Афиша Москвы: интересные места и события, много бесплатного (крупный канал, 159 тыс.)",
+   "rank": 9,
+   "free_now": true
+  },
+  {
+   "id": "tg_quda_today",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Куда сегодня (quda_today)",
+   "url": "https://t.me/quda_today",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/quda_today",
+   "categories": [
+    "Вечеринки",
+    "Винные бары",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/quda_today: постов на странице 13, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "quda_today",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 13,
+    "subscribers": "20.1K",
+    "channel_title": "сегодня сюда"
+   },
+   "focus": "Ежедневные анонсы вечеринок, маркетов, поп-апов, listening-сессий, лекций и баров центра Москвы; по пятницам — сводный дайджест на выходные",
    "useful": true,
-   "why": "Живой, но сайт dkrassvet.space/events полнее канала: Book Fair #12 24–25.10, ARM Percussion 26.10, «Грохот эпох» 29.10, концерт для «Дома с маяком» 31.10"
+   "why": "Живой, но на 23–25.10 свежего сводного гида нет (пост 10256 — про прошлые выходные); дал вечеринку в «8 шарах» 24.10 и хэллоуин REBELS в Substance 31.10 (пост 10243)",
+   "legacy": {
+    "name": "Куда сегодня (quda_today)",
+    "url": "https://t.me/quda_today"
+   },
+   "rank": 10,
+   "free_now": true
   },
   {
-   "name": "Клуб Алексея Козлова",
-   "username": "kozlovclub",
-   "url": "https://t.me/kozlovclub",
-   "focus": "Джаз-клуб на Маросейке: Главная сцена, Мансарда, ночные Friday/Saturday Night",
+   "id": "tg_privetpoidem",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Привет, пойдём?",
+   "url": "https://t.me/privetpoidem",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/privetpoidem",
+   "categories": [
+    "Нетривиальное",
+    "Современное искусство",
+    "Концерты",
+    "Винные бары"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/privetpoidem: постов на странице 8, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "privetpoidem",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 8,
+    "subscribers": "60.7K",
+    "channel_title": "Привет, не хочешь сходить?"
+   },
+   "focus": "Городской гид: пятничные планы на выходные, рестораны, музеи, новости институций",
    "useful": true,
-   "why": "Живой, ежедневные анонсы; на выходные в канале только Мариам Мерабова 25.10 — полная сетка на kozlovclub.ru"
+   "why": "Живой, но пятничный план на выходные (пост 28080) к утру 23.10 ещё не вышел — виден прошлый (Хлебный уикенд, Tame Impala в 1к4 16.10); смотреть днём в пятницу",
+   "legacy": {
+    "name": "Привет, пойдём?",
+    "url": "https://t.me/privetpoidem"
+   },
+   "rank": 11,
+   "free_now": true
   },
   {
+   "id": "tg_timepadru",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Timepad",
+   "url": "https://t.me/TimepadRU",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/TimepadRU",
+   "categories": [
+    "Образование для управленцев",
+    "Своими руками",
+    "Предприниматели и клубы",
+    "Конференции и форумы"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/TimepadRU: постов на странице 9, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "TimepadRU",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 9,
+    "subscribers": "46.9K",
+    "channel_title": "Спасите мои выходные"
+   },
+   "focus": "Подборки событий с Timepad: планы на неделю, деловые события, мастер-классы, экскурсии",
+   "useful": true,
+   "why": "Живой, 2–3 подборки в неделю, даёт ссылки на камерные лекции и мастер-классы; сам Timepad часто не открывается — ссылки проверять отдельно",
+   "legacy": {
+    "name": "Timepad",
+    "url": "https://t.me/TimepadRU"
+   },
+   "rank": 12,
+   "free_now": true
+  },
+  {
+   "id": "tg_mosgul",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Московские Гуляки | Афиша Москва",
+   "url": "https://t.me/mosgul",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/mosgul",
+   "categories": [
+    "Нетривиальное",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/mosgul: постов на странице 11, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "mosgul",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 11,
+    "subscribers": "87.4K",
+    "channel_title": "Московские Гуляки | Афиша Москва"
+   },
+   "focus": "Афиша событий Москвы, бесплатные мероприятия, маршруты",
+   "rank": 13,
+   "free_now": true
+  },
+  {
+   "id": "tg_afishadaily",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Афиша Daily",
+   "url": "https://t.me/afishadaily",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/afishadaily",
+   "categories": [
+    "Нетривиальное",
+    "Концерты",
+    "Театр",
+    "Современное искусство",
+    "Кино"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/afishadaily: постов на странице 9, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "afishadaily",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 9,
+    "subscribers": "70.8K",
+    "channel_title": "Афиша Daily"
+   },
+   "focus": "Афиша Daily: подборки и материалы о городских событиях",
+   "rank": 14,
+   "free_now": true
+  },
+  {
+   "id": "tg_dvevmoskve",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Две в Москве",
+   "url": "https://t.me/dvevmoskve",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/dvevmoskve",
+   "categories": [
+    "Нетривиальное",
+    "Современное искусство",
+    "Концерты",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/dvevmoskve: постов на странице 5, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "dvevmoskve",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 5,
+    "subscribers": "52.2K",
+    "channel_title": "две в Москве"
+   },
+   "focus": "Еженедельная афиша «событие дня» на 7 дней, подборки на выходные, выставки, фермы, усадебные концерты",
+   "useful": true,
+   "why": "Живой; на эти выходные — только концерты при свечах в «Другом деле» 23–24.10 (уже в индексе) и анонс «Усадьба джаз» 29.10",
+   "legacy": {
+    "name": "Две в Москве",
+    "url": "https://t.me/dvevmoskve"
+   },
+   "rank": 15,
+   "free_now": true
+  },
+  {
+   "id": "tg_gazgolder",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "GAZGOLDER",
+   "url": "https://t.me/gazgolder",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/gazgolder",
+   "categories": [
+    "Вечеринки",
+    "Концерты"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/gazgolder: постов на странице 20, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "gazgolder",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 20,
+    "subscribers": "335",
+    "channel_title": "GAZGOLDER",
+    "own_venue": "Gazgolder"
+   },
+   "focus": "Клуб Gazgolder: анонсы вечеринок и концертов",
+   "rank": 16,
+   "free_now": true
+  },
+  {
+   "id": "tg_mosguru",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Первый Московский",
+   "url": "https://t.me/mosguru",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/mosguru",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/mosguru: постов на странице 17, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "mosguru",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 17,
+    "subscribers": "3.4M",
+    "channel_title": "Первый Московский"
+   },
+   "focus": "Крупнейший городской канал Москвы: новости и события (смешанный контент, афиша не основная)",
+   "rank": 17,
+   "free_now": true
+  },
+  {
+   "id": "tg_moswalker",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Гуляй, Москва",
+   "url": "https://t.me/moswalker",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/moswalker",
+   "categories": [
+    "Нетривиальное",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/moswalker: постов на странице 19, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "moswalker",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 19,
+    "subscribers": "530K",
+    "channel_title": "Гуляй, Москва"
+   },
+   "focus": "Городской канал: куда пойти, новости Москвы (смешанный контент)",
+   "rank": 18,
+   "free_now": true
+  },
+  {
+   "id": "tg_mosconsv",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Московская консерватория",
+   "url": "https://t.me/mosconsv",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/mosconsv",
+   "categories": [
+    "Концерты"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/mosconsv: постов на странице 17, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "mosconsv",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 17,
+    "subscribers": "6.76K",
+    "channel_title": "Московская консерватория",
+    "own_venue": "Московская консерватория"
+   },
+   "focus": "Московская консерватория: концерты в залах",
+   "rank": 19,
+   "free_now": true
+  },
+  {
+   "id": "tg_fabula_gallery",
+   "legal_status": "прочитаны (условия Telegram)",
    "name": "fābula gallery / HQ",
-   "username": "fabula_gallery",
    "url": "https://t.me/fabula_gallery",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/fabula_gallery",
+   "categories": [
+    "Современное искусство",
+    "Вечеринки",
+    "Театр"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/fabula_gallery: постов на странице 12, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "fabula_gallery",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 12,
+    "subscribers": "4.78K",
+    "channel_title": "fābula gallery + HQ + radio",
+    "own_venue": "fābula gallery"
+   },
    "focus": "Галерея и завод «Кристалл» на Самокатной: маркеты, рейвы, театр теней, радио, низовая арт-сцена",
    "useful": true,
-   "why": "Превью отдаёт посты до 18.10 (DARK MARKET, The RIG); новых анонсов на 23–25.10 и Хэллоуин в превью нет — Applique 30.10 известен из прошлого сбора"
+   "why": "Превью отдаёт посты до 18.10 (DARK MARKET, The RIG); новых анонсов на 23–25.10 и Хэллоуин в превью нет — Applique 30.10 известен из прошлого сбора",
+   "legacy": {
+    "name": "fābula gallery / HQ",
+    "url": "https://t.me/fabula_gallery"
+   },
+   "rank": 20,
+   "free_now": true
   },
   {
-   "name": "Своё Поле",
-   "username": "svoepole",
-   "url": "https://t.me/svoepole",
-   "focus": "Интеллектуальный лофт на Красном Октябре: лекции с вином, камерные концерты, фотосессии на крыше",
-   "useful": true,
-   "why": "Живой; на 23–25.10 пусто, но подтверждены лекция о Нурееве 26.10 и Haide Balkan Orchestra 30.10 — оба с вином в билете"
-  },
-  {
-   "name": "KAIA / 1к4",
-   "username": "kaia1k4",
-   "url": "https://t.me/kaia1k4",
-   "focus": "Бистро и винный бар на Сретенке: listening sessions с винилом, диджеи по выходным, гастрономические акции",
-   "useful": true,
-   "why": "Живой, камерное винное место 30+; анонсы выходных выходят за 1–2 дня (на 23–25.10 пока только меню РРФ до 25.10) — проверять в пятницу"
-  },
-  {
+   "id": "tg_domrestbar",
+   "legal_status": "прочитаны (условия Telegram)",
    "name": "Дом Культур",
-   "username": "domrestbar",
    "url": "https://t.me/domrestbar",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/domrestbar",
+   "categories": [
+    "Вечеринки",
+    "Нетривиальное",
+    "Своими руками"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/domrestbar: постов на странице 15, последний 2026-10-21"
+   },
+   "collector": "telegram",
+   "username": "domrestbar",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-21",
+    "posts_on_page": 15,
+    "subscribers": "3.17K",
+    "channel_title": "Дом Культур",
+    "own_venue": "Дом Культур"
+   },
    "focus": "Ресторан-бар на Сретенке: тематические вечеринки по пятницам, кружки, открытые лекции",
    "useful": true,
-   "why": "Живой, но на 23.10 анонса вечеринки ещё нет; ближайшее — лекция Игоря Малинина 27.10 бесплатно; публика 25–35"
+   "why": "Живой, но на 23.10 анонса вечеринки ещё нет; ближайшее — лекция Игоря Малинина 27.10 бесплатно; публика 25–35",
+   "legacy": {
+    "name": "Дом Культур",
+    "url": "https://t.me/domrestbar"
+   },
+   "rank": 21,
+   "free_now": true
   },
   {
+   "id": "tg_centrezotov",
+   "legal_status": "прочитаны (условия Telegram)",
    "name": "Центр «Зотов»",
-   "username": "centrezotov",
    "url": "https://t.me/centrezotov",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/centrezotov",
+   "categories": [
+    "Современное искусство",
+    "Кино"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/centrezotov: постов на странице 13, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "centrezotov",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 13,
+    "subscribers": "23.3K",
+    "channel_title": "Центр «Зотов»",
+    "own_venue": "Центр «Зотов»"
+   },
    "focus": "Центр конструктивизма на Пресне: выставка «Хлеб», читки, спецпоказы, мастер-классы, лекторий",
    "useful": true,
-   "why": "Живой и подробный: недельный пост с временем и ссылками — читка «Минор» 23/24.10, Мамонов 24.10, керамика и «Фьорд» 25.10"
+   "why": "Живой и подробный: недельный пост с временем и ссылками — читка «Минор» 23/24.10, Мамонов 24.10, керамика и «Фьорд» 25.10",
+   "legacy": {
+    "name": "Центр «Зотов»",
+    "url": "https://t.me/centrezotov"
+   },
+   "rank": 22,
+   "free_now": true
   },
   {
-   "name": "Музей «Гараж»",
-   "username": "garagemca",
-   "url": "https://t.me/garagemca",
-   "focus": "Музей современного искусства: медиации, открытое хранение, мастер-классы, книжные дни в Доме Наркомфина",
-   "useful": true,
-   "why": "Живой, но на выходные только медиация на французском 24.10 16:30 (бесплатно по регистрации); сайт garagemca.org не открывается — даты брать из канала"
-  },
-  {
+   "id": "tg_jewishmuseum",
+   "legal_status": "прочитаны (условия Telegram)",
    "name": "Еврейский музей и центр толерантности",
-   "username": "jewishmuseum",
    "url": "https://t.me/jewishmuseum",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/jewishmuseum",
+   "categories": [
+    "Современное искусство",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/jewishmuseum: постов на странице 12, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "jewishmuseum",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 12,
+    "subscribers": "13.4K",
+    "channel_title": "Еврейский музей и центр толерантности",
+    "own_venue": "Еврейский музей и центр толерантности"
+   },
    "focus": "Выставка «Век Майи Плисецкой», экскурсии по Бахметьевскому гаражу, библиотечные и кулинарные программы",
    "useful": true,
-   "why": "Живой, недельный пост с полным расписанием; 25.10 — день еврейской мистики в библиотеке с программой по часам; суббота — выходной"
+   "why": "Живой, недельный пост с полным расписанием; 25.10 — день еврейской мистики в библиотеке с программой по часам; суббота — выходной",
+   "legacy": {
+    "name": "Еврейский музей и центр толерантности",
+    "url": "https://t.me/jewishmuseum"
+   },
+   "rank": 23,
+   "free_now": true
   },
   {
+   "id": "tg_kinovtretyakovke",
+   "legal_status": "прочитаны (условия Telegram)",
    "name": "Кино в Третьяковке",
-   "username": "kinovtretyakovke",
    "url": "https://t.me/kinovtretyakovke",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/kinovtretyakovke",
+   "categories": [
+    "Кино"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/kinovtretyakovke: постов на странице 14, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "kinovtretyakovke",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 14,
+    "subscribers": "4.7K",
+    "channel_title": "Кино в Третьяковке"
+   },
    "focus": "Показы в Инженерном корпусе: архивное кино на 35 мм, фестивальные премьеры с обсуждениями",
    "useful": true,
-   "why": "Превью отдаёт анонсы только до 18.10; расписание на 23–25.10 ещё не опубликовано — проверять в среду-четверг"
+   "why": "Превью отдаёт анонсы только до 18.10; расписание на 23–25.10 ещё не опубликовано — проверять в среду-четверг",
+   "legacy": {
+    "name": "Кино в Третьяковке",
+    "url": "https://t.me/kinovtretyakovke"
+   },
+   "rank": 24,
+   "free_now": true
   },
   {
+   "id": "tg_chekhovandcompany",
+   "legal_status": "прочитаны (условия Telegram)",
    "name": "Чехов и компания",
-   "username": "chekhovandcompany",
    "url": "https://t.me/chekhovandcompany",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/chekhovandcompany",
+   "categories": [
+    "Нетривиальное",
+    "Образование для управленцев"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/chekhovandcompany: постов на странице 15, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "chekhovandcompany",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 15,
+    "subscribers": "6.12K",
+    "channel_title": "Чехов и Компания",
+    "own_venue": "Чехов и Компания"
+   },
    "focus": "Книжное пространство на Таганке: презентации, книжный клуб, экскурсии с «Глазами инженера», новый концертный зал, коллажные прогулки",
    "useful": true,
-   "why": "Живой, камерные форматы: концерт в новом зале 23.10, прогулка с коллажами 25.10; свежие посты после 2507 не прочитались (лимит Telegram)"
+   "why": "Живой, камерные форматы: концерт в новом зале 23.10, прогулка с коллажами 25.10; свежие посты после 2507 не прочитались (лимит Telegram)",
+   "legacy": {
+    "name": "Чехов и компания",
+    "url": "https://t.me/chekhovandcompany"
+   },
+   "rank": 25,
+   "free_now": true
   },
   {
-   "name": "РАДИО (greenhouse)",
-   "username": "radio_greenhouse",
-   "url": "https://t.me/radio_greenhouse",
-   "focus": "Ресторан-оранжерея на Бауманской: кинопоказы, мастер-классы, сезонные коктейльные карты",
-   "useful": true,
-   "why": "Живой, эстетичное место; мастер-класс по резьбе тыкв 25.10 за 4 800 ₽ с билетами на ticketscloud"
-  },
-  {
-   "name": "Москва глазами инженера",
-   "username": "engineerhistory",
-   "url": "https://t.me/engineerhistory",
-   "focus": "Архитектурные экскурсии и лекции: особняки, высотки, закрытые здания, дегустации",
-   "useful": true,
-   "why": "Превью канала бесполезно (без дат), но engineer-history.ru/events/YYYY-MM-DD — лучший источник «Нетривиального»: 20 экскурсий на 24.10 (Правда, дом-коммуна, высотка); страницы туров закрыты robots"
-  },
-  {
-   "name": "Елена Крижевская",
-   "username": "elena_krizhevskaya",
-   "url": "https://t.me/elena_krizhevskaya",
-   "focus": "Авторский канал об архитектуре и усадьбах Москвы: прогулки, лекции в высотке на Котельнической",
-   "useful": true,
-   "why": "Живой; лекция 25.10 16:30 о доходных домах в высотке подтверждена, билеты на Timepad"
-  },
-  {
-   "name": "Музей Москвы",
-   "username": "mosmuseum",
-   "url": "https://t.me/mosmuseum",
-   "focus": "Музей Москвы и филиалы (Лефортово, Садовое кольцо, Зеленоград): лекции, кураторские экскурсии, выставка «Учёные дамы»",
-   "useful": true,
-   "why": "Живой, недельный дайджест по дням с временем и ссылками; лекция о Дягилеве 24.10 и экскурсии по Лефортово — камерные и недорогие"
-  },
-  {
-   "name": "Музей-заповедник «Царицыно»",
-   "username": "tsaritsyno_museum",
-   "url": "https://t.me/tsaritsyno_museum",
-   "focus": "Парк и дворец: выставки, клубы, фестивали, кофейни в парке",
-   "useful": true,
-   "why": "Живой; на 23–25.10 — молодёжный Chain Fest (студенческий, в дайджест не включён), новая выставка «КультНаук XVIII» с 22.10 — для прогулки по усадьбе"
-  },
-  {
-   "name": "Кафе «Публика»",
-   "username": "publiquecafe",
-   "url": "https://t.me/publiquecafe",
-   "focus": "НОВЫЙ: кафе на Старой Басманной — listening sessions, лекции об искусстве, вино и коктейли",
-   "useful": true,
-   "why": "Канал площадки с полными лайнапами и телефоном брони; открытие сезона listening sessions 23.10 — формат точно под профиль"
-  },
-  {
-   "name": "Лаборатория «Луч»",
-   "username": "luchlab",
-   "url": "https://t.me/luchlab",
-   "focus": "НОВЫЙ: плёночная фотолаборатория на Малой Дмитровке — кинопоказы с разбором, эксперименты с плёнкой, мастер-классы",
-   "useful": true,
-   "why": "Камерное новое место для визуалов; кинопоказ Джармуша 23.10, афиша на luch.photo/afisha"
-  },
-  {
+   "id": "tg_smenamoscow",
+   "legal_status": "прочитаны (условия Telegram)",
    "name": "Клуб «СМЕНА»",
-   "username": "smenamoscow",
    "url": "https://t.me/smenamoscow",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/smenamoscow",
+   "categories": [
+    "Вечеринки"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/smenamoscow: постов на странице 15, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "smenamoscow",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 15,
+    "subscribers": "10.7K",
+    "channel_title": "СМЕНА",
+    "own_venue": "СМЕНА"
+   },
    "focus": "Клуб на Таганке — электронные вечеринки, техно-йога, Хэллоуин 31.10 (18+, регистрация)",
    "useful": true,
-   "why": "Из прошлого сбора: источник Хэллоуин-вечеринки 31.10 и строгого дресс-кода; публика 25–35 (в этот раз не перепроверялся)"
+   "why": "Из прошлого сбора: источник Хэллоуин-вечеринки 31.10 и строгого дресс-кода; публика 25–35 (в этот раз не перепроверялся)",
+   "legacy": {
+    "name": "Клуб «СМЕНА»",
+    "url": "https://t.me/smenamoscow"
+   },
+   "rank": 26,
+   "free_now": true
   },
   {
+   "id": "tg_moscowplus",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Москва+",
+   "url": "https://t.me/moscowplus",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/moscowplus",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/moscowplus: постов на странице 14, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "moscowplus",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 14,
+    "subscribers": "1.2M",
+    "channel_title": "Москва+"
+   },
+   "focus": "Городской канал Москвы: события и новости (смешанный контент)",
+   "rank": 27,
+   "free_now": true
+  },
+  {
+   "id": "tg_polytechmuseum",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Политехнический музей",
+   "url": "https://t.me/polytechmuseum",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/polytechmuseum",
+   "categories": [
+    "ИИ и технологии",
+    "Образование для управленцев",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/polytechmuseum: постов на странице 12, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "polytechmuseum",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 12,
+    "subscribers": "4.49K",
+    "channel_title": "Политехнический музей",
+    "own_venue": "Политехнический музей"
+   },
+   "focus": "Лекции и события Политехнического музея",
+   "rank": 28,
+   "free_now": true
+  },
+  {
+   "id": "tg_butmanclub",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Джаз-клуб Игоря Бутмана в Москве",
+   "url": "https://t.me/butmanclub",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/butmanclub",
+   "categories": [
+    "Джаз"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/butmanclub: постов на странице 14, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "butmanclub",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 14,
+    "subscribers": "1.71K",
+    "channel_title": "Джаз-клуб Игоря Бутмана в Москве",
+    "own_venue": "Джаз-клуб Игоря Бутмана"
+   },
+   "focus": "Афиша джаз-клуба Игоря Бутмана (Верхняя Радищевская, 21)",
+   "rank": 29,
+   "free_now": true
+  },
+  {
+   "id": "tg_moscowvolley",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Московская федерация волейбола",
+   "url": "https://t.me/moscowvolley",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/moscowvolley",
+   "categories": [
+    "Волейбол",
+    "Волейбол: матчи"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/moscowvolley: постов на странице 12, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "moscowvolley",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 12,
+    "subscribers": "5.01K",
+    "channel_title": "Московская федерация волейбола",
+    "own_venue": "Московская федерация волейбола"
+   },
+   "focus": "Анонсы турниров и матчей Московской федерации волейбола",
+   "rank": 30,
+   "free_now": true
+  },
+  {
+   "id": "tg_timeoutmoscow",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Time Out Москва",
+   "url": "https://t.me/timeoutmoscow",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/timeoutmoscow",
+   "categories": [
+    "Нетривиальное",
+    "Концерты",
+    "Театр",
+    "Современное искусство"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/timeoutmoscow: постов на странице 15, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "timeoutmoscow",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 15,
+    "subscribers": "3.03K",
+    "channel_title": "Time Out Москва"
+   },
+   "focus": "Редакционные подборки Time Out Москва",
+   "rank": 31,
+   "free_now": true
+  },
+  {
+   "id": "tg_kozlovclub",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Клуб Алексея Козлова",
+   "url": "https://t.me/kozlovclub",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/kozlovclub",
+   "categories": [
+    "Джаз"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/kozlovclub: постов на странице 8, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "kozlovclub",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 8,
+    "subscribers": "5.63K",
+    "channel_title": "Джаз-клуб Алексея Козлова",
+    "own_venue": "Клуб Алексея Козлова"
+   },
+   "focus": "Джаз-клуб на Маросейке: Главная сцена, Мансарда, ночные Friday/Saturday Night",
+   "useful": true,
+   "why": "Живой, ежедневные анонсы; на выходные в канале только Мариам Мерабова 25.10 — полная сетка на kozlovclub.ru",
+   "legacy": {
+    "name": "Клуб Алексея Козлова",
+    "url": "https://t.me/kozlovclub"
+   },
+   "rank": 32,
+   "free_now": true
+  },
+  {
+   "id": "tg_garagemca",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Музей «Гараж»",
+   "url": "https://t.me/garagemca",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/garagemca",
+   "categories": [
+    "Современное искусство",
+    "Своими руками"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/garagemca: постов на странице 8, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "garagemca",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 8,
+    "subscribers": "19.3K",
+    "channel_title": "Музей «Гараж»",
+    "own_venue": "Музей «Гараж»"
+   },
+   "focus": "Музей современного искусства: медиации, открытое хранение, мастер-классы, книжные дни в Доме Наркомфина",
+   "useful": true,
+   "why": "Живой, но на выходные только медиация на французском 24.10 16:30 (бесплатно по регистрации); сайт garagemca.org не открывается — даты брать из канала",
+   "legacy": {
+    "name": "Музей «Гараж»",
+    "url": "https://t.me/garagemca"
+   },
+   "rank": 33,
+   "free_now": true
+  },
+  {
+   "id": "tg_radio_greenhouse",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "РАДИО (greenhouse)",
+   "url": "https://t.me/radio_greenhouse",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/radio_greenhouse",
+   "categories": [
+    "Кино",
+    "Своими руками"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/radio_greenhouse: постов на странице 10, последний 2026-10-20"
+   },
+   "collector": "telegram",
+   "username": "radio_greenhouse",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-20",
+    "posts_on_page": 10,
+    "subscribers": "1.77K",
+    "channel_title": "Radio Greenhouse",
+    "own_venue": "Radio Greenhouse"
+   },
+   "focus": "Ресторан-оранжерея на Бауманской: кинопоказы, мастер-классы, сезонные коктейльные карты",
+   "useful": true,
+   "why": "Живой, эстетичное место; мастер-класс по резьбе тыкв 25.10 за 4 800 ₽ с билетами на ticketscloud",
+   "legacy": {
+    "name": "РАДИО (greenhouse)",
+    "url": "https://t.me/radio_greenhouse"
+   },
+   "rank": 34,
+   "free_now": true
+  },
+  {
+   "id": "tg_mosmuseum",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Музей Москвы",
+   "url": "https://t.me/mosmuseum",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/mosmuseum",
+   "categories": [
+    "Современное искусство",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/mosmuseum: постов на странице 11, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "mosmuseum",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 11,
+    "subscribers": "14.6K",
+    "channel_title": "Музей Москвы"
+   },
+   "focus": "Музей Москвы и филиалы (Лефортово, Садовое кольцо, Зеленоград): лекции, кураторские экскурсии, выставка «Учёные дамы»",
+   "useful": true,
+   "why": "Живой, недельный дайджест по дням с временем и ссылками; лекция о Дягилеве 24.10 и экскурсии по Лефортово — камерные и недорогие",
+   "legacy": {
+    "name": "Музей Москвы",
+    "url": "https://t.me/mosmuseum"
+   },
+   "rank": 35,
+   "free_now": true
+  },
+  {
+   "id": "tg_tsaritsyno_museum",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Музей-заповедник «Царицыно»",
+   "url": "https://t.me/tsaritsyno_museum",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/tsaritsyno_museum",
+   "categories": [
+    "Природа и усадьбы",
+    "Концерты"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/tsaritsyno_museum: постов на странице 8, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "tsaritsyno_museum",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 8,
+    "subscribers": "12.1K",
+    "channel_title": "Царицыно. Дворец в парке",
+    "own_venue": "Царицыно"
+   },
+   "focus": "Парк и дворец: выставки, клубы, фестивали, кофейни в парке",
+   "useful": true,
+   "why": "Живой; на 23–25.10 — молодёжный Chain Fest (студенческий, в дайджест не включён), новая выставка «КультНаук XVIII» с 22.10 — для прогулки по усадьбе",
+   "legacy": {
+    "name": "Музей-заповедник «Царицыно»",
+    "url": "https://t.me/tsaritsyno_museum"
+   },
+   "rank": 36,
+   "free_now": true
+  },
+  {
+   "id": "tg_club_dex",
+   "legal_status": "прочитаны (условия Telegram)",
    "name": "Клуб DEX",
-   "username": "club_dex",
    "url": "https://t.me/club_dex",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/club_dex",
+   "categories": [
+    "Вечеринки"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/club_dex: постов на странице 10, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "club_dex",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 10,
+    "subscribers": "14.2K",
+    "channel_title": "DEX",
+    "own_venue": "DEX"
+   },
    "focus": "Техно-клуб на Дубровке — Outline, Any Act Night 23.10, Dex[ter] 31.10",
    "useful": true,
-   "why": "Живой, подтверждён: хэллоуин DEX[TER] 31.10 с 23:00, от 2 500 ₽, лайнап из 20+ артистов, промокод HALLOWDEX; публика моложе 30"
+   "why": "Живой, подтверждён: хэллоуин DEX[TER] 31.10 с 23:00, от 2 500 ₽, лайнап из 20+ артистов, промокод HALLOWDEX; публика моложе 30",
+   "legacy": {
+    "name": "Клуб DEX",
+    "url": "https://t.me/club_dex"
+   },
+   "rank": 37,
+   "free_now": true
   },
   {
-   "name": "Marie Laveau",
-   "username": "",
-   "url": "https://marielaveau.bar/events",
-   "focus": "Новоорлеанский вуду-бар на Петровке: гадания, вечеринки, дегустации",
+   "id": "tg_kudago",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "KudaGo: Москва",
+   "url": "https://t.me/kudago",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/kudago",
+   "categories": [
+    "Нетривиальное",
+    "Концерты",
+    "Современное искусство",
+    "Вечеринки"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/kudago: постов на странице 10, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "kudago",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 10,
+    "subscribers": "93.4K",
+    "channel_title": "KudaGo: Москва"
+   },
+   "focus": "KudaGo Москва: афиша и интересные места",
+   "rank": 38,
+   "free_now": true
+  },
+  {
+   "id": "tg_dkrassvet",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "ДК Рассвет",
+   "url": "https://t.me/dkrassvet",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/dkrassvet",
+   "categories": [
+    "Концерты"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/dkrassvet: постов на странице 5, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "dkrassvet",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 5,
+    "subscribers": "6.9K",
+    "channel_title": "ДК Рассвет",
+    "own_venue": "ДК Рассвет"
+   },
+   "focus": "Афиша камерного зала на Пресне: неоклассика, французская музыка, современная академическая сцена, Rassvet Book Fair, благотворительные концерты",
    "useful": true,
-   "why": "Сайт с понедельной афишей; хэллоуин «в вуду-доме» 31.10 19:00–00:00, вечеринка 30.10, дегустация «Очень странное вино» 29.10"
+   "why": "Живой, но сайт dkrassvet.space/events полнее канала: Book Fair #12 24–25.10, ARM Percussion 26.10, «Грохот эпох» 29.10, концерт для «Дома с маяком» 31.10",
+   "legacy": {
+    "name": "ДК Рассвет",
+    "url": "https://t.me/dkrassvet"
+   },
+   "rank": 39,
+   "free_now": true
+  },
+  {
+   "id": "tg_svoepole",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Своё Поле",
+   "url": "https://t.me/svoepole",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/svoepole",
+   "categories": [
+    "Винные бары",
+    "Концерты",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/svoepole: постов на странице 7, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "svoepole",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 7,
+    "subscribers": "3.67K",
+    "channel_title": "Своё Поле",
+    "own_venue": "Своё Поле"
+   },
+   "focus": "Интеллектуальный лофт на Красном Октябре: лекции с вином, камерные концерты, фотосессии на крыше",
+   "useful": true,
+   "why": "Живой; на 23–25.10 пусто, но подтверждены лекция о Нурееве 26.10 и Haide Balkan Orchestra 30.10 — оба с вином в билете",
+   "legacy": {
+    "name": "Своё Поле",
+    "url": "https://t.me/svoepole"
+   },
+   "rank": 40,
+   "free_now": true
+  },
+  {
+   "id": "tg_kaia1k4",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "KAIA / 1к4",
+   "url": "https://t.me/kaia1k4",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/kaia1k4",
+   "categories": [
+    "Винные бары",
+    "Вечеринки"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/kaia1k4: постов на странице 5, последний 2026-10-16"
+   },
+   "collector": "telegram",
+   "username": "kaia1k4",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-16",
+    "posts_on_page": 5,
+    "subscribers": "707",
+    "channel_title": "KAIA",
+    "own_venue": "KAIA"
+   },
+   "focus": "Бистро и винный бар на Сретенке: listening sessions с винилом, диджеи по выходным, гастрономические акции",
+   "useful": true,
+   "why": "Живой, камерное винное место 30+; анонсы выходных выходят за 1–2 дня (на 23–25.10 пока только меню РРФ до 25.10) — проверять в пятницу",
+   "legacy": {
+    "name": "KAIA / 1к4",
+    "url": "https://t.me/kaia1k4"
+   },
+   "rank": 41,
+   "free_now": true
+  },
+  {
+   "id": "tg_engineerhistory",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Москва глазами инженера",
+   "url": "https://t.me/engineerhistory",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/engineerhistory",
+   "categories": [
+    "Нетривиальное",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/engineerhistory: постов на странице 7, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "engineerhistory",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 7,
+    "subscribers": "23.1K",
+    "channel_title": "Москва глазами инженера / Экскурсии в Москве"
+   },
+   "focus": "Архитектурные экскурсии и лекции: особняки, высотки, закрытые здания, дегустации",
+   "useful": true,
+   "why": "Превью канала бесполезно (без дат), но engineer-history.ru/events/YYYY-MM-DD — лучший источник «Нетривиального»: 20 экскурсий на 24.10 (Правда, дом-коммуна, высотка); страницы туров закрыты robots",
+   "legacy": {
+    "name": "Москва глазами инженера",
+    "url": "https://t.me/engineerhistory"
+   },
+   "rank": 42,
+   "free_now": true
+  },
+  {
+   "id": "tg_elena_krizhevskaya",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Елена Крижевская",
+   "url": "https://t.me/elena_krizhevskaya",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/elena_krizhevskaya",
+   "categories": [
+    "Природа и усадьбы",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/elena_krizhevskaya: постов на странице 4, последний 2026-10-23"
+   },
+   "collector": "telegram",
+   "username": "elena_krizhevskaya",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-23",
+    "posts_on_page": 4,
+    "subscribers": "47.6K",
+    "channel_title": "Непарадная Москва"
+   },
+   "focus": "Авторский канал об архитектуре и усадьбах Москвы: прогулки, лекции в высотке на Котельнической",
+   "useful": true,
+   "why": "Живой; лекция 25.10 16:30 о доходных домах в высотке подтверждена, билеты на Timepad",
+   "legacy": {
+    "name": "Елена Крижевская",
+    "url": "https://t.me/elena_krizhevskaya"
+   },
+   "rank": 43,
+   "free_now": true
+  },
+  {
+   "id": "tg_publiquecafe",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Кафе «Публика»",
+   "url": "https://t.me/publiquecafe",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/publiquecafe",
+   "categories": [
+    "Нетривиальное",
+    "Винные бары",
+    "Современное искусство"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/publiquecafe: постов на странице 5, последний 2026-10-22"
+   },
+   "collector": "telegram",
+   "username": "publiquecafe",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-22",
+    "posts_on_page": 5,
+    "subscribers": "12.5K",
+    "channel_title": "Публичные дела",
+    "own_venue": "Публичные дела"
+   },
+   "focus": "НОВЫЙ: кафе на Старой Басманной — listening sessions, лекции об искусстве, вино и коктейли",
+   "useful": true,
+   "why": "Канал площадки с полными лайнапами и телефоном брони; открытие сезона listening sessions 23.10 — формат точно под профиль",
+   "legacy": {
+    "name": "Кафе «Публика»",
+    "url": "https://t.me/publiquecafe"
+   },
+   "rank": 44,
+   "free_now": true
+  },
+  {
+   "id": "tg_luchlab",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Лаборатория «Луч»",
+   "url": "https://t.me/luchlab",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/luchlab",
+   "categories": [
+    "Кино",
+    "Современное искусство",
+    "Своими руками"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/luchlab: постов на странице 6, последний 2026-10-21"
+   },
+   "collector": "telegram",
+   "username": "luchlab",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-21",
+    "posts_on_page": 6,
+    "subscribers": "5.77K",
+    "channel_title": "Фотолаборатория Луч",
+    "own_venue": "Фотолаборатория Луч"
+   },
+   "focus": "НОВЫЙ: плёночная фотолаборатория на Малой Дмитровке — кинопоказы с разбором, эксперименты с плёнкой, мастер-классы",
+   "useful": true,
+   "why": "Камерное новое место для визуалов; кинопоказ Джармуша 23.10, афиша на luch.photo/afisha",
+   "legacy": {
+    "name": "Лаборатория «Луч»",
+    "url": "https://t.me/luchlab"
+   },
+   "rank": 45,
+   "free_now": true
+  },
+  {
+   "id": "tg_hedowins",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Гедонизм на минималках",
+   "url": "https://t.me/hedowins",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/hedowins",
+   "categories": [
+    "Винные бары"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/hedowins: постов на странице 7, последний 2026-10-22"
+   },
+   "collector": "telegram",
+   "username": "hedowins",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-22",
+    "posts_on_page": 7,
+    "subscribers": "2.35K",
+    "channel_title": "Гедонизм на минималках"
+   },
+   "focus": "Вино и дегустации, авторский канал (смешанный контент)",
+   "rank": 46,
+   "free_now": true
+  },
+  {
+   "id": "tg_bolshoi_theatre",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Большой театр России/The Bolshoi Theatre of Russia",
+   "url": "https://t.me/bolshoi_theatre",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/bolshoi_theatre",
+   "categories": [
+    "Театр",
+    "Концерты"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/bolshoi_theatre: постов на странице 5, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "bolshoi_theatre",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 5,
+    "subscribers": "74.3K",
+    "channel_title": "Большой театр России/The Bolshoi Theatre of Russia",
+    "own_venue": "Большой театр"
+   },
+   "focus": "Большой театр России: афиша и новости",
+   "rank": 47,
+   "free_now": true
+  },
+  {
+   "id": "russiarunning",
+   "legal_status": "не изучены",
+   "name": "RussiaRunning",
+   "url": "https://russiarunning.com/",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://reg.russiarunning.com/"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "...",
+   "rank": 48,
+   "free_now": true
+  },
+  {
+   "id": "s95",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "5 вёрст",
+   "url": "https://s95.ru/",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Природа и усадьбы",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /pages/rules (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://s95.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Еженедельные парковые забеги на 5 километров | S95",
+   "rank": 49,
+   "free_now": true
+  },
+  {
+   "id": "kinoafisha",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Киноафиша: концерты Москвы",
+   "url": "https://www.kinoafisha.info/russia/msk/concerts/",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Концерты"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://www.kinoafisha.info/about/terms/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.kinoafisha.info/sitemaps.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Афиша концертов Москвы на 2026-2027. Купить билеты онлайн",
+   "rank": 50,
+   "free_now": true
+  },
+  {
+   "id": "allai",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "AllAI Events",
+   "url": "https://allai.events/ru/events/russia",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "ИИ и технологии",
+    "Конференции и форумы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /ru/terms-of-use (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://allai.events/sitemap.xml",
+     "https://allai.events/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Russia AI Events 2026 – Conferences, Summits &amp; Workshops",
+   "rank": 51,
+   "free_now": true
+  },
+  {
+   "id": "postnauka",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "ПостНаука",
+   "url": "https://postnauka.org/",
+   "type": "edu",
+   "access": "rss",
+   "categories": [
+    "Образование для управленцев"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://postnauka.org/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS — статьи.",
+   "access_url": "https://postnauka.org/feed",
+   "page_title": "ПостНаука",
+   "rank": 52,
+   "free_now": true
+  },
+  {
+   "id": "arzamas",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Arzamas",
+   "url": "https://arzamas.academy/",
+   "type": "edu",
+   "access": "rss",
+   "categories": [
+    "Образование для управленцев"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://arzamas.academy/license (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://arzamas.academy/shared/sitemap.xml.gz"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS — материалы и курсы, не афиша.",
+   "access_url": "https://arzamas.academy/feed_v1.rss",
+   "page_title": "Arzamas",
+   "rank": 53,
+   "free_now": true
+  },
+  {
+   "id": "rusbase",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Rusbase",
+   "url": "https://rb.ru/",
+   "type": "media",
+   "access": "rss",
+   "categories": [
+    "ИИ и технологии",
+    "Предприниматели и клубы",
+    "Конференции и форумы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /news/minfin-obsuzhdaet-legalizaciyu-onlajn-kazino-v-rossii-eksperty-preduprezhdayut-tenevoj-rynok-polnostyu-ne-ischeznet/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://rb.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS — новости.",
+   "access_url": "https://rb.ru/feeds/news_ex/",
+   "page_title": "Russian Business — медиа о силе дерзости и денег.",
+   "rank": 54,
+   "free_now": true
+  },
+  {
+   "id": "timeout",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Time Out Москва",
+   "url": "https://www.timeout.ru/msk",
+   "type": "media",
+   "access": "rss",
+   "categories": [
+    "Концерты",
+    "Театр",
+    "Современное искусство",
+    "Вечеринки",
+    "Винные бары"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://timeout.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS — лента статей, не событий.",
+   "access_url": "https://www.timeout.ru/feed",
+   "page_title": "TimeOut Москва: Афиша, Развлечения, Мероприятия и Досуг",
+   "rank": 55,
+   "free_now": true
+  },
+  {
+   "id": "daily_afisha",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Афиша Daily",
+   "url": "https://daily.afisha.ru/",
+   "type": "media",
+   "access": "rss",
+   "categories": [
+    "Концерты",
+    "Театр",
+    "Современное искусство",
+    "Кино"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /news/114683-pskovskiy-sobor-iz-perechnya-vsemirnogo-naslediya-yunesko-peredali-v-polzovanie-rpc/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://daily.afisha.ru/sitemap-yandex-news.xml",
+     "https://daily.afisha.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS — лента статей, не событий.",
+   "access_url": "https://daily.afisha.ru/export/rss/google_newsstand/",
+   "page_title": "Афиша Daily - ваш гид по интересным событиям в России и мире",
+   "rank": 56,
+   "free_now": true
+  },
+  {
+   "id": "colta",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Colta",
+   "url": "https://www.colta.ru/",
+   "type": "media",
+   "access": "rss",
+   "categories": [
+    "Современное искусство",
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /legal (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.colta.ru/sitemap.xml.gz"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS — статьи.",
+   "access_url": "https://www.colta.ru/feed",
+   "page_title": "Colta.ru | Всё о культуре и духе времени",
+   "rank": 57,
+   "free_now": true
+  },
+  {
+   "id": "weekend_rambler",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Рамблер: афиша",
+   "url": "https://weekend.rambler.ru/",
+   "type": "media",
+   "access": "rss",
+   "categories": [
+    "Концерты",
+    "Театр",
+    "Кино"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://help.rambler.ru/legal/1430/?p=news&amp;utm_source=weekend_media&amp;utm_campaign=self_promo&amp;utm_medium=footer&amp;utm_content=help (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://weekend.rambler.ru/sitemap-index.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS — лента материалов, не событий.",
+   "access_url": "https://weekend.rambler.ru/rss/head/?limit=100",
+   "page_title": "Отдых и развлечения: все о кино, музыке, сериалах и событиях - Рамблер/развлечения и отдых",
+   "rank": 58,
+   "free_now": true
+  },
+  {
+   "id": "kinopoisk_afisha",
+   "legal_status": "не изучены",
+   "name": "Кинопоиск афиша",
+   "url": "https://www.kinopoisk.ru/afisha/city/1/",
+   "type": "media",
+   "access": "rss",
+   "categories": [
+    "Кино"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.kinopoisk.ru/sitemaps/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://www.kinopoisk.ru/lists/movies/movies-in-cinema/"
+   },
+   "collector": null,
+   "note": "RSS — новости кино; расписание сеансов только в HTML.",
+   "access_url": "https://www.kinopoisk.ru/news.rss",
+   "page_title": "Билеты в кино — Кинопоиск",
+   "rank": 59,
+   "free_now": true
+  },
+  {
+   "id": "tadviser",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "TAdviser: события",
+   "url": "https://www.tadviser.ru/",
+   "type": "media",
+   "access": "rss",
+   "categories": [
+    "ИИ и технологии",
+    "Конференции и форумы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.tadviser.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS новостей; календарь событий — в HTML.",
+   "access_url": "https://www.tadviser.ru/xml/tadviser.xml",
+   "page_title": "TAdviser - портал выбора технологий и поставщиков",
+   "rank": 60,
+   "free_now": true
+  },
+  {
+   "id": "t_j_wine",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Т—Ж: винные бары Москвы",
+   "url": "https://t-j.ru/list/moscow-winebars/",
+   "type": "media",
+   "access": "rss",
+   "categories": [
+    "Винные бары"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /kakimi-prilozheniiami-dlia-zaniatii-sportom-vy-polzuetes/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://t-j.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Подборка баров, не афиша.",
+   "access_url": "https://t-j.ru/feed/",
+   "page_title": "Топ-18 лучших винных баров Москвы: рейтинг 2026",
+   "rank": 61,
+   "free_now": true
+  },
+  {
+   "id": "moskino",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Москино (кинотеатры города)",
+   "url": "https://moskino.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Кино"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": "по адресу robots.txt отдаётся HTML, правил нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Главная страница | Москино",
+   "rank": 62,
+   "free_now": true
+  },
+  {
+   "id": "karo",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Кинотеатры Каро",
+   "url": "https://karofilm.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Кино"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": null,
+    "section": "не прочитан",
+    "note": "ConnectError"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "karofilm.ru – сеть кинотеатров КАРО",
+   "rank": 63,
+   "free_now": true
+  },
+  {
+   "id": "tretyakov",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Третьяковская галерея",
+   "url": "https://www.tretyakovgallery.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.tretyakovgallery.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Третьяковская галерея — главный музей национального искусства России",
+   "rank": 64,
+   "free_now": true
+  },
+  {
+   "id": "pushkin",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Пушкинский музей",
+   "url": "https://pushkinmuseum.art/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /visitors/excursions/simple_rules/index.php?lang=ru (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Пушкинский музей",
+   "rank": 65,
+   "free_now": true
+  },
+  {
+   "id": "garage",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Музей «Гараж»",
+   "url": "https://garagemca.org/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /agreement (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://garagemca.org/sitemap.xml.gz"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Музей современного искусства «Гараж»",
+   "legacy": {
+    "url": "https://ges-2.org/",
+    "collector": "venues",
+    "focus": "современное искусство, кино, лекции",
+    "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
+   },
+   "focus": "современное искусство, кино, лекции",
+   "rank": 66,
+   "free_now": true
+  },
+  {
+   "id": "ges2",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "ГЭС-2",
+   "url": "https://ges-2.org/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство",
+    "Кино"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /rules (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://ges-2.org/sitemap.xml.gz"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Дом культуры «ГЭС-2»",
+   "legacy": {
+    "url": "https://ges-2.org/",
+    "collector": "venues",
+    "focus": "современное искусство, кино, лекции",
+    "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
+   },
+   "focus": "современное искусство, кино, лекции",
+   "rank": 67,
+   "free_now": true
+  },
+  {
+   "id": "mmoma",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "ММОМА",
+   "url": "https://www.mmoma.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://mmoma.ru/"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "MMOMA | Московский музей современного искусства",
+   "legacy": {
+    "url": "https://ges-2.org/",
+    "collector": "venues",
+    "focus": "современное искусство, кино, лекции",
+    "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
+   },
+   "focus": "современное искусство, кино, лекции",
+   "rank": 68,
+   "free_now": true
+  },
+  {
+   "id": "mamm",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Мультимедиа Арт Музей",
+   "url": "https://www.mamm-mdf.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://mamm.art/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://mamm.art/"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Мультимедиа Арт Музей, Москва",
+   "legacy": {
+    "url": "https://ges-2.org/",
+    "collector": "venues",
+    "focus": "современное искусство, кино, лекции",
+    "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
+   },
+   "focus": "современное искусство, кино, лекции",
+   "rank": 69,
+   "free_now": true
+  },
+  {
+   "id": "zotov",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Центр Зотов",
+   "url": "https://centrezotov.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://centrezotov.ru/rules/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://centrezotov.ru/sitemap_index.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Центр Зотов: конструктивное пространство в Москве - официальный сайт",
+   "legacy": {
+    "url": "https://ges-2.org/",
+    "collector": "venues",
+    "focus": "современное искусство, кино, лекции",
+    "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
+   },
+   "focus": "современное искусство, кино, лекции",
+   "rank": 70,
+   "free_now": true
+  },
+  {
+   "id": "tsaritsyno",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Царицыно",
+   "url": "https://tsaritsyno-museum.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Природа и усадьбы",
+    "Концерты"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://tsaritsyno-museum.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Музей-заповедник «Царицыно» | Официальный сайт",
+   "rank": 71,
+   "free_now": true
+  },
+  {
+   "id": "vdnh",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "ВДНХ",
+   "url": "https://vdnh.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Природа и усадьбы",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://vdnh.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Официальный сайт ВДНХ",
+   "rank": 72,
+   "free_now": true
+  },
+  {
+   "id": "darwin",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Дарвиновский музей",
+   "url": "https://www.darwinmuseum.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /agreement (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "http://www.darwinmuseum.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Государственный Дарвиновский музей",
+   "rank": 73,
+   "free_now": true
+  },
+  {
+   "id": "planetarium",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Московский планетарий",
+   "url": "https://planetarium-moscow.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /visitors/rules (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://planetarium-moscow.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Московский Планетарий",
+   "rank": 74,
+   "free_now": true
+  },
+  {
+   "id": "jewish_museum",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Еврейский музей и ЦТ",
+   "url": "https://www.jewish-museum.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.jewish-museum.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Еврейский музей и центр толерантности — история, культура и традиции еврейского народа",
+   "rank": 75,
+   "free_now": true
+  },
+  {
+   "id": "muar",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Музей архитектуры (МУАР)",
+   "url": "https://muar.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://muar.ru:443/sitemap.xml",
+     "https://muar.ru:443/sitemapindex.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Государственный научно-исследовательский музей архитектуры имени А.В.Щусева",
+   "rank": 76,
+   "free_now": true
+  },
+  {
+   "id": "gim",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Государственный исторический музей",
+   "url": "https://shm.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /ispolzovanie-materialov-sayta/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://shm.ru/sitemap.xml",
+     "https://shm.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Государственный исторический музей в Москве на Красной площади - официальный сайт ГИМ",
+   "rank": 77,
+   "free_now": true
+  },
+  {
+   "id": "kreml",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Музеи Московского Кремля",
+   "url": "https://www.kreml.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /services/frequent-questions#ispolzovanie-materialov-saita (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://kreml.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://kreml.ru/ru"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "ММК(Музеи Московского Кремля)",
+   "rank": 78,
+   "free_now": true
+  },
+  {
+   "id": "ostankino",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Музей-усадьба Останкино",
+   "url": "https://ostankino-museum.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Усадьба Останкино | Главная",
+   "rank": 79,
+   "free_now": true
+  },
+  {
+   "id": "arkhangelskoe",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Усадьба Архангельское",
+   "url": "https://arkhangelskoe.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Природа и усадьбы",
+    "Концерты"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://arkhangelskoe.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Архангельское - музей-усадьба-санаторий.",
+   "rank": 80,
+   "free_now": true
+  },
+  {
+   "id": "kuskovo",
+   "legal_status": "не изучены",
+   "name": "Усадьба Кусково",
+   "url": "https://kuskovo.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://kuskovo.ru/sitemap.xml",
+     "https://kuskovo.ru/sitemap-images.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Государственный дворцово-парковый музей-заповедник «Останкино и Кусково»",
+   "rank": 81,
+   "free_now": true
+  },
+  {
+   "id": "artplay",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Артплей",
+   "url": "https://artplay.com/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство",
+    "Своими руками"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://www.artplay.com/terms-of-services (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.artplay.com/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://www.artplay.com/"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "ArtPlay | Media-based art for the digital era",
+   "rank": 82,
+   "free_now": true
+  },
+  {
+   "id": "electrotheatre",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Электротеатр Станиславский",
+   "url": "https://electrotheatre.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /return-rules/ (текст не изучен).",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "robots.txt нет: ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Электротеатр Станиславский",
+   "rank": 83,
+   "free_now": true
+  },
+  {
+   "id": "mxat",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "МХТ Чехова",
+   "url": "https://mxat.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://mxat.ru/sitemap.xml",
+     "http://mxat.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "МХТ им. А.П.Чехова: Официальный сайт",
+   "rank": 84,
+   "free_now": true
+  },
+  {
+   "id": "vakhtangov",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Театр Вахтангова",
+   "url": "https://vakhtangov.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Театр им. Евгения Вахтангова. Официальный сайт.",
+   "rank": 85,
+   "free_now": true
+  },
+  {
+   "id": "sovremennik",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Современник",
+   "url": "https://sovremennik.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Театр «Современник» • Официальный сайт. Купить билеты. Афиша",
+   "rank": 86,
+   "free_now": true
+  },
+  {
+   "id": "theatre_nations",
+   "legal_status": "не изучены",
+   "name": "Театр наций",
+   "url": "https://www.theatreofnations.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "robots.txt нет: ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Театр Наций",
+   "rank": 87,
+   "free_now": true
+  },
+  {
+   "id": "lenkom",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Ленком",
+   "url": "https://lenkom.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /rules/tickets-policy (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://lenkom.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Московский театр «Ленком Марка Захарова» — официальный сайт",
+   "rank": 88,
+   "free_now": true
+  },
+  {
+   "id": "mossoveta",
+   "legal_status": "не изучены",
+   "name": "Театр Моссовета",
+   "url": "https://mossoveta.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Театр Моссовета",
+   "rank": 89,
+   "free_now": true
+  },
+  {
+   "id": "sdart",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Школа драматического искусства",
+   "url": "https://sdart.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://sdart.ru/sitemap.xml",
+     "https://sdart.ru/sitemap-store.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "jsonld_events_on_page": 1,
+   "page_title": "ШДИ (Школа драматического искусства) — официальный сайт театра на Сретенке",
+   "rank": 90,
+   "free_now": true
+  },
+  {
+   "id": "mosconsv",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Московская консерватория",
+   "url": "https://www.mosconsv.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Концерты"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Московская консерватория",
+   "rank": 91,
+   "free_now": true
+  },
+  {
+   "id": "mmdm",
+   "legal_status": "не изучены",
+   "name": "Московский дом музыки",
+   "url": "https://mmdm.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Концерты",
+    "Джаз"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.mmdm.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://www.mmdm.ru/"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Московский международный Дом музыки",
+   "rank": 92,
+   "free_now": true
+  },
+  {
+   "id": "kremlinpalace",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Кремлёвский дворец",
+   "url": "https://www.kremlinpalace.org/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Концерты",
+    "Театр"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Государственный Кремлёвский Дворец",
+   "rank": 93,
+   "free_now": true
+  },
+  {
+   "id": "butman",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Клуб Бутмана",
+   "url": "https://butmanclub.ru/",
+   "type": "club",
+   "access": "html",
+   "categories": [
+    "Джаз"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Клубы Игоря Бутмана – Москва, Санкт-Петербург",
+   "legacy": {
+    "url": "https://butmanclub.ru/",
+    "collector": "jazz",
+    "focus": "джаз",
+    "group_name": "Клуб Бутмана · Эссе · Клуб Козлова"
+   },
+   "focus": "джаз",
+   "rank": 94,
+   "free_now": true
+  },
+  {
+   "id": "kozlov",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Клуб Козлова",
+   "url": "https://kozlovclub.ru/",
+   "type": "club",
+   "access": "html",
+   "categories": [
+    "Джаз"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://kozlovclub.ru/gazeta/sitemap.xml",
+     "https://kozlovclub.ru/sitemap_index.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "legacy": {
+    "url": "https://butmanclub.ru/",
+    "collector": "jazz",
+    "focus": "джаз",
+    "group_name": "Клуб Бутмана · Эссе · Клуб Козлова"
+   },
+   "focus": "джаз",
+   "rank": 95,
+   "free_now": true
+  },
+  {
+   "id": "marie",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Marie Laveau",
+   "url": "https://marielaveau.bar/events",
+   "type": "club",
+   "access": "html",
+   "categories": [
+    "Вечеринки",
+    "Винные бары",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://marielaveau.bar/sitemap.xml",
+     "https://marielaveau.bar/sitemap-store.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Сайт с понедельной афишей бара (из прототипа).",
+   "page_title": "Мероприятия",
+   "legacy": {
+    "name": "Marie Laveau"
+   },
+   "rank": 96,
+   "free_now": true
+  },
+  {
+   "id": "volley_ru",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Всероссийская федерация волейбола",
+   "url": "https://www.volley.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Волейбол: матчи",
+    "Волейбол"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: federation/documents/official-volleyball-rules/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://volley.ru/"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "ВФВ Официальный сайт ВФВ",
+   "rank": 97,
+   "free_now": true
+  },
+  {
+   "id": "cska",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "ПФК ЦСКА",
+   "url": "https://pfc-cska.com/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /ru/documents/polzovatelskoe-soglashenie/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://pfc-cska.com/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://pfc-cska.com/ru/"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "ПФК ЦСКА - официальный сайт",
+   "rank": 98,
+   "free_now": true
+  },
+  {
+   "id": "hse_events",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "НИУ ВШЭ: анонсы",
+   "url": "https://www.hse.ru/announcements/",
+   "type": "edu",
+   "access": "html",
+   "categories": [
+    "Образование для управленцев",
+    "Конференции и форумы",
+    "ИИ и технологии"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.hse.ru/ma/intelligence/sitemap_auto.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Все мероприятия ВШЭ – Национальный исследовательский университет «Высшая школа экономики»",
+   "legacy": {
+    "url": "https://www.skolkovo.ru/events/",
+    "collector": "business",
+    "focus": "лекции, конференции, сообщество",
+    "group_name": "Сколково · РАНХиГС · ВШЭ"
+   },
+   "focus": "лекции, конференции, сообщество",
+   "rank": 99,
+   "free_now": true
+  },
+  {
+   "id": "skolkovo",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Сколково: события",
+   "url": "https://www.skolkovo.ru/events/",
+   "type": "edu",
+   "access": "html",
+   "categories": [
+    "Управление и стратегия",
+    "Образование для управленцев",
+    "Конференции и форумы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.skolkovo.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Мероприятия СКОЛКОВО: календарь, регистрация",
+   "legacy": {
+    "url": "https://www.skolkovo.ru/events/",
+    "collector": "business",
+    "focus": "лекции, конференции, сообщество",
+    "group_name": "Сколково · РАНХиГС · ВШЭ"
+   },
+   "focus": "лекции, конференции, сообщество",
+   "rank": 100,
+   "free_now": true
+  },
+  {
+   "id": "yandex_events",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Яндекс: события для разработчиков",
+   "url": "https://events.yandex.ru/",
+   "type": "edu",
+   "access": "html",
+   "categories": [
+    "ИИ и технологии",
+    "Конференции и форумы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": "по адресу robots.txt отдаётся HTML, правил нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "События Яндекса",
+   "rank": 101,
+   "free_now": true
+  },
+  {
+   "id": "mostpp",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Московская ТПП",
+   "url": "https://mostpp.ru/",
+   "type": "edu",
+   "access": "html",
+   "categories": [
+    "Конференции и форумы",
+    "Предприниматели и клубы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /news/perconal/kak-rabotat-v-usloviyakh-defitsita-kadrov-i-ogranichennogo-byudzheta/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://mostpp.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "МТПП | Московская торгово-промышленная палата",
+   "rank": 102,
+   "free_now": true
+  },
+  {
+   "id": "opora",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "ОПОРА РОССИИ",
+   "url": "https://opora.ru/",
+   "type": "edu",
+   "access": "html",
+   "categories": [
+    "Предприниматели и клубы",
+    "Конференции и форумы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /np-opora/usloviya-vstupleniya/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://opora.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "«ОПОРА РОССИИ» поддержка и развитие малого и среднего предпринимательства в России",
+   "rank": 103,
+   "free_now": true
+  },
+  {
+   "id": "amr",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Ассоциация менеджеров",
+   "url": "https://amr.ru/",
+   "type": "edu",
+   "access": "html",
+   "categories": [
+    "Управление и стратегия",
+    "Образование для управленцев",
+    "Бизнес-завтраки"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://amr.ru/documents/oferta.pdf (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": "по адресу robots.txt отдаётся HTML, правил нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Ассоциация менеджеров: деловое объединение России",
+   "rank": 104,
+   "free_now": true
+  },
+  {
+   "id": "ods",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Open Data Science (ODS)",
+   "url": "https://ods.ai/events",
+   "type": "edu",
+   "access": "html",
+   "categories": [
+    "ИИ и технологии"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://storage.yandexcloud.net/ds-ods/files/data/docs/odsaifooter/20250312_Service_agreement_ODSai.pdf (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://ods.ai/sitemap.xml",
+     "https://ods.ai/server-sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Календарь мероприятий — Open Data Science",
+   "rank": 105,
+   "free_now": true
+  },
+  {
+   "id": "allevents",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "AllEvents Москва",
+   "url": "https://allevents.in/moscow",
+   "type": "aggregator",
+   "access": "rss",
+   "categories": [
+    "Вечеринки",
+    "Концерты"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "«moscow» в этом сервисе = Москва в штате Айдахо (США); без дат в RSS. Для Москвы не годится.",
+   "access_url": "https://allevents.in/moscow/RSS",
+   "jsonld_events_on_page": 20,
+   "page_title": "Explore Upcoming Events & Things To Do In Moscow, MC, Russia | AllEvents",
+   "rank": 106,
+   "free_now": true
+  },
+  {
+   "id": "moskvichmag",
+   "legal_status": "не изучены",
+   "name": "Москвич Mag",
+   "url": "https://moskvichmag.ru/",
+   "type": "media",
+   "access": "html",
+   "categories": [
+    "Нетривиальное",
+    "Природа и усадьбы",
+    "Современное искусство"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://moskvichmag.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Москвич Mag - О жизни в этом городе и не только",
+   "rank": 107,
+   "free_now": true
+  },
+  {
+   "id": "m24",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Москва 24",
+   "url": "https://www.m24.ru/",
+   "type": "media",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.m24.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Новости Москвы – Москва 24 – M24.RU",
+   "rank": 108,
+   "free_now": true
+  },
+  {
+   "id": "vm",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Вечерняя Москва",
+   "url": "https://vm.ru/",
+   "type": "media",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /pages/legal-information (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://vm.ru/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "«Вечерняя Москва» - ежедневная городская столичная газета",
+   "rank": 109,
+   "free_now": true
+  },
+  {
+   "id": "volleyball_ru",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Volleyball.ru",
+   "url": "https://www.volleyball.ru/",
+   "type": "media",
+   "access": "html",
+   "categories": [
+    "Волейбол",
+    "Волейбол: матчи"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "/sitemap.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Волейбол.ру",
+   "rank": 110,
+   "free_now": true
+  },
+  {
+   "id": "eventbrite",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Eventbrite Москва",
+   "url": "https://www.eventbrite.com/d/russia--moscow/events/",
+   "type": "aggregator",
+   "access": "json",
+   "categories": [
+    "Предприниматели и клубы",
+    "Образование для управленцев"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://www.eventbrite.com/l/legalterms/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.eventbrite.com/sitemap_xml/sitemap_index.xml",
+     "https://www.eventbrite.com/blog/sitemap_index.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "JSON-LD есть, но Москва представлена единичными событиями.",
+   "jsonld_events_on_page": 16,
+   "page_title": "Moscow, Russia Events, Calendar &amp; Tickets | Eventbrite",
+   "rank": 111,
+   "free_now": true
+  },
+  {
+   "id": "timepad",
+   "legal_status": "не перечитывали",
+   "name": "Timepad",
+   "url": "https://afisha.timepad.ru/moscow",
+   "type": "aggregator",
+   "access": "api",
+   "categories": [
+    "Образование для управленцев",
+    "Конференции и форумы",
+    "Предприниматели и клубы",
+    "Своими руками",
+    "ИИ и технологии",
+    "Управление и стратегия"
+   ],
+   "needs_key": "токен",
+   "legal": "Условия API Timepad не перечитывали; без токена API отвечает 403 «Запрос требует указание токена».",
+   "robots": {
+    "status": 403,
+    "section": "неизвестно",
+    "note": "robots.txt недоступен (защита хоста)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 403,
+    "ok": false,
+    "note": "api.timepad.ru → 403 «Запрос требует указание токена»; сайт afisha.timepad.ru → 403"
+   },
+   "collector": "timepad",
+   "note": "Токен получает владелец (dev.timepad.ru/api/oauth/).",
+   "access_url": "https://api.timepad.ru/v1/events",
+   "legacy": {
+    "name": "Timepad",
+    "url": "https://timepad.ru/",
+    "collector": "timepad",
+    "focus": "лекции, мастер-классы, нетворкинг"
+   },
+   "focus": "лекции, мастер-классы, нетворкинг",
+   "rank": 112,
+   "free_now": false
+  },
+  {
+   "id": "meetup",
+   "legal_status": "не изучены",
+   "name": "Meetup Москва",
+   "url": "https://www.meetup.com/find/?location=ru--Moscow",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Предприниматели и клубы",
+    "ИИ и технологии"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "закрыт",
+    "sitemaps": [
+     "https://www.meetup.com/pro-index-sitemap.xml",
+     "https://www.meetup.com/topics-index-sitemap.xml"
+    ],
+    "note": "нужный раздел закрыт для User-agent: * (проверка по RFC 9309 с wildcard)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "robots.txt закрывает нужный раздел.",
+   "jsonld_events_on_page": 11,
+   "page_title": "Find Events &amp; Groups | Meetup",
+   "rank": 113,
+   "free_now": false
+  },
+  {
+   "id": "kinomax",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Киномакс",
+   "url": "https://kinomax.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Кино"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": false,
+    "redirect_to": "https://kinomax.ru/tmgrdfrend/showcaptcha?cc=1&form-fb-hint=1.150&mt=FD5EB7914EAC4991FF68B9A56ED098993EF6F9D5A08F32CEF29"
+   },
+   "collector": null,
+   "note": "Редирект на проверку капчи (showcaptcha): защиту не обходим.",
+   "page_title": "Вы не робот?",
+   "rank": 114,
+   "free_now": false
+  },
+  {
+   "id": "vk_events",
+   "legal_status": "не изучены",
+   "name": "VK события",
+   "url": "https://vk.com/events",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Вечеринки",
+    "Концерты"
+   ],
+   "needs_key": "вход",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": []
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": false,
+    "redirect_to": "https://m.vk.com/login?to=aHR0cDovL3ZrLmNvbS9ldmVudHM-"
+   },
+   "collector": null,
+   "note": "Без входа перенаправляет на страницу авторизации.",
+   "page_title": "Sign in | VK",
+   "rank": 115,
+   "free_now": false
+  },
+  {
+   "id": "tg_thevillagemsk",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "The Village",
+   "url": "https://t.me/thevillagemsk",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/thevillagemsk",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/thevillagemsk: постов на странице 20, последний 2023-04-06"
+   },
+   "collector": null,
+   "username": "thevillagemsk",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": false,
+    "last_post": "2023-04-06",
+    "posts_on_page": 20,
+    "subscribers": "36.9K",
+    "channel_title": "The Village"
+   },
+   "focus": "The Village (канал не обновляется с 2023)",
+   "rank": 116,
+   "free_now": false
+  },
+  {
+   "id": "tg_mos_ru",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Mosru",
+   "url": "https://t.me/mos_ru",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/mos_ru",
+   "categories": [
+    "Нетривиальное",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/mos_ru: постов на странице 20, последний 2025-04-11"
+   },
+   "collector": null,
+   "username": "mos_ru",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": false,
+    "last_post": "2025-04-11",
+    "posts_on_page": 20,
+    "subscribers": "2.4K",
+    "channel_title": "Mosru"
+   },
+   "focus": "mos.ru (канал не обновляется с апреля 2025)",
+   "rank": 117,
+   "free_now": false
+  },
+  {
+   "id": "tg_skolkovo_events",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "SKOLKOVO EVENTS",
+   "url": "https://t.me/skolkovo_events",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/skolkovo_events",
+   "categories": [
+    "Управление и стратегия",
+    "Конференции и форумы"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/skolkovo_events: постов на странице 12, последний 2026-08-31"
+   },
+   "collector": null,
+   "username": "skolkovo_events",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": false,
+    "last_post": "2026-08-31",
+    "posts_on_page": 12,
+    "subscribers": "203",
+    "channel_title": "SKOLKOVO EVENTS"
+   },
+   "focus": "Площадка SKOLKOVO: события (канал давно не обновлялся)",
+   "rank": 118,
+   "free_now": false
+  },
+  {
+   "id": "tg_vdnh_ru",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "ВДНХ - Афиша | Скидки | Акции",
+   "url": "https://t.me/vdnh_ru",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/vdnh_ru",
+   "categories": [
+    "Природа и усадьбы",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/vdnh_ru: постов на странице 12, последний 2025-01-25"
+   },
+   "collector": null,
+   "username": "vdnh_ru",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": false,
+    "last_post": "2025-01-25",
+    "posts_on_page": 12,
+    "subscribers": "114",
+    "channel_title": "ВДНХ - Афиша | Скидки | Акции"
+   },
+   "focus": "ВДНХ (канал не обновляется с января 2025)",
+   "rank": 119,
+   "free_now": false
+  },
+  {
+   "id": "tg_mosgorsport",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "МосГорСпорт | Московский спорт",
+   "url": "https://t.me/mosgorsport",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/mosgorsport",
+   "categories": [
+    "Волейбол"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/mosgorsport: постов на странице 15, последний 2025-10-03"
+   },
+   "collector": null,
+   "username": "mosgorsport",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": false,
+    "last_post": "2025-10-03",
+    "posts_on_page": 15,
+    "subscribers": "7",
+    "channel_title": "МосГорСпорт | Московский спорт"
+   },
+   "focus": "Мосгорспорт (канал не обновляется с октября 2025)",
+   "rank": 120,
+   "free_now": false
+  },
+  {
+   "id": "tg_gogolcenter",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Гоголь-центр",
+   "url": "https://t.me/gogolcenter",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/gogolcenter",
+   "categories": [
+    "Театр"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/gogolcenter: постов на странице 7, последний 2025-01-12"
+   },
+   "collector": null,
+   "username": "gogolcenter",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": false,
+    "last_post": "2025-01-12",
+    "posts_on_page": 7,
+    "subscribers": "6.02K",
+    "channel_title": "Гоголь-центр"
+   },
+   "focus": "Гоголь-центр (канал не обновляется с 2025)",
+   "rank": 121,
+   "free_now": false
+  },
+  {
+   "id": "yafisha",
+   "legal_status": "прочитаны",
+   "name": "Яндекс Афиша",
+   "url": "https://afisha.yandex.ru/moscow",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Концерты",
+    "Театр",
+    "Современное искусство",
+    "Кино"
+   ],
+   "needs_key": "нет",
+   "legal": "Не изучены; сайт отвечает 403 (защита), обход запрещён правилами.",
+   "robots": {
+    "status": 403,
+    "section": "неизвестно",
+    "note": "robots.txt недоступен (защита хоста)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 403,
+    "ok": false
+   },
+   "collector": null,
+   "note": "Рейтинги и отзывы — отдельный вопрос прав.",
+   "page_title": "403",
+   "legacy": {
+    "name": "Яндекс Афиша",
+    "url": "https://afisha.yandex.ru/moscow",
+    "collector": "yandex_afisha",
+    "focus": "билеты, рейтинги и отзывы"
+   },
+   "focus": "билеты, рейтинги и отзывы",
+   "rank": 122,
+   "free_now": false
+  },
+  {
+   "id": "ticketland",
+   "legal_status": "не изучены",
+   "name": "Ticketland",
+   "url": "https://www.ticketland.ru/",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Театр",
+    "Концерты"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "sitemaps": [
+     "https://www.ticketland.ru/files/sitemap.www.xml"
+    ]
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 403,
+    "ok": false
+   },
+   "collector": null,
+   "note": "",
+   "rank": 123,
+   "free_now": false
+  },
+  {
+   "id": "gazgolder",
+   "legal_status": "не изучены",
+   "name": "Gazgolder",
+   "url": "https://gazgolder.com/",
+   "type": "club",
+   "access": "html",
+   "categories": [
+    "Вечеринки",
+    "Концерты"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "закрыт",
+    "sitemaps": [],
+    "note": "нужный раздел закрыт для User-agent: * (проверка по RFC 9309 с wildcard)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://gaz.team/"
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Добро пожаловать в творческое объединение GAZ",
+   "rank": 124,
+   "free_now": false
+  },
+  {
+   "id": "mosmuseum",
+   "legal_status": "не изучены",
+   "name": "Музей Москвы",
+   "url": "https://mosmuseum.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Современное искусство",
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 403,
+    "section": "неизвестно",
+    "note": "robots.txt недоступен (защита хоста)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 403,
+    "ok": false
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "DDoS-Guard",
+   "rank": 125,
+   "free_now": false
+  },
+  {
+   "id": "bolshoi",
+   "legal_status": "не изучены",
+   "name": "Большой театр",
+   "url": "https://bolshoi.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Театр",
+    "Концерты"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "robots.txt нет: ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 401,
+    "ok": false
+   },
+   "collector": null,
+   "note": "",
+   "rank": 126,
+   "free_now": false
+  },
+  {
+   "id": "winestreet",
+   "legal_status": "не изучены",
+   "name": "Wine Street",
+   "url": "https://winestreet.ru/",
+   "type": "club",
+   "access": "html",
+   "categories": [
+    "Винные бары"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 403,
+    "section": "неизвестно",
+    "note": "robots.txt недоступен (защита хоста)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 403,
+    "ok": false
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "403",
+   "rank": 127,
+   "free_now": false
+  },
+  {
+   "id": "moscowseasons",
+   "legal_status": "не изучены",
+   "name": "Moscow Seasons",
+   "url": "https://moscowseasons.com/",
+   "type": "media",
+   "access": "html",
+   "categories": [
+    "Нетривиальное",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 200,
+    "section": "закрыт",
+    "sitemaps": [],
+    "note": "нужный раздел закрыт для User-agent: * (проверка по RFC 9309 с wildcard)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://russpass.ru/moscowseasons"
+   },
+   "collector": null,
+   "note": "Перенаправляет на russpass.ru; robots.txt закрывает всё.",
+   "page_title": "Московские сезоны 2026 — ярмарки и интересные события в Москве на RUSSPASS",
+   "rank": 128,
+   "free_now": false
+  },
+  {
+   "id": "netology",
+   "legal_status": "не изучены",
+   "name": "Нетология",
+   "url": "https://netology.ru/",
+   "type": "edu",
+   "access": "html",
+   "categories": [
+    "ИИ и технологии",
+    "Образование для управленцев"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 403,
+    "section": "неизвестно",
+    "note": "robots.txt недоступен (защита хоста)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 403,
+    "ok": false
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "Доступ ограничен",
+   "rank": 129,
+   "free_now": false
+  },
+  {
+   "id": "tpprf",
+   "legal_status": "не изучены",
+   "name": "ТПП РФ: мероприятия",
+   "url": "https://tpprf.ru/ru/interactive/events/",
+   "type": "edu",
+   "access": "html",
+   "categories": [
+    "Конференции и форумы",
+    "Предприниматели и клубы"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены.",
+   "robots": {
+    "status": 403,
+    "section": "неизвестно",
+    "note": "robots.txt недоступен (защита хоста)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 403,
+    "ok": false
+   },
+   "collector": null,
+   "note": "",
+   "page_title": "403 Forbidden",
+   "rank": 130,
+   "free_now": false
+  },
+  {
+   "id": "kudago",
+   "legal_status": "прочитаны",
+   "name": "KudaGo Москва",
+   "url": "https://kudago.com/msk/",
+   "type": "aggregator",
+   "access": "api",
+   "categories": [
+    "Концерты",
+    "Театр",
+    "Современное искусство",
+    "Кино",
+    "Джаз",
+    "Вечеринки",
+    "Нетривиальное",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет",
+   "legal": "Лицензионное соглашение KudaGo (раздел в документации): индексируемая ссылка на карточку обязательна, передача данных третьим лицам на коммерческой основе запрещена, «kudago» нельзя использовать в названии продукта. robots.txt закрывает /public-api; учёт выключен решением владельца.",
+   "robots": {
+    "status": 200,
+    "section": "закрыт",
+    "sitemaps": [
+     "https://kudago.com/sitemap-pjnsvrd.xml"
+    ],
+    "note": "закрыт /public-api (сам сайт kudago.com/msk/ открыт); учёт robots для KudaGo выключен решением владельца"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 403,
+    "ok": false,
+    "note": "/public-api/ → 403 с этого хоста (проверено, в т.ч. страница events)"
+   },
+   "collector": "kudago",
+   "note": "С этого хоста /public-api/ отвечает 403 (блокировка по адресу), обход не делали: сбор с рабочего сервера.",
+   "access_url": "https://kudago.com/public-api/v1.4/events/",
+   "page_title": "Проверка безопасности",
+   "legacy": {
+    "name": "KudaGo Москва",
+    "url": "https://kudago.com/msk/",
+    "collector": "kudago",
+    "focus": "бесплатные и необычные события"
+   },
+   "focus": "бесплатные и необычные события",
+   "rank": 131,
+   "free_now": false
+  }
+ ],
+ "not_included": [
+  {
+   "id": "aiconf",
+   "name": "AiConf (конференция по ИИ)",
+   "url": "https://aiconf.ru/",
+   "type": "edu",
+   "reason": "хост не ответил из нашего окружения: ConnectTimeout: _ssl.c:1015: The handshake operation timed out",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "beachvolley",
+   "name": "Московская федерация волейбола",
+   "url": "https://mfv.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "bileter",
+   "name": "Билетер",
+   "url": "https://www.bileter.ru/",
+   "type": "aggregator",
+   "reason": "сайт обслуживает Санкт-Петербург (заголовок «…в СПб»)",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "clubfirst",
+   "name": "Клуб Первых",
+   "url": "https://clubfirst.ru/",
+   "type": "club",
+   "reason": "страница из 274 байт без содержимого, не подтверждено, что это клуб",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "comnews",
+   "name": "ComNews: календарь конференций",
+   "url": "https://www.comnews.ru/exhibition",
+   "type": "aggregator",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "crocus",
+   "name": "Crocus City Hall",
+   "url": "https://crocus-hall.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has ",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "culture_api",
+   "name": "Культура.РФ API",
+   "url": "https://opendata.mkrf.ru/",
+   "type": "aggregator",
+   "reason": "хост не ответил из нашего окружения: ConnectTimeout: _ssl.c:1015: The handshake operation timed out",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "culture_events",
+   "name": "Культура.РФ афиша",
+   "url": "https://www.culture.ru/events",
+   "type": "aggregator",
+   "reason": "хост не ответил из нашего окружения: ConnectTimeout: _ssl.c:1015: The handshake operation timed out",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "data_mos",
+   "name": "Портал открытых данных Москвы",
+   "url": "https://data.mos.ru/",
+   "type": "aggregator",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "esse",
+   "name": "Эссе Jazz Club",
+   "url": "https://essejazz.ru/",
+   "type": "club",
+   "reason": "на адресе заглушка хостинга («Ваш сайт!»), не сайт клуба",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "flacon",
+   "name": "Флакон",
+   "url": "https://flaconcreative.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "formula_kino",
+   "name": "Формула Кино",
+   "url": "https://www.formulakino.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectTimeout: _ssl.c:1015: The handshake operation timed out",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "glavclub",
+   "name": "Glav Club",
+   "url": "https://glavclub.com/",
+   "type": "club",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "gogolcenter",
+   "name": "Гоголь-центр",
+   "url": "https://gogolcenter.com/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "gorky_park",
+   "name": "Парк Горького",
+   "url": "https://park-gorkogo.com/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "habr_events",
+   "name": "Хабр Карьера: события",
+   "url": "https://career.habr.com/events",
+   "type": "aggregator",
+   "reason": "адрес отвечает 404",
+   "status": 404,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "hortus",
+   "name": "Аптекарский огород",
+   "url": "https://hortus.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "illuzion",
+   "name": "Иллюзион (кинотеатр)",
+   "url": "https://illuzion-cinema.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "intickets",
+   "name": "Intickets",
+   "url": "https://intickets.ru/",
+   "type": "aggregator",
+   "reason": "B2B-платформа продажи билетов, публичной афиши Москвы не проверили",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "izvestiahall",
+   "name": "Известия Hall",
+   "url": "https://izvestiahall.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "kolomenskoe",
+   "name": "Коломенское",
+   "url": "https://mgomz.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: RemoteProtocolError: peer closed connection without sending complete message body (receive",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "luzhniki",
+   "name": "Лужники",
+   "url": "https://www.luzhniki.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get lo",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "meloman",
+   "name": "Московская филармония",
+   "url": "https://meloman.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get lo",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "moskomsport",
+   "name": "Москомспорт",
+   "url": "https://www.mos.ru/moskomsport/",
+   "type": "venue",
+   "reason": "общая страница mos.ru без афиши",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "msu",
+   "name": "МГУ: события",
+   "url": "https://www.msu.ru/news/",
+   "type": "edu",
+   "reason": "страница без заголовка и афиши (редирект на новости)",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "mtuz",
+   "name": "МТЮЗ",
+   "url": "https://www.mtuz.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "mutabor",
+   "name": "Mutabor",
+   "url": "https://mutabor.club/",
+   "type": "club",
+   "reason": "адрес перенаправляет на другой сайт («АРМА», arma17.club): тот ли это клуб, не подтверждено",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "parter",
+   "name": "Parter.ru",
+   "url": "https://www.parter.ru/",
+   "type": "aggregator",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "polytech",
+   "name": "Политехнический музей",
+   "url": "https://polytech.museum/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "pryamaya_rech",
+   "name": "Прямая речь",
+   "url": "https://www.pryamaya-rech.ru/",
+   "type": "edu",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "qtickets",
+   "name": "Qtickets",
+   "url": "https://qtickets.ru/",
+   "type": "aggregator",
+   "reason": "B2B-платформа продажи билетов, публичной афиши не нашли",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "radario",
+   "name": "Radario",
+   "url": "https://radario.ru/",
+   "type": "aggregator",
+   "reason": "B2B-платформа продажи билетов (редирект на business.radario.ru), публичной афиши Москвы не нашли",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "ranepa",
+   "name": "РАНХиГС: события",
+   "url": "https://www.ranepa.ru/sobytiya/",
+   "type": "edu",
+   "reason": "адрес отвечает 404 (раздел событий переехал, новый не нашли)",
+   "status": 404,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "rbc_events",
+   "name": "РБК Мероприятия",
+   "url": "https://events.rbc.ru/",
+   "type": "edu",
+   "reason": "хост не ответил из нашего окружения: ConnectTimeout: _ssl.c:1015: The handshake operation timed out",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "strelka",
+   "name": "Стрелка (институт и бар)",
+   "url": "https://strelka.com/",
+   "type": "edu",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed cert",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "taganka",
+   "name": "Театр на Таганке",
+   "url": "https://www.taganka.theatre/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "ticketscloud",
+   "name": "Tickets Cloud",
+   "url": "https://ticketscloud.com/",
+   "type": "aggregator",
+   "reason": "B2B-платформа продажи билетов, публичной афиши не нашли",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "usadbajazz",
+   "name": "Усадьба Jazz",
+   "url": "https://usadbajazz.ru/",
+   "type": "club",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "vcdinamo",
+   "name": "ВК Динамо Москва",
+   "url": "https://vcdinamo.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "vcru_events",
+   "name": "vc.ru события",
+   "url": "https://vc.ru/events",
+   "type": "media",
+   "reason": "адрес отвечает 404",
+   "status": 404,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "village",
+   "name": "The Village Москва",
+   "url": "https://www.the-village.ru/",
+   "type": "media",
+   "reason": "502 Bad Gateway при двух попытках",
+   "status": 502,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "vinzavod",
+   "name": "Винзавод",
+   "url": "https://vinzavod.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: Hostname mismatc",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "winwin",
+   "name": "Клуб Win-Win",
+   "url": "https://win-win.club/",
+   "type": "club",
+   "reason": "адрес перенаправляет на чужой сайт (mycrowd.in), не подтверждено, что это клуб",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "wonderzine",
+   "name": "Wonderzine",
+   "url": "https://www.wonderzine.com/",
+   "type": "media",
+   "reason": "502/500 при двух попытках",
+   "status": 502,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "zaryadye",
+   "name": "Парк «Зарядье»",
+   "url": "https://zaryadyepark.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
+   "checked": "2026-10-24"
   }
  ]
 }

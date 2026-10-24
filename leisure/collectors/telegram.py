@@ -39,12 +39,13 @@ from urllib.parse import urlencode
 
 import httpx
 
-from leisure import settings  # noqa: F401  — при импорте подгружает .env, откуда берётся TELEGRAM_PREVIEW_ENABLED
+from leisure import (
+    settings,  # noqa: F401  — при импорте подгружает .env, откуда берётся TELEGRAM_PREVIEW_ENABLED
+)
 from leisure.normalize.schema import RawEvent
 
-from ._common import MSK, PageStats, RobotsGuard, parse_iso
+from ._common import MSK, PageStats, RobotsGuard, get_with_retries, parse_iso
 from ._common import clean_text as _clean
-from ._common import get_with_retries
 from .base import Collector, CollectorError, register
 
 log = logging.getLogger(__name__)
@@ -268,6 +269,7 @@ class TelegramCollector(Collector):
     def _collect_channels(self, client, guard, channels, keep_from: datetime, keep_to: datetime) -> list[RawEvent]:
         collected_at = self._clock().isoformat(timespec="seconds")
         out: list[RawEvent] = []
+        seen: set[str] = set()
         problems: list[str] = []
         first = True
         for ch in channels:
@@ -291,12 +293,18 @@ class TelegramCollector(Collector):
                     break
                 self.stats.pages += 1
                 posts, older = parse_preview(page)
-                if not posts:
-                    self.stats.skipped += 1
-                    log.warning("Telegram: у @%s на странице нет постов", name)
+                if not posts:  # на первой странице это беда (канал закрыт или удалён), на следующих — просто конец ленты
+                    if page_no == 1:
+                        self.stats.failed_pages += 1
+                        problems.append(f"@{name}: на странице превью нет постов")
+                        log.warning("Telegram: у @%s на странице превью нет постов", name)
                     break
                 for post in posts:
                     self.stats.fetched += 1
+                    if post.url in seen:  # лента сдвинулась между двумя загрузками страниц: один пост на стыке дважды
+                        self.stats.duplicates += 1
+                        continue
+                    seen.add(post.url)
                     raw = self._to_raw(post, ch, keep_from, keep_to, collected_at)
                     if raw is not None:
                         out.append(raw)

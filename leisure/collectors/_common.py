@@ -93,8 +93,8 @@ def get_with_retries(
 
 # ─── разбор HTML-страниц со встроенными данными (JSON-LD, __NEXT_DATA__) ───
 
-_LD_RE = re.compile(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.S | re.I)
-_NEXT_RE = re.compile(r'<script[^>]*id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>', re.S | re.I)
+_LD_RE = re.compile(r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.DOTALL | re.IGNORECASE)
+_NEXT_RE = re.compile(r'<script[^>]*id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>', re.DOTALL | re.IGNORECASE)
 
 
 def iter_jsonld(page: str) -> Iterator[dict]:
