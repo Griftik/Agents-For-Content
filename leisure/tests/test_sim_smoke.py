@@ -66,6 +66,8 @@ def test_sim_smoke_three_users_one_week(tmp_path):
     # персоны прошли онбординг через бота, подборки дошли и на них нажимали
     assert rep["onboarding"]["completed"] >= 1 and rep["digests"]["sent"] >= 1
     assert rep["decisions"]["total"] >= 1
+    assert rep["vs_previous"] and "closed_defects" in rep          # таблица «было → стало» против sim/baseline.json
+    assert rep["digests"]["no_interest_button"] is False           # на карточке есть «Интересно» (F6)
     # симуляция не должна ломать продукт: ни исключений в обработчиках, ни потерянных нажатий, ни нарушений формата Bot API
     run = json.loads((tmp_path / "out" / "run_data.json").read_text(encoding="utf-8"))
     assert run["handler_errors"] == 0

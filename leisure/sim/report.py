@@ -7,20 +7,19 @@ from __future__ import annotations
 
 import json
 import math
-import re
 import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
 
-STEP_ORDER = ["consent", "values", "weights", "interests", "company", "times", "budget", "aesthetics", "areas", "notes"]
+STEP_ORDER = ["consent", "values", "weights", "interests", "company", "times", "budget", "aesthetics", "notes"]
 STEP_RU = {
-    "consent": "согласие и политика", "values": "5 главных ценностей", "weights": "8 вопросов «важно / не очень»",
+    "consent": "согласие и политика", "values": "5 главных ценностей", "weights": "вопросы «важно / не очень» по остальным ценностям",
     "interests": "интересы (19 категорий)", "company": "с кем ходишь", "times": "любимое время", "budget": "бюджет",
-    "aesthetics": "эстетика", "areas": "район", "notes": "заметка текстом",
+    "aesthetics": "эстетика", "notes": "заметка текстом",
 }
-MIN_ONBOARDING_TAPS = 23   # /start, согласие, 5 ценностей, «Дальше», 8 × важно/не очень, «Готово», компания, «Дальше», бюджет, эстетика, район, «Пропустить»
+MIN_ONBOARDING_TAPS = 22   # /start, согласие, 5 ценностей, «Дальше», 8 × важно/не очень, «Готово», компания, «Дальше», бюджет, эстетика, «Пропустить»
 SEND_RATE = 25             # сообщений в секунду (worker/send.py)
-ANSWER_RU = {"values": "ценности", "company": "компания", "times": "время", "budget": "бюджет", "aesthetics": "эстетика", "areas": "район", "notes": "заметка"}
+ANSWER_RU = {"values": "ценности", "company": "компания", "times": "время", "budget": "бюджет", "aesthetics": "эстетика", "notes": "заметка"}
 STATUS_RU = {"ok": "достигнута", "fail": "не достигнута", "na": "нельзя оценить"}
 
 
@@ -369,298 +368,346 @@ def spec_table(m: dict, d: dict, weeks: int) -> list[dict]:
 
 
 # ───────────────────────── дефекты и юзабилити ─────────────────────────
-def build_defects(m: dict, d: dict) -> list[dict]:
+def load_baseline() -> dict | None:
+    p = Path(__file__).with_name("baseline.json")
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+# Дефекты прошлого прогона (report.json из коммита «Симулятор 50 пользователей: итоговая версия»): ключ проверки → прежний номер.
+PREV_ID = {"day": "Д1", "remind": "Д2", "resurrect": "Д3", "params": "Д4", "interest": "Д5", "links": "Д6", "double": "Д7", "rewrite": "Д8",
+           "opened": "Д9", "fault": "Д10", "blocked": "Д11", "stale": "Д12", "text": "Д13", "started": "Д14", "url": "Д15", "scale": "Д16",
+           "noback": "Д17", "localhost": "Д18"}
+# Порядок вывода открытых дефектов: по серьёзности, внутри — по важности.
+DEF_ORDER = ["day", "remind", "resurrect", "params", "interest", "links", "double", "rewrite", "opened", "repeat", "stale", "text", "fault",
+             "blocked", "persistent", "started", "url", "scale", "noback", "localhost"]
+USAB_ORDER = ["onboarding", "interests", "days", "noback", "interest", "skip", "thin", "time", "digest_btn", "text", "resent", "pre", "started"]
+
+
+def build_defects(m: dict, d: dict) -> tuple[list[dict], list[dict]]:
+    """(открытые, закрытые). Каждая проверка отвечает по данным прогона: дефект выводится только если он воспроизвёлся."""
     db = d["db"]
     dd, dr, pr = db.get("decision_day", {}), db.get("digest_rows", {}), db.get("plan_reminders", {})
-    out: list[dict] = []
+    fp = d["scenarios"].get("fault_probe", {})
+    base = load_baseline() or {}
+    base_cnt = {x["id"]: x.get("count") for x in base.get("defects", [])}
+    opened: list[dict] = []
+    closed: list[dict] = []
 
-    def add(did, sev, title, what, where, repro, count):
-        out.append({"id": did, "severity": sev, "title": title, "what": what, "where": where, "repro": repro, "count": count})
+    base_rem = sum(v.get("reminded", 0) for k, v in base.get("plan_reminders", {}).items() if isinstance(v, dict) and k in ("Пт", "Сб", "Вс", "Пн–Чт"))
+    base_going = sum(v.get("going", 0) for k, v in base.get("plan_reminders", {}).items() if isinstance(v, dict) and k in ("Пт", "Сб", "Вс", "Пн–Чт"))
 
-    if dd.get("mismatch"):
-        add("Д1", "высокая", "«Иду» сохраняется на другой день, чем показан на карточке",
-            [f"В БД день решения отличается от дня на карточке у {dd['mismatch']} из {dd['checked']} решений «иду» ({pct(ratio(dd['mismatch'], dd['checked']))}). "
-             f"В {dd.get('earlier', 0)} случаях день в БД раньше карточного: его выбирает `_default_day` (первая дата события не раньше «сегодня» на момент нажатия), "
-             f"карточка тут ни при чём; в {dd.get('later', 0)} — позже (нажали, когда дата карточки уже прошла). Повторное решение по тому же событию день не "
-             f"обновляет (старая дата остаётся) — таких среди расхождений {dd.get('redecided', 0)}.",
-             "Следствие: план строится на не тот день, «План на сегодня» приходит в день, которого человек не выбирал, или не приходит.",
-             *([f"Из лога: {dd['story']}"] if dd.get("story") else []),
-             *[f"Пример: {x}" for x in dd.get("examples", [])[:2]]],
-            "leisure/api/services.py:151-156 (_default_day), :170 (`d.day = day or d.day or _default_day(...)`); callback_data без дня — "
-            "leisure/bot/callbacks.py:10-11, leisure/bot/decisions.py:33-37",
-            "Онбординг во вторник; в первой подборке карточка «Воскресенье, 25 окт» у события с датами 24 и 25 октября; нажать «Иду»; "
-            "`SELECT day FROM decisions` → 2026-10-24 (суббота).", dd["mismatch"])
-    tot_going = sum(v["going"] for k, v in pr.items() if isinstance(v, dict))
-    if tot_going:
-        rem_ok = sum(v["reminded"] for k, v in pr.items() if isinstance(v, dict))
-        ask_ok = sum(v.get("asked_rating", 0) for k, v in pr.items() if isinstance(v, dict))
-        rows = "; ".join(f"{k}: {v['reminded']} из {v['going']}" for k, v in pr.items() if isinstance(v, dict))
-        fri = pr.get("Пт", {})
-        add("Д2", "высокая", "Напоминание и запрос оценки получает меньшинство «Иду»",
-            [f"Напоминание «План на сегодня» пришло по {rem_ok} из {tot_going} «иду» ({pct(ratio(rem_ok, tot_going))}); по дню события — {rows}. "
-             f"Запрос «Как прошло?» — по {ask_ok} из {tot_going} ({pct(ratio(ask_ok, tot_going))}).",
-             "Тост на «Иду» обещает «Напомню в субботу утром», но воркер собирает план только на субботу (`plan['days'][today]`): воскресенье, будни "
-             f"и «на горизонте» не напоминаются никогда, в пятницу напоминаний нет вовсе (из {fri.get('going', 0)} пятничных «иду» {fri.get('reminded', 0)} дошли только "
-             "в субботу — о событии, которое уже прошло: `plan()` переносит пропавшую пятницу на первый оставшийся день). Оценка спрашивается только за Пт–Вс "
-             f"прошедшего уикенда. Флаг plan_sent_at ставится при первом запуске: «Иду», нажатое в субботу после 09:00, осталось без напоминания — "
-             f"{pr.get('saturday_missed_decided_after_plan_job', 0)} случаев.",
-             ],
-            "leisure/worker/schedules.py:122-146 (job_plan_today: флаг :136, выборка дня :141), :149-170 (job_how_was_it: фильтр :161-162); "
-            "перенос дня в плане — leisure/api/services.py:282-283; тост — leisure/bot/decisions.py:21-22",
-            "Нажать «Иду» на событие в воскресенье (и больше ни на что) → в субботу 09:00 `job_plan_today` не шлёт ничего (text пустой), в воскресенье — тоже.", tot_going)
-    if fcount(d, "profile_resurrected") or any(s.get("profile_after_tap") for s in d["scenarios"].get("delete", [])):
-        n = fcount(d, "profile_resurrected")
-        add("Д3", "высокая", "После /delete нажатие на старую кнопку воссоздаёт профиль и решение без согласия",
-            [f"На старую карточку после «Да, удалить всё» нажали {sum(1 for s in d['scenarios'].get('delete', []) if 'stale_tap' in s)} чел.; у {n} из них «Иду» снова создаёт "
-             "строку profiles (consent_at и onboarded_at пусты) и строку decisions. Это данные, которые пользователь только что потребовал стереть "
-             "(отзыв согласия, 152-ФЗ).",
-             *[f"Лог: {x}" for x in fex(d, "profile_resurrected", 1)]],
-            "leisure/api/services.py:163 (`get_or_create_profile` внутри set_decision); вызов из leisure/bot/decisions.py:33-37",
-            "/delete → «Да, удалить всё» → нажать «Иду» на любой старой карточке → `SELECT * FROM profiles WHERE user_id=…`.", n)
-    if dr.get("rows_sent"):
-        add("Д4", "средняя", "Digest.opened и Digest.decisions_count никогда не заполняются",
-            [f"Из {dr['rows_sent']} отправленных дайджестов в БД opened=true у {dr['opened_true']}, decisions_count>0 у {dr['decisions_count_nonzero']}, "
-             f"хотя в decisions {db.get('decisions_with_activity', 0)} строк. Метрику «реакция» (п. 11) из БД посчитать нельзя; спека п. 6.7 хранит их ради конверсии."],
-            "leisure/db/models.py:189-190 — поля есть, записи в bot/, worker/, api/ нет (grep по opened|decisions_count)",
-            "Получить дайджест, нажать «Иду», `SELECT opened, decisions_count FROM digests`.", dr["rows_sent"])
-    if dr.get("items_differ"):
-        add("Д5", "средняя", "Среда 22:00 перезаписывает состав уже отправленного дайджеста",
-            [f"{dr['items_differ']} из {dr['rows_sent']} строк digests: Digest.items не совпадает с тем, что реально ушло (подборки, отправленные до среды 22:00: "
-             "первая после онбординга и после /reset). `job_build_digests` вызывает save_digest(sent=False), а он затирает items строки с sent_at. "
-             "Журнал «что показывали» врёт, а `recently_shown_ids` берёт его для исключения повторов"
-             + (f": {cnt(m['repeats']['violate_from_first'], 'событие', 'события', 'событий')} из подборки, отправленной до среды (первой или после /reset), вернулись "
-                 "в следующие три недели вопреки правилу «показанное без реакции не повторять»."
-                if m['repeats']['violate_from_first'] else "."),
-             *[f"Пример: {x}" for x in dr.get("examples", [])[:2]]],
-            "leisure/worker/schedules.py:78-81 → leisure/api/services.py:248-254 (:250 `row.items = …` без проверки sent_at)",
-            "Пройти онбординг во вторник (первая подборка помечена sent), дождаться среды 22:00, сравнить digests.items с сообщением.", dr["items_differ"])
-    if fcount(d, "error_toast"):
-        add("Д6", "средняя", "Двойной тап по кнопке карточки даёт «Что-то пошло не так» и ERROR в логе",
-            [f"{fcount(d, 'error_toast')} случаев у {fusers(d, 'error_toast')} людей: повторное нажатие той же кнопки → Telegram отвечает «message is not modified», "
-             "исключение попадает в общий except. Решение при этом уже записано, но человек видит ошибку.",
-             *[f"Лог: {x}" for x in fex(d, 'double_tap_error', 1)]],
-            "leisure/bot/decisions.py:70-75 (edit_reply_markup без разбора TelegramBadRequest), :86-88 (общий except → тост об ошибке)",
-            "Быстро нажать «Иду» дважды на одной карточке.", fcount(d, "error_toast"))
-    if fcount(d, "links_lost_after_click"):
-        add("Д7", "средняя", "После «Мимо» с карточки пропадают «Подробнее», «Другу», а на последней — «Весь дайджест»",
-            [f"{cnt(fcount(d, 'links_lost_after_click'), 'раз', 'раза', 'раз')} у {fusers(d, 'links_lost_after_click')} человек. Клавиатура пересобирается как `base[:1] + причины`, "
-             "а после выбора причины — `rows[:1]`: второй ряд (ссылки) и футер выбрасываются.",
-             *[f"Лог: {x}" for x in fex(d, 'links_lost_after_click', 2)]],
-            "leisure/bot/decisions.py:72 и :79", "Нажать «Мимо» на последней карточке подборки и выбрать причину.", fcount(d, "links_lost_after_click"))
-    if m["digests"]["no_interest_button"]:
-        add("Д8", "средняя", "На карточке нет кнопки «Интересно» (требование F6)",
-            [f"В {m['digests']['sent']} отправленных дайджестах ни одной карточки с «Интересно». Обработчик `d:i:` и вес 0.9 в обучении есть, кнопки нет: "
-             f"{cnt(m['decisions']['wanted_interest'], 'раз', 'раза', 'раз')} ({m['decisions']['wanted_interest_users']} чел.) персона хотела отметить «интересно» и не смогла."],
-            "leisure/worker/messages.py:66-73 (card_keyboard: Иду / Может быть / Мимо); спека п. 4 F6, п. 6.5",
-            "Получить любую подборку и посмотреть клавиатуру карточки.", m["decisions"]["wanted_interest"])
+    def was(key: str) -> str:
+        """«(было N)» — только там, где прежний count был размером дефекта (число случаев), а не знаменателем."""
+        if key == "remind":
+            return f" (было {base_rem} из {base_going})"
+        if key == "opened":
+            return f" (было opened=true у 0 из {base_cnt.get('Д9')})"
+        c = base_cnt.get(PREV_ID.get(key, ""))
+        return f" (было {c})" if c is not None and key in ("day", "interest", "links", "double", "rewrite", "url", "started", "text") else ""
+
+    def chk(key, sev, title, is_open, what, where, repro, count, closed_text=""):
+        if is_open:
+            opened.append({"key": key, "id": key, "severity": sev, "title": title, "what": what, "where": where, "repro": repro, "count": count})
+        else:
+            closed.append({"key": key, "prev": PREV_ID.get(key, ""), "title": title, "evidence": closed_text})
+
+    # Д1 день решения
+    chk("day", "высокая", "«Иду» сохраняется на другой день, чем показан на карточке", dd.get("mismatch", 0) > 0,
+        [f"В БД день решения отличается от дня на последней карточке события у {dd.get('mismatch', 0)} из {dd.get('checked', 0)} решений «иду» "
+         f"({pct(ratio(dd.get('mismatch', 0), dd.get('checked', 0)))}): раньше карточного — {dd.get('earlier', 0)}, позже — {dd.get('later', 0)}, "
+         f"из них повторных решений — {dd.get('redecided', 0)}.",
+         *([f"Из лога: {dd['story']}"] if dd.get("story") else []), *[f"Пример: {x}" for x in dd.get("examples", [])[:2]]],
+        "leisure/api/services.py (set_decision: выбор Decision.day), leisure/bot/callbacks.py (день в callback_data)",
+        "Нажать «Иду» на карточке многодневного события и сравнить `decisions.day` с днём на карточке.", dd.get("mismatch", 0),
+        f"расхождений дня 0 из {dd.get('checked', 0)} решений «иду»{was('day')}; день едет в callback_data карточки и обновляется при повторном решении")
+    # Д2 напоминания и оценки
+    groups = {k: v for k, v in pr.items() if isinstance(v, dict) and "going" in v and k in ("Пт", "Сб", "Вс", "Пн–Чт")}
+    going = sum(v["going"] for v in groups.values())
+    rem_ok = sum(v["reminded"] for v in groups.values())
+    ask_ok = sum(v.get("asked_rating", 0) for v in groups.values())
+    low = [k for k, v in groups.items() if v["going"] and v["reminded"] < 0.9 * v["going"]]
+    rows = "; ".join(f"{k} {v['reminded']}/{v['going']}" for k, v in groups.items())
+    sd = pr.get("same_day_after_9", {})
+    chk("remind", "высокая", "Напоминание и запрос оценки получает меньшинство «Иду»", bool(going and (low or ask_ok < 0.9 * going)),
+        [f"«План на сегодня» в день события пришёл по {rem_ok} из {going} «иду» ({pct(ratio(rem_ok, going))}): {rows}; «Как прошло?» на следующий день — "
+         f"по {ask_ok} ({pct(ratio(ask_ok, going))}). Хуже всего: {', '.join(low) or '—'}."],
+        "leisure/worker/schedules.py (job_plan_today, job_how_was_it), leisure/api/services.py (decisions_to_remind, decisions_to_ask)",
+        "Нажать «Иду» на событие в воскресенье и проверить, что в воскресенье 09:00 пришёл план.", going - rem_ok,
+        f"напоминание в день события: {rem_ok} из {going} ({rows}); «Как прошло?» на следующий день: {ask_ok} из {going}; «иду» на сегодня после 09:00 "
+        f"получили напоминание на часовом запуске: {sd.get('reminded', 0)} из {sd.get('going', 0)}; флаги на решении: "
+        f"reminded_at {pr.get('flags', {}).get('reminded_at', 0)}, feedback_asked_at {pr.get('flags', {}).get('feedback_asked_at', 0)} из {pr.get('flags', {}).get('total', 0)}{was('remind')}")
+    # Д3 воскрешение профиля
+    dels = [s for s in d["scenarios"].get("delete", []) if "stale_tap" in s]
+    res = [s for s in dels if s.get("profile_after_tap")]
+    chk("resurrect", "высокая", "После /delete нажатие на старую кнопку воссоздаёт профиль и решение без согласия", bool(fcount(d, "profile_resurrected") or res),
+        [f"Из {len(dels)} нажавших на старую карточку после «Да, удалить всё» у {len(res)} профиль и решение появились снова.",
+         *[f"Лог: {x}" for x in fex(d, "profile_resurrected", 1)]],
+        "leisure/api/services.py (set_decision), leisure/bot/decisions.py", "/delete → «Да, удалить всё» → «Иду» на старой карточке → SELECT * FROM profiles.", len(res),
+        f"нажатий на старые карточки после /delete: {len(dels)}, профилей воссоздано 0, ответ «{(dels[0]['stale_tap']['toast'] if dels else '—')}»{was('resurrect')}")
+    # Д4 параметры без влияния
     sens = d.get("sensitivity", {})
-    if sens.get("personas"):
-        ch = sens["changed"]
-        add("Д9", "средняя", "Ответы «с кем ходишь», «куда готов ехать», дети и заметка не влияют на подборку",
-            [f"Пересчёт подборки четверга для {sens['personas']} профилей при смене одного параметра: компания — {ch.get('company', 0)}, район — {ch.get('areas', 0)}, "
-             f"флаг «с детьми» — {ch.get('kids', 0)}, заметка — {ch.get('notes', 0)} профилей изменили состав. Контроль: бюджет — {ch.get('budget (контроль)', 0)}, "
-             f"эстетика — {ch.get('aesthetics (контроль)', 0)}, время — {ch.get('times (контроль)', 0)}.",
-             "Три экрана онбординга (компания, район, заметка) собирают ответ, который нигде не используется; «с детьми» не повышает события для детей."],
-            "leisure/core/scoring.py:73-140 читает только aesthetics, adults30, budget, times; params.company/areas/kids и Profile.notes не используются",
-            "Два профиля, отличающихся только company/areas, → `GET /api/digest/{id}/preview` даёт одинаковый состав.", sum(1 for k in ("company", "areas", "kids", "notes") if not ch.get(k)))
-    if fcount(d, "text_ignored") or fcount(d, "command_eaten_by_notes"):
-        add("Д10", "средняя", "Свободный текст и команды на шагах онбординга: молчание или «съеденная» команда",
-            [f"Текст на шаге кнопок — без ответа бота: {cnt(fcount(d, 'text_ignored'), 'раз', 'раза', 'раз')}. На шаге «заметка» команда /help принята за текст заметки "
-             f"и онбординг завершён: {cnt(fcount(d, 'command_eaten_by_notes'), 'раз', 'раза', 'раз')}. Fallback-обработчика нет, handled=False.",
-             *[f"Лог: {x}" for x in (fex(d, 'text_ignored', 1) + fex(d, 'command_eaten_by_notes', 1))]],
-            "leisure/bot/onboarding.py:211-213 (`@router.message(Onb.notes, F.text)` стоит раньше commands.router), "
-            "leisure/bot/main.py:21-26 (нет общего message-обработчика)", "На шаге «Напиши пару слов» отправить /help; на шаге ценностей — любой текст.",
-            fcount(d, "text_ignored") + fcount(d, "command_eaten_by_notes"))
-    if fcount(d, "stale_button_dead"):
-        add("Д11", "средняя", "После перезапуска бота старые кнопки онбординга молчат",
-            [f"{fcount(d, 'stale_button_dead')} из {len(d['scenarios'].get('fsm_restart', {}).get('after', []))} нажатий на старый экран после рестарта: "
-             "апдейт не обработан и на callback нет ответа (у человека бесконечный индикатор загрузки). До рестарта те же кнопки работали. "
-             "FSM — MemoryStorage, фильтры `Onb.*` не пускают callback без состояния, общего обработчика с `cb.answer()` нет.",
-             *[f"Лог: {x}" for x in fex(d, 'stale_button_dead', 1)]],
-            "leisure/bot/main.py:22 (MemoryStorage), leisure/bot/onboarding.py:77,127,139,… (callback-обработчики с состоянием)",
-            "Начать онбординг, перезапустить `python -m leisure.bot.main`, нажать кнопку на старом экране.", fcount(d, "stale_button_dead"))
-    bl = db.get("blocked", [])
-    if bl:
-        add("Д12", "средняя", "Заблокировавший бота остаётся активным и получает попытки отправки",
-            [f"{len(bl)} заблокировавших; профилей с active=true после блокировки: {db.get('profiles_active_after_block', 0)}. Ни одно сообщение не ушло → "
-             "дайджест не помечается отправленным и собирается заново на каждом часовом запуске до воскресенья (до ~77 раз за уикенд на человека). "
-             "Внутри одной попытки `send_with_bot` после Forbidden переходит к следующему сообщению подборки и снова получает отказ (6–7 отклонённых вызовов на попытку). "
-             f"В прогоне при 3–4 запусках в неделю: {sum(b.get('failed_digest_attempts', 0) for b in bl)} отклонённых попыток отправить подборку, "
-             f"{sum(b['failed_sends'] for b in bl)} отклонённых вызовов."],
-            "leisure/worker/send.py:36-38 (только лог), leisure/worker/schedules.py:112-115 (`if not send_sync(...): return False`)",
-            "Заблокировать бота и посмотреть логи воркера в четверг: пересборка каждый час.", len(bl))
-    if m["digests"]["already_started"]:
-        add("Д13", "низкая", "Подборка пришла с событиями, которые уже начались",
-            [f"{cnt(m['digests']['already_started'], 'карточка', 'карточки', 'карточек')}: подборка при онбординге/по /digest строится по дате, без учёта времени суток; в воскресенье вечером "
-             "приходят события «Воскресенье, …11:00».", *[f"Лог: {x}" for x in fex(d, 'card_already_started', 2)]],
-            "leisure/bot/onboarding.py:251 и leisure/bot/commands.py:30 (`local_today` → date); leisure/api/services.py:48-51 (trim_past по дате)",
-            "Пройти онбординг в воскресенье вечером.", m["digests"]["already_started"])
-    v = d.get("violations", {}).get("button_url_long")
-    if v:
-        add("Д14", "низкая", "URL кнопки «Другу» длиннее 2 000 символов",
-            [f"{cnt(v['count'], 'карточка', 'карточки', 'карточек')} с URL > 2048 символов (до 2,5 тыс.: в t.me/share/url кириллица кодируется по 6 символов на букву). "
-             "Лимит Telegram на URL кнопки в документации не указан, на практике — 2048; это риск BUTTON_URL_INVALID, который уронит всю карточку. "
-             "Нужно проверить на живом боте."],
-            "leisure/worker/messages.py:71-72 + leisure/core/links.py:83-86", "Собрать подборку, посмотреть длину url кнопки «Другу».", v["count"])
+    ch = sens.get("changed", {})
+    names = {"company": "компания", "kids": "«с детьми»", "notes": "заметка"}
+    zero = [k for k in names if sens.get("personas") and not ch.get(k, 0)]
+    ctl = (f"Контроль: бюджет — {ch.get('budget (контроль)', 0)}, эстетика — {ch.get('aesthetics (контроль)', 0)}, время — {ch.get('times (контроль)', 0)}")
+    chk("params", "средняя", "Не влияют на подборку: " + ", ".join(names[k] for k in zero), bool(zero),
+        [f"Пересчёт подборки четверга для {sens.get('personas', 0)} профилей при смене одного параметра: " +
+         ", ".join(f"{names[k]} — {ch.get(k, 0)}" for k in names) + f" профилей изменили состав. {ctl}.",
+         "Ответ сохраняется, но нигде не используется (шаг «район» из онбординга убран)."],
+        "leisure/core/scoring.py читает aesthetics, adults30, budget, times и правила «с детьми» из scoring.yaml; Profile.notes не используется",
+        "Два профиля, отличающихся только заметкой, → `GET /api/digest/{id}/preview` даёт одинаковый состав.", len(zero),
+        "компания и «с детьми» меняют состав: " + ", ".join(f"{names[k]} — {ch.get(k, 0)}" for k in names) + f" из {sens.get('personas', 0)}; шаг «район» убран из онбординга")
+    # Д5 кнопка «Интересно»
+    n_int = m["decisions"]["by_status"].get("интересно", 0)
+    chk("interest", "средняя", "На карточке нет кнопки «Интересно» (требование F6)", bool(m["digests"]["no_interest_button"]),
+        [f"В {m['digests']['sent']} подборках ни одной карточки с «Интересно»: {m['decisions']['wanted_interest']} попыток нажать."],
+        "leisure/worker/messages.py (card_keyboard)", "Получить подборку и посмотреть клавиатуру карточки.", m["decisions"]["wanted_interest"],
+        f"кнопка есть на карточках; нажата {n_int} раз ({pct(ratio(n_int, m['decisions']['total']))} решений), попыток без кнопки {m['decisions']['wanted_interest']}{was('interest')}")
+    # Д6 ссылки после «Мимо»
+    chk("links", "средняя", "После «Мимо» с карточки пропадают «Подробнее», «Другу», «Весь дайджест»", fcount(d, "links_lost_after_click") > 0,
+        [f"{cnt(fcount(d, 'links_lost_after_click'), 'раз', 'раза', 'раз')} у {fusers(d, 'links_lost_after_click')} человек.",
+         *[f"Лог: {x}" for x in fex(d, "links_lost_after_click", 2)]], "leisure/bot/decisions.py (card_rows)",
+        "Нажать «Мимо» на последней карточке и выбрать причину.", fcount(d, "links_lost_after_click"),
+        f"после «Мимо» ссылок потеряно 0 из {m['decisions']['skip_total']} отказов{was('links')}")
+    # Д7 двойной тап
+    chk("double", "средняя", "Двойной тап по кнопке карточки даёт «Что-то пошло не так» и ERROR в логе", fcount(d, "error_toast") > 0,
+        [f"{fcount(d, 'error_toast')} случаев у {fusers(d, 'error_toast')} человек.", *[f"Лог: {x}" for x in fex(d, "double_tap_error", 1)]],
+        "leisure/bot/decisions.py (_edit_markup)", "Быстро нажать «Иду» дважды.", fcount(d, "error_toast"),
+        f"двойных тапов {fcount(d, 'double_tap_ok') + fcount(d, 'double_tap_error')}, ошибок 0, ERROR в логе 0{was('double')}")
+    # Д8 среда затирает items
+    chk("rewrite", "средняя", "Среда 22:00 перезаписывает состав уже отправленного дайджеста", dr.get("items_differ", 0) > 0,
+        [f"{dr.get('items_differ', 0)} из {dr.get('rows_sent', 0)} строк digests: Digest.items не совпадает с тем, что реально ушло. "
+         f"Следствие: {m['repeats']['violate_from_first']} повторов вопреки правилу «показанное без реакции не повторять».",
+         *[f"Пример: {x}" for x in dr.get("examples", [])[:2]]],
+        "leisure/worker/schedules.py (job_build_digests) → leisure/api/services.py (save_digest)",
+        "Онбординг во вторник, среда 22:00, сравнить digests.items с сообщением.", dr.get("items_differ", 0),
+        f"расхождений 0 из {dr.get('rows_sent', 0)} строк digests{was('rewrite')}")
+    # Д9 opened/decisions_count
+    dec_n = db.get("decisions_with_activity", 0)
+    bad9 = dr.get("rows_sent", 0) and dec_n and dr.get("opened_true", 0) == 0 and dr.get("decisions_count_nonzero", 0) == 0
+    chk("opened", "средняя", "Digest.opened и Digest.decisions_count никогда не заполняются", bool(bad9),
+        [f"Из {dr.get('rows_sent', 0)} дайджестов opened=true у 0, decisions_count>0 у 0, хотя в decisions {dec_n} строк."],
+        "leisure/db/models.py (Digest.opened, decisions_count)", "Нажать «Иду», SELECT opened, decisions_count FROM digests.", dr.get("rows_sent", 0),
+        f"opened=true у {dr.get('opened_true', 0)} из {dr.get('rows_sent', 0)} дайджестов, decisions_count>0 у {dr.get('decisions_count_nonzero', 0)}, "
+        f"сумма decisions_count {dr.get('decisions_count_sum', 0)} при {dec_n} решениях{was('opened')}")
+    # повторы вопреки правилам (не из затёртых подборок)
     rp = m["repeats"]
-    if rp["violate_no_reaction_3"] - rp["violate_from_first"] > 0 or rp["violate_skip"]:
-        add("Д15", "средняя", "Событие вернулось в подборку вопреки правилам исключения (п. 8)",
-            [f"Показано повторно в течение 3 дайджестов без реакции (не из подборок, затёртых средой, см. Д5): {rp['violate_no_reaction_3'] - rp['violate_from_first']}; "
-             f"после «мимо»/«интересно»: {rp['violate_skip']}."],
-            "leisure/api/services.py:198-206 (recently_shown_ids), leisure/core/recommend.py:105", "См. REPORT, раздел повторов.", rp["violate_no_reaction_3"] + rp["violate_skip"])
-    fp = d["scenarios"].get("fault_probe", {}).get("server_error")
-    if fp and fp["lost"]:
-        add("Д19", "средняя", "Временный сбой Telegram (5xx, сеть) навсегда теряет карточку подборки",
-            [f"Проба: из трёх сообщений второе получило 502 Bad Gateway — `send_with_bot` вернул {fp['returned']}, доставлено {fp['delivered']}, потеряно {fp['lost']}: "
-             "повтора нет (повторяется только 429), а `job_send_digests` считает рассылку успешной, раз ушло хотя бы одно сообщение, и помечает подборку отправленной — "
-             "недостающая карточка не будет дослана. 429 при этом обрабатывается (проба с TelegramRetryAfter: доставлено "
-             f"{len(d['scenarios'].get('fault_probe', {}).get('retry_after', {}).get('delivered', []))} из 3)."],
-            "leisure/worker/send.py:39-41 (`except Exception: log.exception; break`), leisure/worker/schedules.py:113-115 (`if not send_sync(...)` — только «ни одного»)",
-            "Подставить в aiogram-сессию ошибку 502 на второй вызов sendMessage в рассылке (см. Sim.fault_probe в leisure/sim/runner.py).", 1)
+    extra = rp["violate_no_reaction_3"] - rp["violate_from_first"] + rp["violate_skip"]
+    chk("repeat", "средняя", "Событие вернулось в подборку вопреки правилам исключения (п. 8)", extra > 0,
+        [f"Повторно показано в течение 3 уикендов без реакции: {rp['violate_no_reaction_3'] - rp['violate_from_first']}; после «мимо»/«интересно»: {rp['violate_skip']}."],
+        "leisure/api/services.py (recently_shown_ids), leisure/core/recommend.py", "См. раздел повторов.", extra,
+        f"нарушений правила исключения {rp['violate_no_reaction_3'] + rp['violate_skip']} из {rp['repeated']} повторов")
+    # Д12 старые кнопки после рестарта
+    after = d["scenarios"].get("fsm_restart", {}).get("after", [])
+    chk("stale", "средняя", "После перезапуска бота старые кнопки онбординга молчат", fcount(d, "stale_button_dead") > 0,
+        [f"{fcount(d, 'stale_button_dead')} из {len(after)} нажатий на старый экран после рестарта остались без ответа.", *[f"Лог: {x}" for x in fex(d, "stale_button_dead", 1)]],
+        "leisure/bot/onboarding.py (обработчики с состоянием)", "Начать онбординг, перезапустить бота, нажать кнопку на старом экране.", fcount(d, "stale_button_dead"),
+        f"{sum(1 for x in after if x.get('answered') and x.get('reply'))} из {len(after)} нажатий после рестарта получили ответ «{(after[0]['reply'] if after and after[0].get('reply') else '—')}» "
+        f"и снятый индикатор загрузки{was('stale')}")
+    # Д13 текст и команды
+    chk("text", "средняя", "Свободный текст и команды на шагах онбординга: молчание или «съеденная» команда", bool(fcount(d, "text_ignored") or fcount(d, "command_eaten_by_notes")),
+        [f"Текст без ответа: {fcount(d, 'text_ignored')}, команда принята за заметку: {fcount(d, 'command_eaten_by_notes')}."],
+        "leisure/bot/onboarding.py", "На шаге ценностей написать текст; на шаге заметки — /help.", fcount(d, "text_ignored") + fcount(d, "command_eaten_by_notes"),
+        f"текст на шагах с кнопками получил подсказку {fcount(d, 'text_answered')} раз из {fcount(d, 'text_answered') + fcount(d, 'text_ignored')}, "
+        f"/help на шаге заметки отработал как команда {fcount(d, 'command_in_notes_ok')} из {fcount(d, 'command_in_notes_ok') + fcount(d, 'command_eaten_by_notes')}{was('text')}")
+    # Д10 сбои доставки
+    once, pers, ra, bl = fp.get("server_error_once", {}), fp.get("server_error_persistent", {}), fp.get("retry_after", {}), fp.get("blocked", {})
+    chk("fault", "средняя", "Временный сбой Telegram (5xx, сеть) теряет карточку подборки", bool(once.get("lost")),
+        [f"Проба: 502 на втором из трёх сообщений — доставлено {once.get('delivered')}, потеряно {once.get('lost')}."], "leisure/worker/send.py (send_with_bot)",
+        "См. Sim.fault_probe.", 1,
+        f"разовый 502 → повтор, доставлено {len(once.get('delivered', []))} из 3; 429 → доставлено {len(ra.get('delivered', []))} из 3; результат — SendResult{was('fault')}")
+    chk("persistent", "низкая", "Карточка, не доставленная после всех повторов, не досылается", bool(pers.get("lost")),
+        [f"Проба: четыре 502 подряд на втором сообщении (три повтора) — undelivered {pers.get('undelivered')}, доставлено {pers.get('delivered')}; "
+         "`job_send_digests` считает подборку отправленной (ушли заголовок и карточка) и пишет только WARNING — недостающая карточка не будет дослана."],
+        "leisure/worker/send.py (RETRY_DELAYS), leisure/worker/schedules.py (job_send_digests: ok = …)", "См. Sim.fault_probe.", 1, "")
+    # Д11 блокировка
+    blk = db.get("blocked", [])
+    chk("blocked", "средняя", "Заблокировавший бота остаётся активным и получает попытки отправки", db.get("profiles_active_after_block", 0) > 0,
+        [f"{len(blk)} заблокировавших; активных после блокировки: {db.get('profiles_active_after_block', 0)}; отклонённых вызовов {sum(b['failed_sends'] for b in blk)}."],
+        "leisure/worker/send.py, leisure/worker/schedules.py", "Заблокировать бота и посмотреть логи воркера.", len(blk),
+        f"заблокировавших {len(blk)}, рассылки выключены у {len(blk) - db.get('profiles_active_after_block', 0)}; отклонённых вызовов {sum(b['failed_sends'] for b in blk)}; "
+        f"проба: после Forbidden остальные сообщения не отправляются (blocked={bl.get('blocked')}){was('blocked')}")
+    # Д14 начавшиеся события
+    chk("started", "низкая", "Подборка пришла с событиями, которые уже начались", m["digests"]["already_started"] > 0,
+        [f"{cnt(m['digests']['already_started'], 'карточка', 'карточки', 'карточек')}.", *[f"Лог: {x}" for x in fex(d, "card_already_started", 2)]],
+        "leisure/bot/onboarding.py, leisure/bot/commands.py, leisure/api/services.py", "Пройти онбординг в воскресенье вечером.", m["digests"]["already_started"],
+        f"карточек с начавшимися событиями 0 при {sum(1 for p in d['personas'] if p['completed'] and p.get('onboard_offset_h', 0) >= 96)} онбордингах в сб–вс{was('started')}")
+    # Д15 длинные URL
+    v = d.get("violations", {}).get("button_url_long")
+    chk("url", "низкая", "URL кнопок длиннее 2 048 символов", bool(v),
+        [f"{cnt(v['count'], 'карточка', 'карточки', 'карточек') if v else ''} с URL > 2048 символов."], "leisure/core/links.py", "Собрать подборку, посмотреть длину url «Другу».",
+        v["count"] if v else 0, f"URL кнопок длиннее 2048 символов: 0{was('url')}")
+    # Д16 масштаб
     sc = m["scale"]
-    if sc["minutes_for_10k"] and sc["minutes_for_10k"] > 15:
-        add("Д16", "низкая", "Отправка дайджеста 10 000 пользователям не укладывается в 15 минут (п. 10)",
-            [f"В среднем {num(sc['avg_messages_per_digest'], 1)} сообщений на подборку (заголовок + карточки), лимит отправки {SEND_RATE} сообщ./с → "
-             f"10 000 человек ≈ {num(sc['minutes_for_10k'], 0)} мин; за 15 минут успеть можно ≈ {sc['max_users_in_15min']} человек. "
-             "Нужно или объединять сообщения, или добиваться повышенного лимита, или растягивать окно рассылки."],
-            "leisure/worker/send.py:19 (SEND_INTERVAL = 1/25), leisure/worker/schedules.py:87-94", "Умножить число сообщений на подборку на 10 000 и разделить на 25.", 1)
-    if d["db"].get("profile_mismatch"):
-        mm = d["db"]["profile_mismatch"]
-        add("Д17", "низкая", "Ошибка в ответе онбординга исправить нельзя — сохраняется неверный профиль",
-            [f"У {sum(1 for p in d['personas'] if p.get('misclick') and p['misclick'].get('recovery') == 'continue')} людей, нажавших не ту кнопку и не пожелавших начинать заново, "
-             f"в БД лежат неверные ответы: {', '.join(f'{ANSWER_RU.get(k, k)} — {v}' for k, v in sorted(mm.items()))}."], "leisure/bot/onboarding.py:157-208 (шаги без «Назад»)", "Выбрать бюджет «до 1 000 ₽» по ошибке и дойти до конца.", sum(mm.values()))
-    if "localhost" in (d["meta"].get("web_base_url_original") or "") or not d["meta"].get("web_base_url_original"):
-        add("Д18", "низкая", "Значение WEB_BASE_URL по умолчанию (localhost) делает онбординг невозможным",
-            ["С WEB_BASE_URL=http://localhost:8000 кнопка «Политика обработки данных» (URL) в первом же сообщении, как правило, отклоняется Telegram "
-             "(BUTTON_URL_INVALID: localhost не принимается; проверить на живом боте) — бот не пришлёт ни согласие, ни подборки. "
-             "Симулятор подставил публичный домен; в проде переменная обязана быть задана."],
-            "leisure/settings.py (значение по умолчанию WEB_BASE_URL), leisure/bot/onboarding.py:42,58", "Запустить бота без WEB_BASE_URL и отправить /start.", 1)
-    order = {"высокая": 0, "средняя": 1, "низкая": 2}
-    out.sort(key=lambda x: (order[x["severity"]], int(x["id"][1:])))
-    return out
+    chk("scale", "низкая", "Отправка дайджеста 10 000 пользователям не укладывается в 15 минут (п. 10)", bool(sc["minutes_for_10k"] and sc["minutes_for_10k"] > 15),
+        [f"В среднем {num(sc['avg_messages_per_digest'], 1)} сообщений на подборку, лимит {SEND_RATE} сообщ./с → 10 000 человек ≈ {num(sc['minutes_for_10k'], 0)} мин; "
+         f"за 15 минут успеть можно ≈ {sc['max_users_in_15min']} человек."],
+        "leisure/worker/send.py (SEND_INTERVAL = 1/25), leisure/worker/schedules.py (digest_messages)", "Число сообщений на подборку × 10 000 / 25.", 1,
+        f"≈ {num(sc['minutes_for_10k'], 0)} мин")
+    # Д17 нет «Назад»
+    mm = db.get("profile_mismatch", {})
+    n_back = m["onboarding"]["back_screens"]
+    chk("noback", "низкая", "Ошибку в ответе онбординга исправить нельзя — сохраняется неверный профиль", n_back == 0 and m["onboarding"]["all_screens_checked"] > 0,
+        [f"«Назад» на {n_back} из {m['onboarding']['all_screens_checked']} экранов; у {sum(1 for p in d['personas'] if p.get('misclick') and p['misclick'].get('recovery') == 'continue')} "
+         f"нажавших не ту кнопку в БД лежат неверные ответы: {', '.join(f'{ANSWER_RU.get(k, k)} — {v}' for k, v in sorted(mm.items())) or '—'}."],
+        "leisure/bot/onboarding.py (шаги без «Назад»)", "Выбрать бюджет «до 1 000 ₽» по ошибке и дойти до конца.", sum(mm.values()), "")
+    # Д18 localhost
+    lh = fp.get("localhost", {})
+    chk("localhost", "низкая", "WEB_BASE_URL=localhost делает онбординг невозможным", bool(lh) and (lh.get("url_buttons", 0) > 0 or not lh.get("sent")),
+        ["При localhost URL-кнопки уходят в Telegram и отклоняются."], "leisure/bot/onboarding.py", "Запустить бота без WEB_BASE_URL.", 1,
+        f"проба с WEB_BASE_URL=localhost: URL-кнопок {lh.get('url_buttons', 0)}, ссылка на политику в тексте: {'да' if lh.get('link_in_text') else 'нет'}, "
+        f"сообщение доставлено: {'да' if lh.get('sent') else 'нет'}{was('localhost')}")
+    return opened, closed
 
 
 def build_usability(m: dict, d: dict) -> list[dict]:
     o, dg, dec = m["onboarding"], m["digests"], m["decisions"]
     out: list[dict] = []
 
-    def add(uid, pri, title, evidence, advice):
-        out.append({"id": uid, "priority": pri, "title": title, "evidence": evidence, "advice": advice})
+    def add(key, title, evidence, advice):
+        out.append({"key": key, "id": key, "priority": 0, "title": title, "evidence": evidence, "advice": advice})
 
     if o["completed"]:
         lost = o["started"] - o["completed"]
         top = max(o["funnel"], key=lambda f: f["left"])
         n1 = sum(1 for s in o["screens"] if s.startswith("Шаг 1 из 5"))
-        seq = " → ".join(s[:28] for s in o["screens"][:2]) + " … " + " → ".join(s[:28] for s in o["screens"][-6:])
-        add("У1", 1, "Онбординг длиннее обещанного, а счётчик шагов не соответствует экранам",
-            [f"Приветствие обещает «три минуты». Нужно минимум {cnt(o['theoretical_min'], 'нажатие', 'нажатия', 'нажатий')}, у прошедших — от {o['taps_min']} до {o['taps_max']}, медиана {num(o['taps_median'], 0)} "
-             f"(у не ошибавшихся — {num(o['taps_clean_median'], 0)}); экранов {len(o['screens'])}.",
+        unnum = [s[:24].rstrip(" ?.,") for s in o["screens"][1:-1] if not s.startswith("Шаг")]
+        unnum = [s for s in unnum if "насколько" not in s]
+        seq = " → ".join(s[:28] for s in o["screens"][:2]) + " … " + " → ".join(s[:28] for s in o["screens"][-5:])
+        add("onboarding", "Онбординг длиннее обещанного, а счётчик шагов не соответствует экранам",
+            [f"Приветствие обещает «три минуты». Нужно минимум {cnt(o['theoretical_min'], 'нажатие', 'нажатия', 'нажатий')}, у прошедших — от {o['taps_min']} до {o['taps_max']}, "
+             f"медиана {num(o['taps_median'], 0)}; экранов {len(o['screens'])}.",
              f"Не дошли {lost} из {o['started']} ({pct(ratio(lost, o['started']))}); больше всего уходят на шаге «{STEP_RU[top['step']]}» ({top['left']}).",
-             f"Нумерация: «Шаг 1 из 5» стоит на {n1} экранах подряд, затем «Шаг 2», «Шаг 3», потом четыре экрана без номера (время, бюджет, эстетика, район), "
-             f"«Шаг 4», «Шаг 5» — человек не видит, сколько осталось. Экраны по порядку: {seq}",
-             f"До первого «Иду» от первого /start: медиана {num(m['first_go']['taps_median'], 0)} (после онбординга ещё {num(m['first_go']['after_onb_median'], 0)})."],
-            "Свернуть онбординг до 3–4 экранов, общий прогресс «N из 10», первую подборку показывать после ценностей, остальное спрашивать позже.")
-        add("У2", 2, "Список интересов: 19 кнопок в столбик и цикл из четырёх состояний",
-            [f"На экране {o['interest_buttons']} кнопок в {o['interest_rows']} рядах (по одной в ряд) — это {num(o['interest_rows'] * 0.6, 0)}+ экранов прокрутки на телефоне. "
-             f"Каждое нажатие сдвигает уровень по кругу «— → иногда → интересно → в первую очередь → —»: понизить с «в первую очередь» до «интересно» — 3 нажатия, "
-             f"убрать категорию с «интересно» — 2.",
-             f"Персоны правили в среднем до {num(o['interest_edits_median'], 0)} категорий (макс. {o['interest_edits_max']}), на экран приходится "
-             f"{pct(o['interest_share_of_taps'])} всех нажатий онбординга; восемь вопросов «важно / не очень» — ещё {pct(o['weights_share_of_taps'])}.",
-             *([f"Предзаполнение по ценностям совпало с заданными персонами интересами лишь в {pct(o['prefill']['match_share'])} категорий; на «в первую очередь» "
-                f"в среднем {num(o['prefill']['avg_level3'], 1)} из 19 категорий, на «—» — {num(o['prefill']['avg_level0'], 1)}: уровень 3 перестаёт быть приоритетом, а "
-                "ненужные категории человек должен обнулять сам."] if o["prefill"].get("personas") else [])],
-            "Показать 5–6 предзаполненных категорий с кнопками «убрать / добавить», остальное — «Показать все»; прямой выбор уровня вместо цикла.")
-    if o["all_screens_checked"]:
-        add("У3", 3, "Нельзя вернуться или отменить шаг онбординга",
-            [f"Кнопок «Назад / Отмена / Изменить» на {o['back_screens']} из {o['all_screens_checked']} проверенных экранов онбординга. "
-             f"{fcount(d, 'no_back_after_misclick')} человек нажали не ту кнопку; единственный выход — /reset с самого начала "
-             f"(у {sum(1 for p in d['personas'] if p['redo'] and p['completed'])} это стоило {', '.join(str(p['onboarding_taps']) for p in d['personas'] if p['redo'] and p['completed'])} нажатий всего), "
-             "иначе неверный ответ остаётся в профиле.",
-             *[f"Лог: {x}" for x in fex(d, 'no_back_after_misclick', 1)]],
+             f"Нумерация: «Шаг 1 из 5» стоит на {n1} экранах подряд, дальше «Шаг 2», «Шаг 3», потом {len(unnum)} экрана без номера, «Шаг 4», «Шаг 5» — "
+             f"человек не видит, сколько осталось. Экраны по порядку: {seq}",
+             f"До первого «Иду» от первого /start: медиана {num(m['first_go']['taps_median'], 0)} нажатий (после онбординга ещё {num(m['first_go']['after_onb_median'], 0)}).",
+             *([f"Вопросов «важно / не очень» подряд теперь {o['weight_prompts']} (было {bw}): в каталоге 19 ценностей вместо 13."]
+               if (bw := (load_baseline() or {}).get("onboarding", {}).get("weight_prompts")) and o["weight_prompts"] and o["weight_prompts"] != bw else [])],
+            "Свернуть онбординг до 3–4 экранов, общий прогресс «N из …», первую подборку показывать после ценностей.")
+        pf = o["prefill"]
+        add("interests", "Список интересов: 19 кнопок в столбик и цикл из четырёх состояний",
+            [f"На экране {o['interest_buttons']} кнопок в {o['interest_rows']} рядах (по одной в ряд). Каждое нажатие сдвигает уровень по кругу «— → иногда → интересно → в первую очередь → —»: "
+             "с «в первую очередь» до «интересно» — 3 нажатия, убрать категорию с «интересно» — 2.",
+             f"Персоны правили в среднем до {num(o['interest_edits_median'], 0)} категорий (макс. {o['interest_edits_max']}); на экран приходится {pct(o['interest_share_of_taps'])} "
+             f"нажатий онбординга, на {o['weight_prompts']} вопросов «важно / не очень» подряд — {pct(o['weights_share_of_taps'])}.",
+             *([f"Предзаполнение совпало с интересами персон в {pct(pf['match_share'])} категорий; на «в первую очередь» в среднем {num(pf['avg_level3'], 1)} из 19, на «—» — {num(pf['avg_level0'], 1)}."]
+               if pf.get("personas") else [])],
+            "Показать 5–6 предзаполненных категорий с «убрать / добавить», остальное — «Показать все»; прямой выбор уровня вместо цикла.")
+    if dg["multi_day_cards"]:
+        add("days", "Нельзя выбрать другой день у события, идущего несколько дней",
+            [f"{dg['multi_day_cards']} из {dg['total_cards']} карточек ({pct(ratio(dg['multi_day_cards'], dg['total_cards']))}) — события с несколькими датами внутри уикенда; "
+             "решение ложится на день карточки (дефект про день закрыт), но выбрать другой день этого же события кнопкой нельзя."],
+            "Кнопки «Сб / Вс» под многодневными событиями.")
+    if o["all_screens_checked"] and o["back_screens"] == 0:
+        add("noback", "Нельзя вернуться или отменить шаг онбординга",
+            [f"Кнопок «Назад / Отмена / Изменить» на {o['back_screens']} из {o['all_screens_checked']} проверенных экранов. {fcount(d, 'no_back_after_misclick')} человек нажали не ту кнопку; "
+             f"выход — /reset с начала (у {sum(1 for p in d['personas'] if p['redo'] and p['completed'])} это стоило "
+             f"{', '.join(str(p['onboarding_taps']) for p in d['personas'] if p['redo'] and p['completed'])} нажатий всего).",
+             *[f"Лог: {x}" for x in fex(d, "no_back_after_misclick", 1)]],
             "Кнопка «← Назад» на каждом экране и общий «Отмена».")
     if dec["wanted_interest"]:
-        total_wish = dec["wanted_interest"]
-        add("У4", 4, "Нет кнопки «Интересно» на карточке (F6)",
-            [f"{cnt(total_wish, 'раз', 'раза', 'раз')} персоны пытались отметить «интересно» ({dec['wanted_interest_users']} чел.); это {pct(ratio(total_wish, total_wish + dec['total']))} всех реакций, "
-             "которые захотели дать. Вместо этого они нажимали «Может быть» (сигнал 0,4 вместо 0,9) или молчали."], "Добавить четвёртую кнопку, либо объяснить «Может быть».")
+        add("interest", "Нет кнопки «Интересно» на карточке (F6)", [f"{cnt(dec['wanted_interest'], 'раз', 'раза', 'раз')} персоны пытались отметить «интересно»."], "Добавить кнопку.")
     if dec["skip_total"]:
-        add("У5", 5, "«Мимо» сразу спрашивает причину и перекраивает карточку",
-            [f"{dec['skip_total']} нажатий «Мимо»: из них причину выбрали {dec['skip_with_reason']}, «Без причины» — {dec['skip_no_reason_button']}, "
-             f"оставили открытыми кнопки причин {dec['skip_unanswered']}. Один отказ = 2 нажатия, клавиатура карточки вырастает до 5 рядов "
-             "(ряд из 3 кнопок + 4 ряда причин) и остаётся такой, пока не выбрать причину.",
-             f"Тост «Понял. Почему мимо?» не объясняет, что причина необязательна. Ссылки «Подробнее/Другу» после этого пропадают ({fcount(d, 'links_lost_after_click')} раз)."],
-            "Причину — отдельным необязательным сообщением или одной строкой «Почему? дорого · далеко · не моё»; ссылки оставить.")
+        add("skip", "«Мимо» раскрывает на карточке блок причин",
+            [f"{dec['skip_total']} нажатий «Мимо»: причину выбрали {dec['skip_with_reason']}, «Без причины» — {dec['skip_no_reason_button']}, блок оставили открытым {dec['skip_unanswered']}. "
+             "Причина стала необязательной (подпись «Можно не отвечать»), но выбор причины — второе нажатие, а блок добавляет к карточке 5 рядов (подпись, три ряда причин, «Без причины») "
+             "и остаётся, пока не нажать что-то из него."],
+            "Свернуть причины в одну строку или отдельное сообщение, которое сворачивается само.")
     if m["silent"]["user_weeks"]:
-        add("У6", 6, "Подборки худеют, а при пустом составе бот молчит",
-            [f"{m['silent']['silent']} из {m['silent']['user_weeks']} человеко-недель ({pct(m['silent']['share'])}) прошли без единой подборки; "
-             f"в {m['silent']['logged_nothing']} случаях воркер сам записал в лог «нечего отправить»: при пустом составе он ничего не шлёт и ничего не объясняет. "
-             "В среднем пустых слотов из 5: " + ", ".join(
-                 f"неделя {w} — {num(v['empty'], 1)}" for w, v in dg["by_week"].items() if v.get("digests")) + ".",
-             f"Сообщение «ничего не нашлось» увидели {cnt(m['silent']['empty_notices'], 'раз', 'раза', 'раз')} (только в онбординге и по /digest)."],
-            "Писать «на этих выходных мало подходящего, вот ближайшее/что включить» или показывать лучшее из «на горизонте»; слот «пт вечер» пуст всегда, когда в базе нет пятничных событий.")
-    if dg["multi_day_cards"]:
-        add("У7", 7, "Нельзя выбрать день у события, идущего несколько дней",
-            [f"{dg['multi_day_cards']} из {dg['total_cards']} карточек ({pct(ratio(dg['multi_day_cards'], dg['total_cards']))}) — события с несколькими датами внутри уикенда; "
-             "карточка показывает один день, кнопки дня нет (callback_data `d:g:<id>` без даты), поэтому день потом угадывается по часам нажатия (см. Д1)."],
-            "Кнопки «Сб / Вс» под многодневными событиями.")
-    if dg["sent"]:
-        add("У8", 8, "«Весь дайджест» висит только на последней карточке и исчезает после «Мимо»",
-            [f"Кнопка есть в 1 из ~{num(dg['avg_cards'], 1)} карточек подборки; заголовок без кнопок. После «Мимо» на последней карточке она пропадает "
-             f"({fcount(d, 'links_lost_after_click')} случаев потери ссылок). Страница, на которую она ведёт, в этой версии не реализована (веб — недели 5–6 плана).",
-             ], "Кнопки под заголовком подборки: «Весь дайджест», «Мой план».")
-    if fcount(d, "text_ignored"):
-        add("У9", 9, "Свободный текст в чат игнорируется", [f"{cnt(fcount(d, 'text_ignored'), 'раз', 'раза', 'раз')} бот не ответил на текст. Человек не получает даже «я принимаю только кнопки»."],
-            "Общий обработчик: подсказка и возврат к текущему шагу.")
-    if dg["resent_no_status"]:
-        add("У10", 10, "Повторно присланная карточка не показывает прежнее решение",
-            [f"{cnt(dg['resent_no_status'], 'карточка', 'карточки', 'карточек')}, присланных по /digest и после /reset, пришли без отметки ●, хотя решение по ним уже было; человек видит чистые кнопки и не понимает, что уже отвечал."], "Рисовать ● из БД при отправке.")
-    if m["plan"]["plan_cmd_total"]:
-        add("U11".replace("U", "У"), 11, "/plan приходит одним моноширинным блоком",
-            [f"Ответ /plan в блоке `<pre>`: до {m['plan']['plan_max_line']} символов в строке, строк в медиане {num(m['plan']['plan_lines_median'], 0)}; в Telegram такие строки не переносятся и уходят за экран."],
-            "Плоский текст с переносами, события — отдельными карточками (они уже есть).")
-    if dg["already_started"]:
-        add("У12", 12, "Подборка показывает уже начавшиеся события", [f"{cnt(dg['already_started'], 'карточка', 'карточки', 'карточек')} (см. Д13)."], "Отсекать события по времени начала.")
+        silent = m["silent"]
+        add("thin", "Подборки худеют к концу прогона",
+            ["Пустых слотов из 5 по неделям: " + ", ".join(f"неделя {w} — {num(v['empty'], 1)}" for w, v in dg["by_week"].items() if v.get("digests")) + ".",
+             f"Человеко-недель без подборки: {silent['silent']} из {silent['user_weeks']} ({pct(silent['share'])}); воркер записал «нечего отправить» {silent['logged_nothing']} раз; "
+             f"сообщение «ничего не нашлось» получено {silent['empty_notices']} раз."],
+            "Показывать лучшее из «на горизонте» и расширять слоты; в проде база будет богаче seed.")
     if dg["messy_time"] or dg["plan_messy_lines"]:
-        add("У13", 13, "Время события — сырой текст источника, а не время выбранного дня",
-            [f"{dg['messy_time']} из {dg['all_cards']} карточек ({pct(ratio(dg['messy_time'], dg['all_cards']))}) показывают расписание сразу на несколько дат "
-             "(«23.10 — 20:00; 24.10 и 25.10 — 17:00 и 20:00») под заголовком с одним днём; в «Плане на сегодня» так же: "
-             f"{dg['plan_messy_lines']} из {dg['plan_lines']} строк плана ({pct(ratio(dg['plan_messy_lines'], dg['plan_lines']))}). Что именно в этот день — человеку приходится разбирать самому."],
-            "Подставлять время выбранного дня (`event_times(ev, day)` уже умеет) или показывать «ещё даты: …» отдельной строкой.")
-    out.sort(key=lambda x: x["priority"])
+        add("time", "Время события — сырой текст источника, а не время выбранного дня",
+            [f"{dg['messy_time']} из {dg['all_cards']} карточек ({pct(ratio(dg['messy_time'], dg['all_cards']))}) показывают расписание сразу на несколько дат под заголовком с одним днём; "
+             f"в «Плане на сегодня» так же {dg['plan_messy_lines']} из {dg['plan_lines']} строк ({pct(ratio(dg['plan_messy_lines'], dg['plan_lines']))})."],
+            "Подставлять время выбранного дня (`event_times(ev, day)` уже умеет).")
+    if dg["sent"]:
+        add("digest_btn", "«Весь дайджест» висит только на последней карточке",
+            [f"Кнопка есть в 1 из ~{num(dg['avg_cards'], 1)} карточек подборки, заголовок без кнопок. После «Мимо» она теперь сохраняется (потерь {fcount(d, 'links_lost_after_click')})."],
+            "Кнопки под заголовком подборки: «Весь дайджест», «Мой план».")
+    if fcount(d, "text_ignored"):
+        add("text", "Свободный текст в чат игнорируется", [f"{cnt(fcount(d, 'text_ignored'), 'раз', 'раза', 'раз')} бот не ответил на текст."], "Общий обработчик с подсказкой.")
+    if dg["resent_no_status"]:
+        add("resent", "Повторно присланная карточка не показывает прежнее решение",
+            [f"{cnt(dg['resent_no_status'], 'карточка', 'карточки', 'карточек')}, присланных по /digest и после /reset, пришли без отметки ●, хотя решение по ним уже было."],
+            "Рисовать ● из БД при отправке.")
+    if m["plan"]["plan_cmd_total"] and m["plan"]["plan_max_line"] > 60:
+        add("pre", "/plan приходит одним моноширинным блоком",
+            [f"Ответ /plan в блоке `<pre>`: до {m['plan']['plan_max_line']} символов в строке, строк в медиане {num(m['plan']['plan_lines_median'], 0)}; такие строки в Telegram не переносятся."],
+            "Плоский текст с переносами, события — отдельными карточками.")
+    if dg["already_started"]:
+        add("started", "Подборка показывает уже начавшиеся события", [f"{cnt(dg['already_started'], 'карточка', 'карточки', 'карточек')} (см. дефект про начавшиеся события)."], "Отсекать по времени начала.")
     return out
 
 
-# Порядок вывода: по важности внутри серьёзности. Идентификаторы присваиваются уже после сортировки, ссылки «Дn» в текстах пересчитываются.
-DEF_ORDER = ["Д1", "Д2", "Д3", "Д9", "Д8", "Д7", "Д6", "Д5", "Д4", "Д19", "Д12", "Д11", "Д10", "Д15", "Д13", "Д14", "Д16", "Д17", "Д18"]
-USAB_ORDER = ["У1", "У2", "У7", "У3", "У4", "У5", "У6", "У13", "У8", "У9", "У10", "У11", "У12"]
-
-
-def renumber(defects: list[dict], usab: list[dict]) -> None:
-    dmap: dict[str, str] = {}
-    ordered = sorted(defects, key=lambda x: DEF_ORDER.index(x["id"]) if x["id"] in DEF_ORDER else 99)
-    for i, x in enumerate(ordered, 1):
-        dmap[x["id"]] = f"Д{i}"
-    pat = re.compile(r"Д\d+")
-
-    def sub(s: str) -> str:
-        return pat.sub(lambda mm: dmap.get(mm.group(0), mm.group(0)), s)
-
-    for x in ordered:
-        x["what"] = [sub(t) for t in x["what"]]
-        x["repro"], x["title"] = sub(x["repro"]), sub(x["title"])
-    for x in ordered:
-        x["id"] = dmap[x["id"]]
-    defects[:] = ordered
-    uo = sorted(usab, key=lambda x: USAB_ORDER.index(x["id"]) if x["id"] in USAB_ORDER else 99)
-    for i, x in enumerate(uo, 1):
-        x["evidence"] = [sub(t) for t in x["evidence"]]
-        x["advice"] = sub(x["advice"])
+def renumber(defects: list[dict], usab: list[dict], closed: list[dict]) -> None:
+    """Идентификаторы Д1…/У1… присваиваются после сортировки; ссылки вида @ключ@ в текстах заменяются на присвоенный номер."""
+    order = {k: i for i, k in enumerate(DEF_ORDER)}
+    defects.sort(key=lambda x: order.get(x["key"], 99))
+    ids = {x["key"]: f"Д{i}" for i, x in enumerate(defects, 1)}
+    for x in defects:
+        x["id"] = ids[x["key"]]
+    uo = {k: i for i, k in enumerate(USAB_ORDER)}
+    usab.sort(key=lambda x: uo.get(x["key"], 99))
+    for i, x in enumerate(usab, 1):
         x["id"], x["priority"] = f"У{i}", i
-    usab[:] = uo
+    for x in closed:
+        x["id"] = x["prev"]
 
 
 # ───────────────────────── вывод ─────────────────────────
-def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict]) -> str:
+def compare_rows(m: dict, d: dict, defects: list[dict], closed: list[dict], usab: list[dict]) -> list[list[str]] | None:
+    """Строки «метрика | было | стало» против прошлого прогона (sim/baseline.json = report.json из коммита с итоговой версией симулятора)."""
+    b = load_baseline()
+    if not b:
+        return None
+    bs = {r["id"]: r for r in b.get("spec_metrics", [])}
+
+    def p(x):
+        return pct(x) if x is not None else "н/д"
+
+    o, bo = m["onboarding"], b.get("onboarding", {})
+    rows = [
+        ["Активация", p(bs["activation"]["value"]), p(m["activation"])],
+        ["Реакция (подборки с решением)", p(bs["reaction"]["value"]), p(m["reaction"])],
+        ["«Иду» в неделю (среднее)", p(bs["plan"]["value"]), p(m["plan"]["mean"])],
+        ["Удержание на последней неделе", p(bs["retention"]["value"]), p(m["retention"]["last"])],
+        ["Средняя оценка", num(bs["rating"]["value"], 2), num(m["rating"]["mean"], 2)],
+        ["Нажатий на онбординг: min / медиана / max", f"{bo.get('taps_min')} / {num(bo.get('taps_median'), 0)} / {bo.get('taps_max')}",
+         f"{o['taps_min']} / {num(o['taps_median'], 0)} / {o['taps_max']}"],
+        ["Нажатий до первого «Иду» (медиана)", num(b.get("first_go", {}).get("taps_median"), 0), num(m["first_go"]["taps_median"], 0)],
+        ["Карточек в подборке (среднее)", num(b.get("digests", {}).get("avg_cards"), 1), num(m["digests"]["avg_cards"], 1)],
+        ["Пустых слотов из 5 (среднее)", num(b.get("digests", {}).get("avg_empty"), 2), num(m["digests"]["avg_empty"], 2)],
+        ["Повторные показы, доля", pct(b.get("repeats", {}).get("share"), 1), pct(m["repeats"]["share"], 1)],
+        ["Дошли до плана", str(b.get("plan", {}).get("reached_any")), str(m["plan"]["reached_any"])],
+        ["Решений «Интересно»", str(b.get("decisions", {}).get("by_status", {}).get("интересно", 0)), str(m["decisions"]["by_status"].get("интересно", 0))],
+        ["«Мимо»: причина не выбрана", str(b.get("decisions", {}).get("skip_unanswered")), str(m["decisions"]["skip_unanswered"])],
+    ]
+    bpr = b.get("plan_reminders", {})
+    for k in ("Пт", "Вс", "Пн–Чт"):
+        old = bpr.get(k, {})
+        new = m["plan_reminders"].get(k, {})
+        rows.append([f"Напоминание в день события, {k}", f"{old.get('reminded', 0)} из {old.get('going', 0)}", f"{new.get('reminded', 0)} из {new.get('going', 0)}"])
+    sev = Counter(x["severity"] for x in b.get("defects", []))
+    nsev = Counter(x["severity"] for x in defects)
+    rows += [["Открытых дефектов, всего", str(len(b.get("defects", []))), str(len(defects))],
+             ["  высокой серьёзности", str(sev.get("высокая", 0)), str(nsev.get("высокая", 0))],
+             ["  средней", str(sev.get("средняя", 0)), str(nsev.get("средняя", 0))],
+             ["  низкой", str(sev.get("низкая", 0)), str(nsev.get("низкая", 0))],
+             ["Закрыто с прошлого прогона", "—", f"{len(closed)} из {len(PREV_ID)}"],
+             ["Проблем юзабилити", str(len(b.get("usability", []))), str(len(usab))]]
+    return rows
+
+
+def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict], closed: list[dict] | None = None) -> str:
+    closed = closed or []
     meta, o, dg, dec, pl, rk = d["meta"], m["onboarding"], m["digests"], m["decisions"], m["plan"], m["rating"]
     L: list[str] = []
     w = meta["weeks"]
@@ -673,6 +720,12 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict]) -> str:
           "> **Как читать.** Код продукта — настоящий: бот, фильтры, FSM, клавиатуры, задачи воркера и БД. Люди — модель: ответы онбординга, вероятности отвала, "
           "открытия, решений и оценок заданы допущениями в `personas.py` (п. «Ограничения»). Поэтому абсолютные доли (активация, реакция, удержание) — "
           "«что будет при таком поведении», а не прогноз; надёжны находки о механике продукта: дефекты и юзабилити ниже подтверждены логом.", ""]
+    cr = compare_rows(m, d, defects, closed, usab)
+    if cr:
+        L += ["## 0. Было → стало (против прошлого прогона)", "",
+              "Прошлый прогон — `leisure/sim/baseline.json` (отчёт симулятора до правок бота и воркера, те же seed и 50 персон). Состав персон тот же, "
+              "но шаг «район» убран из продукта, поэтому поведение на онбординге расходится немного; сравнивать стоит механику, а не десятые доли процента.", "",
+              table(["Показатель", "Было", "Стало"], cr), ""]
     L += ["## 1. Метрики п. 11 спеки", "",
           table(["Метрика", "Значение", "Цель", "Статус", "Примечание"],
                 [[r["name"], r["shown"], r["target"], STATUS_RU[r["status"]], r["note"]] for r in m["spec_table"]]), ""]
@@ -686,7 +739,7 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict]) -> str:
                 [[STEP_RU[f["step"]], f["reached"], f["left"], num(o["step_means"].get(f["step"], 0), 1)] for f in o["funnel"]]), "",
           "### Решения и причины", "",
           table(["Статус", "Нажатий", "Доля"], [[k, v, pct(ratio(v, dec["total"]))] for k, v in sorted(dec["by_status"].items(), key=lambda kv: -kv[1])]
-                + [["интересно (кнопки нет)", f"0 (хотели {dec['wanted_interest']})", "—"]]), "",
+                + ([["интересно (кнопки нет)", f"0 (хотели {dec['wanted_interest']})", "—"]] if dec["wanted_interest"] else [])), "",
           f"«Мимо» — {dec['skip_total']}; причины: " + (", ".join(f"{k or 'без причины'} {v}" for k, v in sorted(dec['reasons'].items(), key=lambda kv: -kv[1])) or "—")
           + f"; причину не выбрали вовсе: {dec['skip_unanswered']}.", "",
           f"Нажатий до первого «Иду» (от первого /start, включая онбординг): min {num(m['first_go']['taps_min'], 0)}, медиана {num(m['first_go']['taps_median'], 0)}, "
@@ -705,21 +758,29 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict]) -> str:
           f"Дошли до плана: {pl['reached_any']} из {o['completed']} (нажали «Иду» — {pl['reached_go']}, получили «План на сегодня» — {pl['got_push']} ({pl['pushes']} сообщений), "
           f"открыли /plan с непустым планом — {pl['used_cmd']}). /plan вызывали {pl['plan_cmd_total']} раз, пустой план — {pl['plan_cmd_empty']}.", "",
           f"Оценок {rk['n']} на {rk['prompts']} запросов «Как прошло?» ({pct(rk['answered'])}); распределение: " + ", ".join(f"{k}★ — {v}" for k, v in rk["dist"].items()) + ".", "",
-          table(["День события «Иду»", "Всего «Иду»", "Пришло напоминание", "Спросили оценку"],
-                [[k, v["going"], v["reminded"], v["asked_rating"]] for k, v in m["plan_reminders"].items() if isinstance(v, dict)]), "",
+          "«Иду», по которым можно было напомнить (человек нажал не позже дня события):", "",
+          table(["День события «Иду»", "Всего «Иду»", "«План на сегодня» в день события", "«Как прошло?» на следующий день"],
+                [[k, v["going"], v["reminded"], v["asked_rating"]] for k, v in m["plan_reminders"].items() if isinstance(v, dict) and "going" in v and k in ("Пт", "Сб", "Вс", "Пн–Чт")]), "",
+          f"«Иду» на сегодня после 09:00: напоминание на ближайшем часовом запуске — {m['plan_reminders'].get('same_day_after_9', {}).get('reminded', 0)} из "
+          f"{m['plan_reminders'].get('same_day_after_9', {}).get('going', 0)}; нажали, когда день события уже прошёл: {m['plan_reminders'].get('stale_taps', 0)}.", "",
           "### Масштаб и целостность", "",
           f"Сообщений на подборку в среднем {num(m['scale']['avg_messages_per_digest'], 1)} → 10 000 человек при 25 сообщ./с ≈ {num(m['scale']['minutes_for_10k'], 0)} мин (цель п. 10 — 15 мин). "
           f"Целостность: нажатий не найдено в БД — {d['db']['decision_integrity']['missing']}, расхождений статуса/причины — {d['db']['decision_integrity']['mismatch']} "
           f"из {d['db']['decision_integrity']['checked']}; профилей с неверными ответами из-за ошибки без «Назад» — {sum(d['db'].get('profile_mismatch', {}).values())}. "
           f"Нарушения правил Bot API в поддельной сессии: " + (", ".join(f"{k} — {v['count']}" for k, v in sorted(d['violations'].items())) or "нет") + ". "
           f"Исключения обработчиков бота: {d['handler_errors']}; записи ERROR/WARNING продукта: {len(d['log_errors'])}.", ""]
-    L += ["## 3. Дефекты продукта", "", "Каждый подтверждён прогоном; «где» — файл и строки (на момент прогона), «как воспроизвести» — минимальные шаги.", ""]
+    L += ["## 3. Дефекты продукта", "", "### 3.1 Открытые", "",
+          "Каждый воспроизведён прогоном; «где» — файл (и функция), «как воспроизвести» — минимальные шаги.", ""]
     for x in defects:
         L += [f"### {x['id']} [{x['severity']}] {x['title']}", ""]
         L += [f"- {line}" for line in x["what"]]
         L += [f"- **Где:** {x['where']}", f"- **Как воспроизвести:** {x['repro']}", ""]
     if not defects:
-        L += ["Дефектов не найдено.", ""]
+        L += ["Открытых дефектов нет.", ""]
+    if closed:
+        L += ["### 3.2 Закрыто с прошлого прогона", "",
+              table(["Было", "Дефект", "Что показал этот прогон"], [[x["prev"], x["title"], x["evidence"] or "—"] for x in sorted(
+                  (c for c in closed if c["prev"]), key=lambda x: int(x["prev"][1:]))]), ""]
     L += ["## 4. Проблемы юзабилити (по убыванию важности)", ""]
     for x in usab:
         L += [f"### {x['id']}. {x['title']}", ""]
@@ -731,7 +792,18 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict]) -> str:
     vio = d.get("violations", {})
     st = d["scenarios"].get("startup", {})
     cmds = Counter(c["cmd"] for c in d["commands"])
-    L += [f"- Запуск бота выполнен настоящим `leisure.bot.main.run()` (токен, класс Bot и start_polling подменены): меню команд {', '.join('/' + c for c in st.get('commands', []))}; "
+    fp = d["scenarios"].get("fault_probe", {})
+    fsm = d["scenarios"].get("fsm_restart", {})
+    dl = d["scenarios"].get("delete", [])
+    L += [f"- Пробы доставки (настоящий `send_with_bot` на трёх сообщениях): разовый 502 → доставлено {len(fp.get('server_error_once', {}).get('delivered', []))} из 3; "
+          f"429 → {len(fp.get('retry_after', {}).get('delivered', []))} из 3; Forbidden → заблокирован {fp.get('blocked', {}).get('blocked')}, доставлено "
+          f"{len(fp.get('blocked', {}).get('delivered', []))} из 3; стойкий 502 → доставлено {len(fp.get('server_error_persistent', {}).get('delivered', []))} из 3.",
+          f"- Рестарт бота (пустой MemoryStorage): нажатий на старые экраны онбординга до рестарта {len(fsm.get('before', []))} (работали: "
+          f"{sum(1 for x in fsm.get('before', []) if x.get('handled'))}), после — {len(fsm.get('after', []))}, ответ получили "
+          f"{sum(1 for x in fsm.get('after', []) if x.get('answered') and x.get('reply'))}.",
+          f"- /delete: удалено профилей {len(dl)}; профиль после удаления был в БД у {sum(1 for x in dl if x.get('profile_after_delete'))}, после нажатия на старую карточку — у "
+          f"{sum(1 for x in dl if x.get('profile_after_tap'))}.",
+          f"- Запуск бота выполнен настоящим `leisure.bot.main.run()` (токен, класс Bot и start_polling подменены): меню команд {', '.join('/' + c for c in st.get('commands', []))}; "
           f"allowed_updates {st.get('allowed_updates')}; parse_mode по умолчанию {st.get('parse_mode', '').replace('ParseMode.', '')}. "
           "Вызовы команд в прогоне: " + ", ".join(f"{k} — {v}" for k, v in sorted(cmds.items())) +
           f"; /reset — {len(d['scenarios'].get('reset', []))} (сценарий) и {sum(p['redo'] for p in d['personas'])} после ошибки в ответе.",
@@ -739,7 +811,7 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict]) -> str:
           f"{vio.get('text_too_long', {}).get('count', 0)}, callback_data длиннее 64 байт — {vio.get('callback_data_len', {}).get('count', 0)}, "
           f"недопустимых URL кнопок — {vio.get('button_url_invalid', {}).get('count', 0)}, повторных ответов на callback — "
           f"{vio.get('callback_answered_twice', {}).get('count', 0)}.",
-          f"- Через настоящие обработчики прошли {meta['updates_fed']} апдейтов; callback без ответа: {fcount(d, 'callback_unanswered')} (сценарий {m.get('_stale_ref', '')}), "
+          f"- Через настоящие обработчики прошли {meta['updates_fed']} апдейтов; callback без ответа: {fcount(d, 'callback_unanswered')}, "
           f"исключений обработчиков: {d['handler_errors']}, нажатий, не дошедших до БД: {d['db']['decision_integrity']['missing']}.",
           f"- Дубли отправки: число подборок на человека и уикенд > 1 по повторным часовым запускам — "
           f"{sum(1 for k, c in Counter((x['u'], x['week']) for x in d['digests'] if x['origin'] == 'weekly').items() if c > 1)}.",
@@ -752,8 +824,10 @@ def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict]) -> str:
           "- Seed — 177 событий; на первом уикенде их 93, дальше 18, 8, 6, 4, 6 на уикенд: часть «пустых слотов» — недобор базы, а не логики подборки.",
           "- Не проверялись: живой Telegram (лимиты, форматирование, превью), поток сбоев сети и 429/5xx (проверены только двумя пробами на трёх сообщениях: 502 и 429), "
           "веб-приложение, переходы по URL-кнопкам («Подробнее», «Другу», календари), параллельные нажатия, несколько городов.",
-          "- Время: часы подменены (`services.local_today`), воркер вызывается с `now_utc` в ключевые моменты (ср 22:00, чт 19:00, сб 09:00, пн 12:00 по поясу каждого) "
-          "плюс повторные «часовые» запуски; не гонялся каждый час. Пауза между сообщениями отключена (`SEND_INTERVAL = 0`).", ""]
+          "- Время: часы подменены (`services.utcnow`), воркер вызывается с `now_utc`: среда 22:00 (сборка), четверг 19:00 по поясу каждого (подборка) с повторными запусками "
+          "(ловят дубли), «План на сегодня» ежедневно в 09:00 и «Как прошло?» ежедневно в 12:00 по поясу каждого; «Иду» на сегодня после 09:00 получает дополнительный запуск "
+          "плана в ближайший :00 (эмуляция часового cron). Остальные часы суток не гонялись. Пауза между сообщениями и паузы повторов 5xx отключены "
+          "(`SEND_INTERVAL = 0`, `RETRY_DELAYS = (0, 0, 0)`).", ""]
     L += ["## 7. Как воспроизвести", "",
           "```", f"python -m leisure.sim.runner --users {meta['users']} --weeks {w} --seed {meta['seed']}", "cd leisure && python -m pytest tests/test_sim_smoke.py", "```",
           "Журнал вызовов — `leisure/sim/out/sim_log.jsonl` (не в git), сырые результаты — `leisure/sim/out/run_data.json`.", "",
@@ -772,10 +846,11 @@ def write_reports(d: dict, out_dir: Path | str) -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     m = build_metrics(d)
-    defects, usab = build_defects(m, d), build_usability(m, d)
-    renumber(defects, usab)
-    m["_stale_ref"] = next((x["id"] for x in defects if "старые кнопки онбординга" in x["title"]), "")
-    (out / "REPORT.md").write_text(render_md(m, d, defects, usab), encoding="utf-8")
+    defects, closed = build_defects(m, d)
+    usab = build_usability(m, d)
+    renumber(defects, usab, closed)
+    (out / "REPORT.md").write_text(render_md(m, d, defects, usab, closed), encoding="utf-8")
+    cr = compare_rows(m, d, defects, closed, usab)
     payload = {
         "meta": {k: v for k, v in d["meta"].items() if k != "log_file"},
         "norms": m["norms"],
@@ -784,13 +859,15 @@ def write_reports(d: dict, out_dir: Path | str) -> dict:
         "digests": m["digests"], "decisions": m["decisions"], "first_go": m["first_go"], "plan": m["plan"], "retention": m["retention"],
         "rating": m["rating"], "repeats": m["repeats"], "silent": m["silent"], "scale": m["scale"], "plan_reminders": m["plan_reminders"],
         "defects": [{k: x[k] for k in ("id", "severity", "title", "count", "where")} for x in defects],
+        "closed_defects": [{k: x[k] for k in ("id", "title", "evidence")} for x in closed],
+        "vs_previous": [{"metric": r[0], "was": r[1], "now": r[2]} for r in (cr or [])],
         "usability": [{k: x[k] for k in ("id", "priority", "title")} for x in usab],
         "findings": {k: {"count": v["count"], "users": v["users"]} for k, v in d["findings"].items()},
         "violations": {k: v["count"] for k, v in d["violations"].items()},
         "volatile": d["volatile"],
     }
     (out / "report.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
-    m["_defects"], m["_usability"] = defects, usab
+    m["_defects"], m["_usability"], m["_closed"] = defects, usab, closed
     return m
 
 

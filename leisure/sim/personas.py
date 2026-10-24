@@ -14,6 +14,10 @@ from leisure.core.catalog import ALL_CATS, VALUE_MAP, VALUES
 from leisure.core.timeutil import slot_of
 
 DEFAULT_SEED = 20261024
+# Ценности, из которых лепятся персоны, — 13 исходных (порядок прототипа). В каталоге продукта их стало больше (аудит ценностей),
+# но состав персон должен оставаться тем же между прогонами; на новые ценности персона отвечает «не очень», выбрать их среди пяти главных не может.
+BASE_VALUES = ["Творчество", "Наставничество", "Забота", "Единство/Дружба", "Развитие", "Красота/эстетика", "Инновации/новизна", "Свобода", "Семья",
+               "Исследования", "Здоровье", "Сохранение традиций", "Природа"]
 FIRST_USER_ID = 900_000_001
 
 NAMES = [
@@ -232,8 +236,8 @@ def make_persona(seed: int, idx: int, archetype: str, n_users: int) -> Persona:
     # пять главных ценностей: типичные для архетипа, иногда одна заменена
     top = list(a["values"])
     if rng.random() < 0.4:
-        top[rng.randrange(5)] = _pick(rng, [v for v in VALUES if v not in top])
-    rest = [v for v in VALUES if v not in top]
+        top[rng.randrange(5)] = _pick(rng, [v for v in BASE_VALUES if v not in top])
+    rest = [v for v in BASE_VALUES if v not in top]
     important = [v for v in rest if (v in a["extra"] and rng.random() < 0.75) or rng.random() < 0.2]
     value_w = {v: 5 if v in top else 3 if v in important else 1 for v in VALUES}
     # интересы: истинные цели 0–3 по 19 категориям

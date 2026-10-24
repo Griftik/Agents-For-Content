@@ -358,10 +358,11 @@ class Sim:
         local = self.clock.now.astimezone(ZoneInfo(MSK))
         for card in rec.cards:
             ev = self.events.get(card.event_id) or {}
-            start = ev.get("start_time")
+            # выставки и места открыты весь день: «начавшимися» считаем их только после end_time (как и продукт)
+            start = ev.get("end_time") if ev.get("kind") in ("выставка", "место") else ev.get("start_time")
             if origin != "weekly" and card.day == local.date().isoformat() and start and start < local.strftime("%H:%M"):
                 rec.already_started += 1
-                self.f.add("card_already_started", f"«{card.title[:40]}» начинается в {start}, а карточка пришла в {local.strftime('%H:%M')} "
+                self.f.add("card_already_started", f"«{card.title[:40]}» {'заканчивается' if ev.get('kind') in ('выставка', 'место') else 'начинается'} в {start}, а карточка пришла в {local.strftime('%H:%M')} "
                            f"того же дня ({origin})", rec.uid, self.clock.now)
             if ";" in card.time_text or card.time_text.count(" — ") >= 2:
                 rec.messy_time += 1
@@ -875,7 +876,7 @@ def build_results(sim: Sim, args: dict, db_url: str, facts: dict, sens: dict, lo
     for ps in sim.states:
         p = ps.p
         pers.append({
-            "idx": p.idx, "user_id": p.user_id, "name": p.name, "archetype": p.archetype, "tz": p.tz, "status": ps.status,
+            "idx": p.idx, "onboard_offset_h": p.onboard_offset_h, "user_id": p.user_id, "name": p.name, "archetype": p.archetype, "tz": p.tz, "status": ps.status,
             "planned_abandon": p.abandon_step, "abandoned_at": ps.onb.get("abandoned_at"), "stuck": ps.onb.get("stuck"),
             "completed": bool(ps.onb.get("completed")), "onboarding_taps": ps.onb.get("taps_total"),
             "steps_taps": ps.onb.get("steps"), "interest_edits": ps.onb.get("interest_edits"), "redo": ps.onb.get("redo", 0),
