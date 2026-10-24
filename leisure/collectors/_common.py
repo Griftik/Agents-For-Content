@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -25,6 +25,8 @@ MSK = timezone(timedelta(hours=3), "MSK")  # в Москве UTC+3 круглы�
 
 RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 RETRY_AFTER_CAP_SEC = 30.0
+REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+MAX_REDIRECTS = 5
 
 _BLOCK_END_RE = re.compile(r"(?i)<br\s*/?>|</(?:p|div|li|ul|ol|h[1-6]|tr)>")
 
@@ -67,17 +69,25 @@ def join_text(*parts: str) -> str:
 def get_with_retries(
     client: httpx.Client, url: str, *, params: dict | None, headers: dict[str, str], retries: int,
     sleep: Callable[[float], None], source: str, http_error: Callable[[httpx.Response], str],
+    follow_redirects: bool | None = None,
 ) -> httpx.Response:
-    """GET: повторы только для сетевых сбоев и 429/5xx (с учётом Retry-After); прочие 4xx — сразу CollectorError."""
+    """GET: повторы только для сетевых сбоев и 429/5xx (с учётом Retry-After); прочие 4xx — сразу CollectorError.
+
+    `follow_redirects=False` отключает автоматические переходы: 3xx возвращается как есть (его разбирает вызывающий, см.
+    `get_checking_robots`); None — как настроен клиент.
+    """
     reason = "нет ответа"
     for attempt in range(retries + 1):
         wait = 2.0 * (attempt + 1)
         try:
-            resp = client.get(url, params=params, headers=headers)
+            if follow_redirects is None:
+                resp = client.get(url, params=params, headers=headers)
+            else:
+                resp = client.get(url, params=params, headers=headers, follow_redirects=follow_redirects)
         except httpx.TransportError as exc:  # таймауты, обрывы, DNS, отказ соединения
             reason = f"{type(exc).__name__}: {exc}"
         else:
-            if resp.status_code == 200:
+            if resp.status_code == 200 or (follow_redirects is False and resp.status_code in REDIRECT_STATUSES):
                 return resp
             if resp.status_code not in RETRY_STATUSES:
                 raise CollectorError(http_error(resp))
@@ -255,6 +265,33 @@ class RobotsGuard:
         return RobotsRules(resp.text, self._ua)
 
 
+class RedirectBlocked(CollectorError):
+    """Редирект ведёт на адрес, закрытый robots.txt: запрос туда не отправлен, страницу не читали."""
+
+
+def get_checking_robots(
+    client: httpx.Client, url: str, *, guard: RobotsGuard | None, params: dict | None = None, **kw: Any,
+) -> httpx.Response:
+    """GET с ручным разбором редиректов: каждый переход проверяется по robots.txt ДО запроса.
+
+    Правило владельца (24.10.2026): если редирект уводит на запрещённый путь, запрос прекращаем, страницу не читаем,
+    источник считается закрытым (RedirectBlocked). Без guard ведёт себя как обычный GET с переходами (до MAX_REDIRECTS).
+    """
+    current = url
+    for _ in range(MAX_REDIRECTS + 1):
+        resp = get_with_retries(client, current, params=params if current == url else None, follow_redirects=False, **kw)
+        if resp.status_code not in REDIRECT_STATUSES:
+            return resp
+        location = resp.headers.get("location", "")
+        if not location:
+            raise CollectorError(f"{kw.get('source', 'источник')}: редирект {resp.status_code} без адреса ({current}).")
+        target = urljoin(current, location)
+        if guard is not None and not guard.allows(target):
+            raise RedirectBlocked(f"{kw.get('source', 'источник')}: {current} перенаправляет на {target}, а он закрыт robots.txt; не читаем.")
+        current = target
+    raise CollectorError(f"{kw.get('source', 'источник')}: больше {MAX_REDIRECTS} редиректов подряд ({url}).")
+
+
 # ─── постраничная выкачка HTML ───
 
 
@@ -288,10 +325,15 @@ def fetch_pages(
             sleep(pause_sec)
         first = False
         try:
-            resp = get_with_retries(
-                client, url, params=None, headers=headers, retries=retries, sleep=sleep, source=source,
+            resp = get_checking_robots(
+                client, url, guard=guard, headers=headers, retries=retries, sleep=sleep, source=source,
                 http_error=http_error,
             )
+        except RedirectBlocked as exc:
+            stats.blocked_by_robots += 1
+            problems.append(str(exc))
+            log.warning("%s: %s", source, exc)
+            continue
         except CollectorError as exc:
             stats.failed_pages += 1
             problems.append(str(exc))

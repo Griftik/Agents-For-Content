@@ -9,10 +9,12 @@ import pytest
 from leisure.collectors._common import (
     MSK,
     PageStats,
+    RedirectBlocked,
     RobotsGuard,
     RobotsRules,
     fetch_pages,
     format_span,
+    get_checking_robots,
     iter_jsonld,
     next_data,
     overlaps,
@@ -179,3 +181,72 @@ def test_fetch_pages_skips_what_robots_closes_and_counts_it():
 def test_fetch_pages_all_failed_raises_with_first_reason():
     with pytest.raises(CollectorError, match="ни одна страница не получена.*HTTP 403"):
         run_fetch(lambda r: httpx.Response(403), ["https://h.example/a", "https://h.example/b"])
+
+
+# ─── редирект на закрытый robots.txt адрес: запрос не отправляем, страницу не читаем ───
+
+ROBOTS_NO_QUERY = "User-agent: *\nDisallow: /*?*\nDisallow: /private/\n"
+
+
+def redirecting_site(routes: dict[str, httpx.Response]):
+    """host.example: /robots.txt закрывает адреса с параметрами и /private/; routes — ответы по пути."""
+    log: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        log.append(str(request.url))
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text=ROBOTS_NO_QUERY)
+        return routes.get(request.url.path, httpx.Response(404))
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)  # клиент ходит по редиректам сам, если не мешать
+    return client, log, RobotsGuard(client, UA, "Тест")
+
+
+def fetch(client, guard, url="https://h.example/events"):
+    return get_checking_robots(client, url, guard=guard, headers={}, retries=0, sleep=lambda s: None, source="Тест",
+                               http_error=lambda r: f"HTTP {r.status_code}")
+
+
+def test_redirect_to_a_closed_address_is_not_requested_at_all():
+    """Случай Добро.ру: /events (разрешён) перенаправляет на /search?t=e… (закрыт `Disallow: /*?*`)."""
+    client, log, guard = redirecting_site({
+        "/events": httpx.Response(302, headers={"location": "/search?t=e&d_c=1"}),
+        "/search": httpx.Response(200, text="выдача, которую читать нельзя"),
+    })
+    with pytest.raises(RedirectBlocked, match="закрыт robots.txt; не читаем"):
+        fetch(client, guard)
+    assert not any("/search" in u for u in log)               # запрос на закрытый адрес не уходил
+    assert isinstance(RedirectBlocked("x"), CollectorError)   # для воркера это обычная ошибка источника
+
+
+def test_redirect_to_an_allowed_address_is_followed_and_cross_host_robots_are_checked():
+    client, log, guard = redirecting_site({
+        "/old": httpx.Response(301, headers={"location": "https://h.example/new"}),
+        "/new": httpx.Response(200, text="ok"),
+        "/go-private": httpx.Response(302, headers={"location": "/private/x"}),
+    })
+    assert fetch(client, guard, "https://h.example/old").text == "ok"
+    with pytest.raises(RedirectBlocked):
+        fetch(client, guard, "https://h.example/go-private")
+    assert not any("/private/x" in u for u in log)
+
+
+def test_redirect_chain_is_limited_and_empty_location_is_an_error():
+    client, _, guard = redirecting_site({"/a": httpx.Response(302, headers={"location": "/a"}), "/b": httpx.Response(302)})
+    with pytest.raises(CollectorError, match="редиректов подряд"):
+        fetch(client, guard, "https://h.example/a")
+    with pytest.raises(CollectorError, match="без адреса"):
+        fetch(client, guard, "https://h.example/b")
+
+
+def test_fetch_pages_counts_blocked_redirect_as_closed_not_as_failure():
+    client, log, guard = redirecting_site({
+        "/events": httpx.Response(302, headers={"location": "/search?t=e"}),
+        "/ok": httpx.Response(200, text="страница"),
+    })
+    stats = PageStats()
+    pages = fetch_pages(client, ["https://h.example/events", "https://h.example/ok"], guard=guard, headers={}, retries=0,
+                        sleep=lambda s: None, pause_sec=0, source="Тест", http_error=lambda r: str(r.status_code), stats=stats)
+    assert [p[0] for p in pages] == ["https://h.example/ok"]
+    assert (stats.blocked_by_robots, stats.failed_pages) == (1, 0)
+    assert not any("search" in u for u in log)

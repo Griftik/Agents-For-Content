@@ -44,7 +44,14 @@ from leisure import (
 )
 from leisure.normalize.schema import RawEvent
 
-from ._common import MSK, PageStats, RobotsGuard, get_with_retries, parse_iso
+from ._common import (
+    MSK,
+    PageStats,
+    RedirectBlocked,
+    RobotsGuard,
+    get_checking_robots,
+    parse_iso,
+)
 from ._common import clean_text as _clean
 from .base import Collector, CollectorError, register
 
@@ -252,12 +259,12 @@ class TelegramCollector(Collector):
             return f"Telegram ответил {resp.status_code}: превью закрыто или частота слишком высока. Защиту не обходим."
         return f"Telegram ответил HTTP {resp.status_code}."
 
-    def _fetch(self, client: httpx.Client, channel: str, before: int | None) -> str:
+    def _fetch(self, client: httpx.Client, channel: str, before: int | None, guard: RobotsGuard | None = None) -> str:
         url = PREVIEW_URL.format(channel=channel)
         if before:
             url += "?" + urlencode({"before": before})
-        resp = get_with_retries(
-            client, url, params=None, headers=self._headers(), retries=self.retries, sleep=self._sleep,
+        resp = get_checking_robots(
+            client, url, guard=guard, headers=self._headers(), retries=self.retries, sleep=self._sleep,
             source="Telegram", http_error=self._http_error,
         )
         if "/s/" not in resp.url.path:  # превью выключено: t.me редиректит на обычную страницу канала
@@ -285,7 +292,12 @@ class TelegramCollector(Collector):
                     self._sleep(self.pause_sec)
                 first = False
                 try:
-                    page = self._fetch(client, name, before)
+                    page = self._fetch(client, name, before, guard)
+                except RedirectBlocked as exc:
+                    self.stats.blocked_by_robots += 1
+                    problems.append(str(exc))
+                    log.warning("Telegram: @%s: %s", name, exc)
+                    break
                 except CollectorError as exc:
                     self.stats.failed_pages += 1
                     problems.append(str(exc))
