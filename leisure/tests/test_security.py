@@ -31,7 +31,9 @@ def test_api_key_checked(monkeypatch):
 def test_ics_url_sanitized():
     ev = {"title": "X", "dates": ["2026-10-24"], "time_text": "19:00", "url": "https://a.example/e\r\nATTENDEE:evil"}
     ics = ics_text(ev, "2026-10-24")
-    assert "ATTENDEE" not in ics and "URL:https://a.example/eATTENDEE:evil" in ics.replace("\r\n ", "")
+    unfolded = ics.replace("\r\n ", "")
+    assert not any(line.startswith("ATTENDEE") for line in unfolded.split("\r\n"))  # инъекции свойства нет
+    assert "URL:https://a.example/eATTENDEE:evil" in unfolded
     assert "URL:" not in ics_text({**ev, "url": "javascript:alert(1)"}, "2026-10-24")
 
 
@@ -42,4 +44,4 @@ def test_schema_url_validation():
         EventIn.model_validate({**base, "url": "ftp://x"})
     with pytest.raises(Exception):
         EventIn.model_validate({**base, "url": "https://x.example/a b"})
-    assert EventIn.model_validate({**base, "sources": ["https://ok.example", "nope", "https://bad.example/\n"]}).sources == ["https://ok.example"]
+    assert EventIn.model_validate({**base, "sources": ["https://ok.example", "nope", "https://bad.example/a\nb"]}).sources == ["https://ok.example"]

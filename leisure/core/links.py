@@ -11,6 +11,12 @@ DEFAULT_CITY = "Москва"
 DEFAULT_TZ = "Europe/Moscow"
 
 
+def _clean_url(u: str) -> str:
+    """Только http(s)-ссылка без пробелов и управляющих символов — иначе пусто."""
+    u = "".join(ch for ch in str(u) if ch.isprintable() and not ch.isspace())
+    return u if u.startswith(("http://", "https://")) else ""
+
+
 def event_location(ev: Mapping, city: str = DEFAULT_CITY) -> str:
     parts = [ev.get("venue") or "", ev.get("address") or "", f"м. {ev['metro']}" if ev.get("metro") else ""]
     s = ", ".join(p for p in parts if p)
@@ -22,7 +28,7 @@ def event_desc(ev: Mapping) -> str:
         ev.get("description") or "",
         f"Цена: {ev['price_text']}" if ev.get("price_text") else "",
         f"Примечание: {ev['note']}" if ev.get("note") else "",
-        ev.get("url") or "",
+        _clean_url(ev.get("url") or ""),
     ]
     return "\n\n".join(p for p in parts if p)
 
@@ -94,12 +100,6 @@ def _ics_fold(line: str, limit: int = 75) -> str:
             cur_len += b
     out.append("".join(cur))
     return "\r\n ".join(out)
-
-
-def _clean_url(u: str) -> str:
-    """Только http(s)-ссылка без пробелов и управляющих символов — иначе пусто."""
-    u = "".join(ch for ch in str(u) if ch.isprintable() and not ch.isspace())
-    return u if u.startswith(("http://", "https://")) else ""
 
 
 def _ics_escape(s: str) -> str:
