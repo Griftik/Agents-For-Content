@@ -4,11 +4,12 @@
  "checked": "2026-10-24",
  "checked_from": "окружение разработки (облачный контейнер, исходящий трафик через агентский прокси), запросы GET с User-Agent LeisurePlannerBot, таймаут 10 с, пауза 1 с между запросами к одному хосту",
  "legend": {
-  "type": "aggregator — агрегаторы и билетные операторы; venue — площадки (музеи, театры, концертные залы, парки); club — клубы, бары, джаз; edu — образовательные, деловые и спортивные организации; media — медиа с афишами; tg — Telegram-канал",
+  "type": "aggregator — агрегаторы и билетные операторы; venue — площадки (музеи, театры, концертные залы, парки); club — клубы, бары, джаз; edu — образовательные, деловые и спортивные организации; ngo — НКО и фонды; media — медиа с афишами; tg — Telegram-канал",
   "access": "api / rss / ics / json (структурные данные, в том числе JSON-LD и серверная выдача Next.js внутри HTML) / html / tg (публичное превью t.me/s/) / manual (только руками)",
   "needs_key": "нет — открытая страница или превью; токен — выдаёт владелец; вход — нужна авторизация",
   "robots_section": "открыт / закрыт — разрешён ли для User-agent: * адрес из поля url; неизвестно — robots.txt недоступен",
   "free_now": "true: ответил 2xx с этого хоста, ключ не нужен, robots.txt не закрывает раздел (для tg: превью открыто и канал публиковал за последние 45 дней)",
+  "values": "ценности каталога (core/catalog.VALUES), которые закрывает источник; обязательное поле у пакета «Забота и Покой» (20 записей), у остальных записей пока нет",
   "rank": "по ценности для продукта: сначала работающие коллекторы и то, что даёт много событий без ключа"
  },
  "sources": [
@@ -391,6 +392,38 @@
    "free_now": true
   },
   {
+   "id": "mos_volunteer_page",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Мосволонтёр: страница ресурсного центра на mos.ru",
+   "url": "https://www.mos.ru/city/projects/nko/volunteer",
+   "type": "aggregator",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Городской ресурсный центр: экоакции, помощь пожилым и приютам, мастер-классы в центрах «Доброе место». Афиша на самом сайте mosvolonter.ru (из нашего окружения соединение обрывается), на странице mos.ru только описание и ссылки.",
+   "page_title": "Город неравнодушных: социально ориентированные НКО, благотворительность, волонтерство / Пр",
+   "values": [
+    "Забота",
+    "Единство/Дружба"
+   ],
+   "rank": 11,
+   "free_now": true
+  },
+  {
    "id": "tg_privetpoidem",
    "legal_status": "прочитаны (условия Telegram)",
    "name": "Привет, пойдём?",
@@ -435,7 +468,7 @@
     "name": "Привет, пойдём?",
     "url": "https://t.me/privetpoidem"
    },
-   "rank": 11,
+   "rank": 12,
    "free_now": true
   },
   {
@@ -483,7 +516,7 @@
     "name": "Timepad",
     "url": "https://t.me/TimepadRU"
    },
-   "rank": 12,
+   "rank": 13,
    "free_now": true
   },
   {
@@ -523,7 +556,7 @@
     "channel_title": "Московские Гуляки | Афиша Москва"
    },
    "focus": "Афиша событий Москвы, бесплатные мероприятия, маршруты",
-   "rank": 13,
+   "rank": 14,
    "free_now": true
   },
   {
@@ -566,7 +599,7 @@
     "channel_title": "Афиша Daily"
    },
    "focus": "Афиша Daily: подборки и материалы о городских событиях",
-   "rank": 14,
+   "rank": 15,
    "free_now": true
   },
   {
@@ -614,7 +647,7 @@
     "name": "Две в Москве",
     "url": "https://t.me/dvevmoskve"
    },
-   "rank": 15,
+   "rank": 16,
    "free_now": true
   },
   {
@@ -655,7 +688,7 @@
     "own_venue": "Gazgolder"
    },
    "focus": "Клуб Gazgolder: анонсы вечеринок и концертов",
-   "rank": 16,
+   "rank": 17,
    "free_now": true
   },
   {
@@ -694,7 +727,7 @@
     "channel_title": "Первый Московский"
    },
    "focus": "Крупнейший городской канал Москвы: новости и события (смешанный контент, афиша не основная)",
-   "rank": 17,
+   "rank": 18,
    "free_now": true
   },
   {
@@ -734,7 +767,7 @@
     "channel_title": "Гуляй, Москва"
    },
    "focus": "Городской канал: куда пойти, новости Москвы (смешанный контент)",
-   "rank": 18,
+   "rank": 19,
    "free_now": true
   },
   {
@@ -774,7 +807,7 @@
     "own_venue": "Московская консерватория"
    },
    "focus": "Московская консерватория: концерты в залах",
-   "rank": 19,
+   "rank": 20,
    "free_now": true
   },
   {
@@ -822,7 +855,7 @@
     "name": "fābula gallery / HQ",
     "url": "https://t.me/fabula_gallery"
    },
-   "rank": 20,
+   "rank": 21,
    "free_now": true
   },
   {
@@ -870,7 +903,7 @@
     "name": "Дом Культур",
     "url": "https://t.me/domrestbar"
    },
-   "rank": 21,
+   "rank": 22,
    "free_now": true
   },
   {
@@ -917,7 +950,7 @@
     "name": "Центр «Зотов»",
     "url": "https://t.me/centrezotov"
    },
-   "rank": 22,
+   "rank": 23,
    "free_now": true
   },
   {
@@ -964,7 +997,7 @@
     "name": "Еврейский музей и центр толерантности",
     "url": "https://t.me/jewishmuseum"
    },
-   "rank": 23,
+   "rank": 24,
    "free_now": true
   },
   {
@@ -1009,7 +1042,7 @@
     "name": "Кино в Третьяковке",
     "url": "https://t.me/kinovtretyakovke"
    },
-   "rank": 24,
+   "rank": 25,
    "free_now": true
   },
   {
@@ -1056,7 +1089,7 @@
     "name": "Чехов и компания",
     "url": "https://t.me/chekhovandcompany"
    },
-   "rank": 25,
+   "rank": 26,
    "free_now": true
   },
   {
@@ -1102,7 +1135,7 @@
     "name": "Клуб «СМЕНА»",
     "url": "https://t.me/smenamoscow"
    },
-   "rank": 26,
+   "rank": 27,
    "free_now": true
   },
   {
@@ -1141,7 +1174,7 @@
     "channel_title": "Москва+"
    },
    "focus": "Городской канал Москвы: события и новости (смешанный контент)",
-   "rank": 27,
+   "rank": 28,
    "free_now": true
   },
   {
@@ -1183,7 +1216,7 @@
     "own_venue": "Политехнический музей"
    },
    "focus": "Лекции и события Политехнического музея",
-   "rank": 28,
+   "rank": 29,
    "free_now": true
   },
   {
@@ -1223,7 +1256,7 @@
     "own_venue": "Джаз-клуб Игоря Бутмана"
    },
    "focus": "Афиша джаз-клуба Игоря Бутмана (Верхняя Радищевская, 21)",
-   "rank": 29,
+   "rank": 30,
    "free_now": true
   },
   {
@@ -1264,7 +1297,7 @@
     "own_venue": "Московская федерация волейбола"
    },
    "focus": "Анонсы турниров и матчей Московской федерации волейбола",
-   "rank": 30,
+   "rank": 31,
    "free_now": true
   },
   {
@@ -1306,7 +1339,7 @@
     "channel_title": "Time Out Москва"
    },
    "focus": "Редакционные подборки Time Out Москва",
-   "rank": 31,
+   "rank": 32,
    "free_now": true
   },
   {
@@ -1352,7 +1385,7 @@
     "name": "Клуб Алексея Козлова",
     "url": "https://t.me/kozlovclub"
    },
-   "rank": 32,
+   "rank": 33,
    "free_now": true
   },
   {
@@ -1399,7 +1432,7 @@
     "name": "Музей «Гараж»",
     "url": "https://t.me/garagemca"
    },
-   "rank": 33,
+   "rank": 34,
    "free_now": true
   },
   {
@@ -1446,7 +1479,7 @@
     "name": "РАДИО (greenhouse)",
     "url": "https://t.me/radio_greenhouse"
    },
-   "rank": 34,
+   "rank": 35,
    "free_now": true
   },
   {
@@ -1492,7 +1525,7 @@
     "name": "Музей Москвы",
     "url": "https://t.me/mosmuseum"
    },
-   "rank": 35,
+   "rank": 36,
    "free_now": true
   },
   {
@@ -1539,7 +1572,7 @@
     "name": "Музей-заповедник «Царицыно»",
     "url": "https://t.me/tsaritsyno_museum"
    },
-   "rank": 36,
+   "rank": 37,
    "free_now": true
   },
   {
@@ -1585,7 +1618,7 @@
     "name": "Клуб DEX",
     "url": "https://t.me/club_dex"
    },
-   "rank": 37,
+   "rank": 38,
    "free_now": true
   },
   {
@@ -1627,7 +1660,7 @@
     "channel_title": "KudaGo: Москва"
    },
    "focus": "KudaGo Москва: афиша и интересные места",
-   "rank": 38,
+   "rank": 39,
    "free_now": true
   },
   {
@@ -1673,7 +1706,7 @@
     "name": "ДК Рассвет",
     "url": "https://t.me/dkrassvet"
    },
-   "rank": 39,
+   "rank": 40,
    "free_now": true
   },
   {
@@ -1721,7 +1754,7 @@
     "name": "Своё Поле",
     "url": "https://t.me/svoepole"
    },
-   "rank": 40,
+   "rank": 41,
    "free_now": true
   },
   {
@@ -1768,7 +1801,7 @@
     "name": "KAIA / 1к4",
     "url": "https://t.me/kaia1k4"
    },
-   "rank": 41,
+   "rank": 42,
    "free_now": true
   },
   {
@@ -1814,7 +1847,7 @@
     "name": "Москва глазами инженера",
     "url": "https://t.me/engineerhistory"
    },
-   "rank": 42,
+   "rank": 43,
    "free_now": true
   },
   {
@@ -1860,7 +1893,7 @@
     "name": "Елена Крижевская",
     "url": "https://t.me/elena_krizhevskaya"
    },
-   "rank": 43,
+   "rank": 44,
    "free_now": true
   },
   {
@@ -1908,7 +1941,7 @@
     "name": "Кафе «Публика»",
     "url": "https://t.me/publiquecafe"
    },
-   "rank": 44,
+   "rank": 45,
    "free_now": true
   },
   {
@@ -1956,7 +1989,7 @@
     "name": "Лаборатория «Луч»",
     "url": "https://t.me/luchlab"
    },
-   "rank": 45,
+   "rank": 46,
    "free_now": true
   },
   {
@@ -1995,7 +2028,7 @@
     "channel_title": "Гедонизм на минималках"
    },
    "focus": "Вино и дегустации, авторский канал (смешанный контент)",
-   "rank": 46,
+   "rank": 47,
    "free_now": true
   },
   {
@@ -2036,7 +2069,51 @@
     "own_venue": "Большой театр"
    },
    "focus": "Большой театр России: афиша и новости",
-   "rank": 47,
+   "rank": 48,
+   "free_now": true
+  },
+  {
+   "id": "tg_yogajournal_ru",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "Йога Журнал",
+   "url": "https://t.me/yogajournal_ru",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/yogajournal_ru",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/yogajournal_ru: постов на странице 7, последний 2026-10-24"
+   },
+   "collector": "telegram",
+   "username": "yogajournal_ru",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-24",
+    "posts_on_page": 7,
+    "subscribers": "7.88K",
+    "channel_title": "Йога Журнал",
+    "own_venue": "Yoga Journal Россия"
+   },
+   "values": [
+    "Покой",
+    "Здоровье"
+   ],
+   "focus": "Yoga Journal Россия: практики, фестивали, события йога-сообщества",
+   "rank": 49,
    "free_now": true
   },
   {
@@ -2065,7 +2142,7 @@
    "collector": null,
    "note": "",
    "page_title": "...",
-   "rank": 48,
+   "rank": 50,
    "free_now": true
   },
   {
@@ -2096,7 +2173,7 @@
    "collector": null,
    "note": "",
    "page_title": "Еженедельные парковые забеги на 5 километров | S95",
-   "rank": 49,
+   "rank": 51,
    "free_now": true
   },
   {
@@ -2126,7 +2203,7 @@
    "collector": null,
    "note": "",
    "page_title": "Афиша концертов Москвы на 2026-2027. Купить билеты онлайн",
-   "rank": 50,
+   "rank": 52,
    "free_now": true
   },
   {
@@ -2158,7 +2235,152 @@
    "collector": null,
    "note": "",
    "page_title": "Russia AI Events 2026 – Conferences, Summits &amp; Workshops",
-   "rank": 51,
+   "rank": 53,
+   "free_now": true
+  },
+  {
+   "id": "dobro",
+   "legal_status": "прочитаны",
+   "name": "Добро.ру (платформа добрых дел)",
+   "url": "https://dobro.ru/events",
+   "type": "aggregator",
+   "access": "json",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Условия не изучены. robots.txt: «Disallow: /*?*», а выдача событий живёт по адресу с параметрами (/search?t=e&…), куда /events перенаправляет: нужный раздел закрыт, коллектор не делаем.",
+   "robots": {
+    "status": 200,
+    "section": "закрыт",
+    "note": "закрыт Disallow: /*?*; /events редиректит на /search?t=e&d_c=1&d_s=1"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://dobro.ru/search?t=e&d_c=1&d_s=1"
+   },
+   "collector": null,
+   "note": "Крупнейшая платформа добрых дел: 1047 событий и вакансий по всей России, в данных страницы 30 карточек (название, период, адрес, организатор). Выдача без города: Москву пришлось бы отбирать по адресу. Есть внутренний /api/v2/events/search, но он тоже с параметрами, не трогаем.",
+   "page_title": "Поиск",
+   "values": [
+    "Забота",
+    "Единство/Дружба"
+   ],
+   "access_url": "https://dobro.ru/search?t=e (данные Next.js в HTML; /events перенаправляет туда)",
+   "rank": 54,
+   "free_now": false
+  },
+  {
+   "id": "shpl",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Государственная публичная историческая библиотека",
+   "url": "https://www.shpl.ru/",
+   "type": "venue",
+   "access": "rss",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "главная 200; адрес RSS отвечает 301 на /data/rss/6738/, а тот 429 (лимит запросов), поэтому состав ленты не проверен и повторять не стали"
+   },
+   "collector": null,
+   "note": "RSS-лента на сайте есть, содержимое не проверено из-за 429.",
+   "page_title": "Государственная публичная историческая библиотека России",
+   "values": [
+    "Покой",
+    "Исследования",
+    "Сохранение традиций"
+   ],
+   "access_url": "https://www.shpl.ru/data/rss/6738/",
+   "rank": 55,
+   "free_now": true
+  },
+  {
+   "id": "tg_nekrasovka_library",
+   "legal_status": "прочитаны (условия Telegram)",
+   "name": "nekrasovka_library",
+   "url": "https://t.me/nekrasovka_library",
+   "type": "tg",
+   "access": "tg",
+   "access_url": "https://t.me/s/nekrasovka_library",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет (превью) / api_id+api_hash+вход (Telethon)",
+   "legal": "Условия Telegram (telegram.org/tos, tos/content-licensing, прочитаны 2026-10-24): запрещены scraping/aggregation данных для ИИ, доступ к пользовательскому контенту только для «обычного, законного и предусмотренного использования». Коллектор по умолчанию выключен до решения владельца.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "t.me/robots.txt и telegram.org/robots.txt: 404, ограничений нет"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "note": "превью t.me/s/nekrasovka_library: постов на странице 1, последний 2026-10-21"
+   },
+   "collector": "telegram",
+   "username": "nekrasovka_library",
+   "note": "",
+   "tg": {
+    "preview_public": true,
+    "active": true,
+    "last_post": "2026-10-21",
+    "posts_on_page": 1,
+    "subscribers": "2",
+    "channel_title": "nekrasovka_library",
+    "own_venue": "Библиотека им. Некрасова"
+   },
+   "values": [
+    "Покой",
+    "Смысл"
+   ],
+   "focus": "Библиотека им. Некрасова: анонсы читок, лекций и фестивалей (замена закрытой для робота афиши на сайте)",
+   "rank": 56,
+   "free_now": true
+  },
+  {
+   "id": "daily_good",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Афиша Daily: раздел «Город» (рубрика «Добрые дела»)",
+   "url": "https://daily.afisha.ru/cities/",
+   "type": "media",
+   "access": "rss",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /news/114683-pskovskiy-sobor-iz-perechnya-vsemirnogo-naslediya-yunesko-peredali-v-polzovanie-rpc/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Еженедельная подборка благотворительных событий «Добрые дела» (аннотации присылают фонды через проект «И все за одного»). RSS — общая лента статей, отдельной ленты рубрики не нашли; подборки читает человек или нормализатор.",
+   "page_title": "Город - статьи и подборки о жизни в городе, куда сходить | Афиша Daily",
+   "values": [
+    "Забота"
+   ],
+   "access_url": "https://daily.afisha.ru/export/rss/google_newsstand/",
+   "rank": 57,
    "free_now": true
   },
   {
@@ -2189,7 +2411,7 @@
    "note": "RSS — статьи.",
    "access_url": "https://postnauka.org/feed",
    "page_title": "ПостНаука",
-   "rank": 52,
+   "rank": 58,
    "free_now": true
   },
   {
@@ -2220,7 +2442,140 @@
    "note": "RSS — материалы и курсы, не афиша.",
    "access_url": "https://arzamas.academy/feed_v1.rss",
    "page_title": "Arzamas",
-   "rank": 53,
+   "rank": 59,
+   "free_now": true
+  },
+  {
+   "id": "starikam",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Старость в радость (фонд помощи пожилым)",
+   "url": "https://starikam.org/",
+   "type": "ngo",
+   "access": "rss",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS отдаёт новости фонда (посты WordPress, в ленте есть материалы 2018 года), не события: годится как подсказка для ручной разметки. Волонтёрские выезды фонда по России, в Москве бывают.",
+   "page_title": "Старость в радость &#8212; Благотворительный фонд помощи пожилым людям и&nbsp;инвалидам",
+   "values": [
+    "Забота"
+   ],
+   "access_url": "https://starikam.org/feed/",
+   "rank": 60,
+   "free_now": true
+  },
+  {
+   "id": "lizaalert",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "ЛизаАлерт (поисковый отряд)",
+   "url": "https://lizaalert.org/",
+   "type": "ngo",
+   "access": "rss",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "RSS — новости отряда, не события; набор волонтёров и обучение объявляются по регионам.",
+   "page_title": "ЛизаАлерт &#8212; Поиск пропавших детей, стариков, инвалидов&#8230;",
+   "values": [
+    "Забота",
+    "Единство/Дружба"
+   ],
+   "access_url": "https://lizaalert.org/feed/",
+   "rank": 61,
+   "free_now": true
+  },
+  {
+   "id": "libfl",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Библиотека иностранной литературы: мероприятия",
+   "url": "https://libfl.ru/ru/events",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://libfl.ru/ru/item/o-personalnoy-informacii-polzovateley (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://libfl.ru/"
+   },
+   "collector": null,
+   "note": "Лекции, чтения, клубы и выставки в тихом пространстве библиотеки; события с карточками /ru/event/<имя>, разметки событий нет.",
+   "page_title": "Библиотека иностранной литературы им. М.И. Рудомино",
+   "values": [
+    "Покой",
+    "Смысл",
+    "Исследования"
+   ],
+   "rank": 62,
+   "free_now": true
+  },
+  {
+   "id": "rsl",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Российская государственная библиотека (Ленинка): события",
+   "url": "https://www.rsl.ru/events/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Нетривиальное",
+    "Кино"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Лекции, кинолекторий, чтения и выставки; карточки /events/<имя>/, структурных данных нет (JSON-LD только FAQ).",
+   "page_title": "Российская государственная библиотека - официальный сайт",
+   "values": [
+    "Покой",
+    "Смысл",
+    "Исследования"
+   ],
+   "rank": 63,
    "free_now": true
   },
   {
@@ -2253,7 +2608,7 @@
    "note": "RSS — новости.",
    "access_url": "https://rb.ru/feeds/news_ex/",
    "page_title": "Russian Business — медиа о силе дерзости и денег.",
-   "rank": 54,
+   "rank": 64,
    "free_now": true
   },
   {
@@ -2288,7 +2643,7 @@
    "note": "RSS — лента статей, не событий.",
    "access_url": "https://www.timeout.ru/feed",
    "page_title": "TimeOut Москва: Афиша, Развлечения, Мероприятия и Досуг",
-   "rank": 55,
+   "rank": 65,
    "free_now": true
   },
   {
@@ -2323,7 +2678,7 @@
    "note": "RSS — лента статей, не событий.",
    "access_url": "https://daily.afisha.ru/export/rss/google_newsstand/",
    "page_title": "Афиша Daily - ваш гид по интересным событиям в России и мире",
-   "rank": 56,
+   "rank": 66,
    "free_now": true
   },
   {
@@ -2355,7 +2710,7 @@
    "note": "RSS — статьи.",
    "access_url": "https://www.colta.ru/feed",
    "page_title": "Colta.ru | Всё о культуре и духе времени",
-   "rank": 57,
+   "rank": 67,
    "free_now": true
   },
   {
@@ -2388,7 +2743,7 @@
    "note": "RSS — лента материалов, не событий.",
    "access_url": "https://weekend.rambler.ru/rss/head/?limit=100",
    "page_title": "Отдых и развлечения: все о кино, музыке, сериалах и событиях - Рамблер/развлечения и отдых",
-   "rank": 58,
+   "rank": 68,
    "free_now": true
   },
   {
@@ -2420,7 +2775,7 @@
    "note": "RSS — новости кино; расписание сеансов только в HTML.",
    "access_url": "https://www.kinopoisk.ru/news.rss",
    "page_title": "Билеты в кино — Кинопоиск",
-   "rank": 59,
+   "rank": 69,
    "free_now": true
   },
   {
@@ -2452,7 +2807,7 @@
    "note": "RSS новостей; календарь событий — в HTML.",
    "access_url": "https://www.tadviser.ru/xml/tadviser.xml",
    "page_title": "TAdviser - портал выбора технологий и поставщиков",
-   "rank": 60,
+   "rank": 70,
    "free_now": true
   },
   {
@@ -2483,7 +2838,39 @@
    "note": "Подборка баров, не афиша.",
    "access_url": "https://t-j.ru/feed/",
    "page_title": "Топ-18 лучших винных баров Москвы: рейтинг 2026",
-   "rank": 61,
+   "rank": 71,
+   "free_now": true
+  },
+  {
+   "id": "takiedela",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Такие дела: афиша добрых дел",
+   "url": "https://takiedela.ru/afisha/",
+   "type": "media",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://takiedela.ru/wp-content/themes/takiedela/assets/pdf/oferta_personal.pdf (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Медиа о благотворительности ведёт «Календарь» благотворительных событий (раздел «Афиша»). Разметки событий и RSS на странице нет, HTML.",
+   "page_title": "Такие дела — медиа о социальных проблемах и жизни людей в России",
+   "values": [
+    "Забота",
+    "Единство/Дружба"
+   ],
+   "rank": 72,
    "free_now": true
   },
   {
@@ -2511,7 +2898,7 @@
    "collector": null,
    "note": "",
    "page_title": "Главная страница | Москино",
-   "rank": 62,
+   "rank": 73,
    "free_now": true
   },
   {
@@ -2539,7 +2926,7 @@
    "collector": null,
    "note": "",
    "page_title": "karofilm.ru – сеть кинотеатров КАРО",
-   "rank": 63,
+   "rank": 74,
    "free_now": true
   },
   {
@@ -2569,7 +2956,7 @@
    "collector": null,
    "note": "",
    "page_title": "Третьяковская галерея — главный музей национального искусства России",
-   "rank": 64,
+   "rank": 75,
    "free_now": true
   },
   {
@@ -2597,7 +2984,7 @@
    "collector": null,
    "note": "",
    "page_title": "Пушкинский музей",
-   "rank": 65,
+   "rank": 76,
    "free_now": true
   },
   {
@@ -2634,7 +3021,7 @@
     "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
    },
    "focus": "современное искусство, кино, лекции",
-   "rank": 66,
+   "rank": 77,
    "free_now": true
   },
   {
@@ -2672,7 +3059,7 @@
     "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
    },
    "focus": "современное искусство, кино, лекции",
-   "rank": 67,
+   "rank": 78,
    "free_now": true
   },
   {
@@ -2708,7 +3095,7 @@
     "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
    },
    "focus": "современное искусство, кино, лекции",
-   "rank": 68,
+   "rank": 79,
    "free_now": true
   },
   {
@@ -2746,7 +3133,7 @@
     "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
    },
    "focus": "современное искусство, кино, лекции",
-   "rank": 69,
+   "rank": 80,
    "free_now": true
   },
   {
@@ -2783,7 +3170,7 @@
     "group_name": "ГЭС-2 · Гараж · ММОМА · МАММ · Зотов"
    },
    "focus": "современное искусство, кино, лекции",
-   "rank": 70,
+   "rank": 81,
    "free_now": true
   },
   {
@@ -2814,7 +3201,7 @@
    "collector": null,
    "note": "",
    "page_title": "Музей-заповедник «Царицыно» | Официальный сайт",
-   "rank": 71,
+   "rank": 82,
    "free_now": true
   },
   {
@@ -2845,7 +3232,7 @@
    "collector": null,
    "note": "",
    "page_title": "Официальный сайт ВДНХ",
-   "rank": 72,
+   "rank": 83,
    "free_now": true
   },
   {
@@ -2875,7 +3262,7 @@
    "collector": null,
    "note": "",
    "page_title": "Государственный Дарвиновский музей",
-   "rank": 73,
+   "rank": 84,
    "free_now": true
   },
   {
@@ -2905,7 +3292,7 @@
    "collector": null,
    "note": "",
    "page_title": "Московский Планетарий",
-   "rank": 74,
+   "rank": 85,
    "free_now": true
   },
   {
@@ -2936,7 +3323,7 @@
    "collector": null,
    "note": "",
    "page_title": "Еврейский музей и центр толерантности — история, культура и традиции еврейского народа",
-   "rank": 75,
+   "rank": 86,
    "free_now": true
   },
   {
@@ -2967,7 +3354,7 @@
    "collector": null,
    "note": "",
    "page_title": "Государственный научно-исследовательский музей архитектуры имени А.В.Щусева",
-   "rank": 76,
+   "rank": 87,
    "free_now": true
   },
   {
@@ -2998,7 +3385,7 @@
    "collector": null,
    "note": "",
    "page_title": "Государственный исторический музей в Москве на Красной площади - официальный сайт ГИМ",
-   "rank": 77,
+   "rank": 88,
    "free_now": true
   },
   {
@@ -3029,7 +3416,7 @@
    "collector": null,
    "note": "",
    "page_title": "ММК(Музеи Московского Кремля)",
-   "rank": 78,
+   "rank": 89,
    "free_now": true
   },
   {
@@ -3057,7 +3444,7 @@
    "collector": null,
    "note": "",
    "page_title": "Усадьба Останкино | Главная",
-   "rank": 79,
+   "rank": 90,
    "free_now": true
   },
   {
@@ -3088,7 +3475,7 @@
    "collector": null,
    "note": "",
    "page_title": "Архангельское - музей-усадьба-санаторий.",
-   "rank": 80,
+   "rank": 91,
    "free_now": true
   },
   {
@@ -3119,7 +3506,7 @@
    "collector": null,
    "note": "",
    "page_title": "Государственный дворцово-парковый музей-заповедник «Останкино и Кусково»",
-   "rank": 81,
+   "rank": 92,
    "free_now": true
   },
   {
@@ -3151,7 +3538,7 @@
    "collector": null,
    "note": "",
    "page_title": "ArtPlay | Media-based art for the digital era",
-   "rank": 82,
+   "rank": 93,
    "free_now": true
   },
   {
@@ -3179,7 +3566,7 @@
    "collector": null,
    "note": "",
    "page_title": "Электротеатр Станиславский",
-   "rank": 83,
+   "rank": 94,
    "free_now": true
   },
   {
@@ -3210,7 +3597,7 @@
    "collector": null,
    "note": "",
    "page_title": "МХТ им. А.П.Чехова: Официальный сайт",
-   "rank": 84,
+   "rank": 95,
    "free_now": true
   },
   {
@@ -3238,7 +3625,7 @@
    "collector": null,
    "note": "",
    "page_title": "Театр им. Евгения Вахтангова. Официальный сайт.",
-   "rank": 85,
+   "rank": 96,
    "free_now": true
   },
   {
@@ -3266,7 +3653,7 @@
    "collector": null,
    "note": "",
    "page_title": "Театр «Современник» • Официальный сайт. Купить билеты. Афиша",
-   "rank": 86,
+   "rank": 97,
    "free_now": true
   },
   {
@@ -3294,7 +3681,7 @@
    "collector": null,
    "note": "",
    "page_title": "Театр Наций",
-   "rank": 87,
+   "rank": 98,
    "free_now": true
   },
   {
@@ -3324,7 +3711,7 @@
    "collector": null,
    "note": "",
    "page_title": "Московский театр «Ленком Марка Захарова» — официальный сайт",
-   "rank": 88,
+   "rank": 99,
    "free_now": true
   },
   {
@@ -3352,7 +3739,7 @@
    "collector": null,
    "note": "",
    "page_title": "Театр Моссовета",
-   "rank": 89,
+   "rank": 100,
    "free_now": true
   },
   {
@@ -3384,7 +3771,7 @@
    "note": "",
    "jsonld_events_on_page": 1,
    "page_title": "ШДИ (Школа драматического искусства) — официальный сайт театра на Сретенке",
-   "rank": 90,
+   "rank": 101,
    "free_now": true
   },
   {
@@ -3412,7 +3799,7 @@
    "collector": null,
    "note": "",
    "page_title": "Московская консерватория",
-   "rank": 91,
+   "rank": 102,
    "free_now": true
   },
   {
@@ -3444,7 +3831,7 @@
    "collector": null,
    "note": "",
    "page_title": "Московский международный Дом музыки",
-   "rank": 92,
+   "rank": 103,
    "free_now": true
   },
   {
@@ -3473,7 +3860,7 @@
    "collector": null,
    "note": "",
    "page_title": "Государственный Кремлёвский Дворец",
-   "rank": 93,
+   "rank": 104,
    "free_now": true
   },
   {
@@ -3508,7 +3895,7 @@
     "group_name": "Клуб Бутмана · Эссе · Клуб Козлова"
    },
    "focus": "джаз",
-   "rank": 94,
+   "rank": 105,
    "free_now": true
   },
   {
@@ -3545,7 +3932,7 @@
     "group_name": "Клуб Бутмана · Эссе · Клуб Козлова"
    },
    "focus": "джаз",
-   "rank": 95,
+   "rank": 106,
    "free_now": true
   },
   {
@@ -3581,7 +3968,7 @@
    "legacy": {
     "name": "Marie Laveau"
    },
-   "rank": 96,
+   "rank": 107,
    "free_now": true
   },
   {
@@ -3611,7 +3998,7 @@
    "collector": null,
    "note": "",
    "page_title": "ВФВ Официальный сайт ВФВ",
-   "rank": 97,
+   "rank": 108,
    "free_now": true
   },
   {
@@ -3642,7 +4029,105 @@
    "collector": null,
    "note": "",
    "page_title": "ПФК ЦСКА - официальный сайт",
-   "rank": 98,
+   "rank": 109,
+   "free_now": true
+  },
+  {
+   "id": "yogajournal",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Yoga Journal Россия: события",
+   "url": "https://yogajournal.ru/events/",
+   "type": "media",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Йога-фестивали, конференция Yoga Journal, практики; у проекта есть Telegram-канал @yogajournal_ru (7 постов на странице, последний 24.10).",
+   "page_title": "Йога Журнал | Официальный сайт проекта о йоге и осознанном образе жизни",
+   "values": [
+    "Покой",
+    "Здоровье"
+   ],
+   "rank": 110,
+   "free_now": true
+  },
+  {
+   "id": "gbsad",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Главный ботанический сад РАН (экскурсии и встречи)",
+   "url": "https://gbsad.ru/meropriyatiya",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Сад, оранжереи, розарий, японский сад: экскурсии, прогулки и занятия по расписанию на странице мероприятий (на момент проверки блок детских экскурсий).",
+   "page_title": "http://gbsad.ru",
+   "values": [
+    "Покой",
+    "Природа",
+    "Красота/эстетика"
+   ],
+   "rank": 111,
+   "free_now": true
+  },
+  {
+   "id": "turgenev",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Библиотека-читальня им. Тургенева",
+   "url": "https://turgenev.ru/",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: /uvedomlenie-ob-ispolzovanii-cookie/ (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Историческая читальня на Бужениновой: лекции, экскурсии, вечера; афиша внутри новостей /news/, отдельного списка событий не нашли.",
+   "page_title": "Библиотека-читальня им. И.С. Тургенева",
+   "values": [
+    "Покой",
+    "Сохранение традиций",
+    "Смысл"
+   ],
+   "rank": 112,
    "free_now": true
   },
   {
@@ -3681,7 +4166,7 @@
     "group_name": "Сколково · РАНХиГС · ВШЭ"
    },
    "focus": "лекции, конференции, сообщество",
-   "rank": 99,
+   "rank": 113,
    "free_now": true
   },
   {
@@ -3720,7 +4205,7 @@
     "group_name": "Сколково · РАНХиГС · ВШЭ"
    },
    "focus": "лекции, конференции, сообщество",
-   "rank": 100,
+   "rank": 114,
    "free_now": true
   },
   {
@@ -3749,7 +4234,7 @@
    "collector": null,
    "note": "",
    "page_title": "События Яндекса",
-   "rank": 101,
+   "rank": 115,
    "free_now": true
   },
   {
@@ -3780,7 +4265,7 @@
    "collector": null,
    "note": "",
    "page_title": "МТПП | Московская торгово-промышленная палата",
-   "rank": 102,
+   "rank": 116,
    "free_now": true
   },
   {
@@ -3811,7 +4296,7 @@
    "collector": null,
    "note": "",
    "page_title": "«ОПОРА РОССИИ» поддержка и развитие малого и среднего предпринимательства в России",
-   "rank": 103,
+   "rank": 117,
    "free_now": true
   },
   {
@@ -3841,7 +4326,7 @@
    "collector": null,
    "note": "",
    "page_title": "Ассоциация менеджеров: деловое объединение России",
-   "rank": 104,
+   "rank": 118,
    "free_now": true
   },
   {
@@ -3872,7 +4357,171 @@
    "collector": null,
    "note": "",
    "page_title": "Календарь мероприятий — Open Data Science",
-   "rank": 105,
+   "rank": 119,
+   "free_now": true
+  },
+  {
+   "id": "podari_zhizn",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Фонд «Подари жизнь»",
+   "url": "https://podari-zhizn.ru/",
+   "type": "ngo",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://podari-zhizn.ru/ru"
+   },
+   "collector": null,
+   "note": "Фонд помощи детям с тяжёлыми заболеваниями: акции, благотворительные события, сбор волонтёров. Отдельной афиши с датами не нашли, события в новостях.",
+   "page_title": "Благотворительный фонд «Подари жизнь»",
+   "values": [
+    "Забота"
+   ],
+   "rank": 120,
+   "free_now": true
+  },
+  {
+   "id": "nuzhnapomosh",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "Нужна помощь (благотворительный фонд)",
+   "url": "https://nuzhnapomosh.ru/",
+   "type": "ngo",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 404,
+    "section": "открыт",
+    "note": "на nuzhnapomosh.ru robots.txt нет (404); события на my.nuzhnapomosh.ru/events не открылись (ProxyError)"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Фонд и сервис помощи НКО; афиша событий на my.nuzhnapomosh.ru/events (с этого хоста не ответила, ссылка найдена на takiedela.ru).",
+   "page_title": "Нужна Помощь — Не Иноагент",
+   "values": [
+    "Забота"
+   ],
+   "rank": 121,
+   "free_now": true
+  },
+  {
+   "id": "rusfond",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Русфонд",
+   "url": "https://rusfond.ru/",
+   "type": "ngo",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://connect.ok.ru/offer?url=https%3A%2F%2Frusfond.ru%2Factions%2F1493 (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Сбор помощи тяжелобольным детям; благотворительные концерты и акции упоминаются в новостях, афиши нет.",
+   "page_title": "Русфонд",
+   "values": [
+    "Забота"
+   ],
+   "rank": 122,
+   "free_now": true
+  },
+  {
+   "id": "cleangames",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Чистые игры (эко-соревнования по уборке)",
+   "url": "https://cleangames.ru/",
+   "type": "ngo",
+   "access": "html",
+   "categories": [
+    "Нетривиальное",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: https://world.cleangames.org/training-service-terms (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true,
+    "redirect_to": "https://cleangames.org/",
+    "note": "cleangames.ru перенаправляет на cleangames.org"
+   },
+   "collector": null,
+   "note": "Командные соревнования по сбору мусора. В JSON-LD только организация и ежегодные «Кубки Чистоты» без дат: расписание игр по городам на сайте вёрсткой.",
+   "jsonld_events_on_page": 3,
+   "page_title": "Командные эко-соревнования по уборке и сортировке мусора - Чистые Игры",
+   "values": [
+    "Забота",
+    "Природа",
+    "Единство/Дружба"
+   ],
+   "rank": 123,
+   "free_now": true
+  },
+  {
+   "id": "rsbor",
+   "legal_status": "ссылка на главной не найдена",
+   "name": "РазДельный Сбор (экоакции)",
+   "url": "https://rsbor.ru/",
+   "type": "ngo",
+   "access": "html",
+   "categories": [
+    "Нетривиальное",
+    "Природа и усадьбы"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия на главной не найдена; текст не изучен.",
+   "robots": {
+    "status": 200,
+    "section": "открыт",
+    "note": ""
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Экоактивисты: акции по раздельному сбору и экоуроки в Москве; расписание в новостях.",
+   "page_title": "Главная - &#127795; РазДельный Сбор",
+   "values": [
+    "Забота",
+    "Природа"
+   ],
+   "rank": 124,
    "free_now": true
   },
   {
@@ -3903,7 +4552,7 @@
    "access_url": "https://allevents.in/moscow/RSS",
    "jsonld_events_on_page": 20,
    "page_title": "Explore Upcoming Events & Things To Do In Moscow, MC, Russia | AllEvents",
-   "rank": 106,
+   "rank": 125,
    "free_now": true
   },
   {
@@ -3935,7 +4584,7 @@
    "collector": null,
    "note": "",
    "page_title": "Москвич Mag - О жизни в этом городе и не только",
-   "rank": 107,
+   "rank": 126,
    "free_now": true
   },
   {
@@ -3965,7 +4614,7 @@
    "collector": null,
    "note": "",
    "page_title": "Новости Москвы – Москва 24 – M24.RU",
-   "rank": 108,
+   "rank": 127,
    "free_now": true
   },
   {
@@ -3995,7 +4644,7 @@
    "collector": null,
    "note": "",
    "page_title": "«Вечерняя Москва» - ежедневная городская столичная газета",
-   "rank": 109,
+   "rank": 128,
    "free_now": true
   },
   {
@@ -4026,7 +4675,7 @@
    "collector": null,
    "note": "",
    "page_title": "Волейбол.ру",
-   "rank": 110,
+   "rank": 129,
    "free_now": true
   },
   {
@@ -4059,7 +4708,7 @@
    "note": "JSON-LD есть, но Москва представлена единичными событиями.",
    "jsonld_events_on_page": 16,
    "page_title": "Moscow, Russia Events, Calendar &amp; Tickets | Eventbrite",
-   "rank": 111,
+   "rank": 130,
    "free_now": true
   },
   {
@@ -4100,7 +4749,7 @@
     "focus": "лекции, мастер-классы, нетворкинг"
    },
    "focus": "лекции, мастер-классы, нетворкинг",
-   "rank": 112,
+   "rank": 131,
    "free_now": false
   },
   {
@@ -4134,7 +4783,7 @@
    "note": "robots.txt закрывает нужный раздел.",
    "jsonld_events_on_page": 11,
    "page_title": "Find Events &amp; Groups | Meetup",
-   "rank": 113,
+   "rank": 132,
    "free_now": false
   },
   {
@@ -4163,7 +4812,7 @@
    "collector": null,
    "note": "Редирект на проверку капчи (showcaptcha): защиту не обходим.",
    "page_title": "Вы не робот?",
-   "rank": 114,
+   "rank": 133,
    "free_now": false
   },
   {
@@ -4193,7 +4842,7 @@
    "collector": null,
    "note": "Без входа перенаправляет на страницу авторизации.",
    "page_title": "Sign in | VK",
-   "rank": 115,
+   "rank": 134,
    "free_now": false
   },
   {
@@ -4232,7 +4881,7 @@
     "channel_title": "The Village"
    },
    "focus": "The Village (канал не обновляется с 2023)",
-   "rank": 116,
+   "rank": 135,
    "free_now": false
   },
   {
@@ -4272,7 +4921,7 @@
     "channel_title": "Mosru"
    },
    "focus": "mos.ru (канал не обновляется с апреля 2025)",
-   "rank": 117,
+   "rank": 136,
    "free_now": false
   },
   {
@@ -4312,7 +4961,7 @@
     "channel_title": "SKOLKOVO EVENTS"
    },
    "focus": "Площадка SKOLKOVO: события (канал давно не обновлялся)",
-   "rank": 118,
+   "rank": 137,
    "free_now": false
   },
   {
@@ -4352,7 +5001,7 @@
     "channel_title": "ВДНХ - Афиша | Скидки | Акции"
    },
    "focus": "ВДНХ (канал не обновляется с января 2025)",
-   "rank": 119,
+   "rank": 138,
    "free_now": false
   },
   {
@@ -4391,7 +5040,7 @@
     "channel_title": "МосГорСпорт | Московский спорт"
    },
    "focus": "Мосгорспорт (канал не обновляется с октября 2025)",
-   "rank": 120,
+   "rank": 139,
    "free_now": false
   },
   {
@@ -4430,7 +5079,7 @@
     "channel_title": "Гоголь-центр"
    },
    "focus": "Гоголь-центр (канал не обновляется с 2025)",
-   "rank": 121,
+   "rank": 140,
    "free_now": false
   },
   {
@@ -4468,7 +5117,7 @@
     "focus": "билеты, рейтинги и отзывы"
    },
    "focus": "билеты, рейтинги и отзывы",
-   "rank": 122,
+   "rank": 141,
    "free_now": false
   },
   {
@@ -4498,7 +5147,7 @@
    },
    "collector": null,
    "note": "",
-   "rank": 123,
+   "rank": 142,
    "free_now": false
   },
   {
@@ -4529,7 +5178,40 @@
    "collector": null,
    "note": "",
    "page_title": "Добро пожаловать в творческое объединение GAZ",
-   "rank": 124,
+   "rank": 143,
+   "free_now": false
+  },
+  {
+   "id": "nekrasovka",
+   "legal_status": "ссылка найдена, не читали",
+   "name": "Библиотека им. Некрасова: афиша",
+   "url": "https://nekrasovka.ru/afisha",
+   "type": "venue",
+   "access": "html",
+   "categories": [
+    "Нетривиальное"
+   ],
+   "needs_key": "нет",
+   "legal": "Ссылка на условия: \n                                                                                                        /articles/guest/rules\n                                                                                                 (текст не изучен).",
+   "robots": {
+    "status": 200,
+    "section": "закрыт",
+    "note": "robots.txt закрывает /afisha/ (карточки /afisha/<дата>/<id>); сам список без слэша формально не запрещён, но разбирать закрытое нельзя"
+   },
+   "reachable": {
+    "checked": "2026-10-24",
+    "status": 200,
+    "ok": true
+   },
+   "collector": null,
+   "note": "Афиша читален: читки пьес, лекции, фестивали, экскурсии. Карточки событий закрыты robots.txt — читаем только через Telegram-канал @nekrasovka_library.",
+   "page_title": "Библиотека им. Н.А Некрасова",
+   "values": [
+    "Покой",
+    "Смысл",
+    "Сохранение традиций"
+   ],
+   "rank": 144,
    "free_now": false
   },
   {
@@ -4558,7 +5240,7 @@
    "collector": null,
    "note": "",
    "page_title": "DDoS-Guard",
-   "rank": 125,
+   "rank": 145,
    "free_now": false
   },
   {
@@ -4586,7 +5268,7 @@
    },
    "collector": null,
    "note": "",
-   "rank": 126,
+   "rank": 146,
    "free_now": false
   },
   {
@@ -4614,7 +5296,7 @@
    "collector": null,
    "note": "",
    "page_title": "403",
-   "rank": 127,
+   "rank": 147,
    "free_now": false
   },
   {
@@ -4645,7 +5327,7 @@
    "collector": null,
    "note": "Перенаправляет на russpass.ru; robots.txt закрывает всё.",
    "page_title": "Московские сезоны 2026 — ярмарки и интересные события в Москве на RUSSPASS",
-   "rank": 128,
+   "rank": 148,
    "free_now": false
   },
   {
@@ -4674,7 +5356,7 @@
    "collector": null,
    "note": "",
    "page_title": "Доступ ограничен",
-   "rank": 129,
+   "rank": 149,
    "free_now": false
   },
   {
@@ -4703,7 +5385,7 @@
    "collector": null,
    "note": "",
    "page_title": "403 Forbidden",
-   "rank": 130,
+   "rank": 150,
    "free_now": false
   },
   {
@@ -4750,7 +5432,7 @@
     "focus": "бесплатные и необычные события"
    },
    "focus": "бесплатные и необычные события",
-   "rank": 131,
+   "rank": 151,
    "free_now": false
   }
  ],
@@ -4760,6 +5442,14 @@
    "name": "AiConf (конференция по ИИ)",
    "url": "https://aiconf.ru/",
    "type": "edu",
+   "reason": "хост не ответил из нашего окружения: ConnectTimeout: _ssl.c:1015: The handshake operation timed out",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "ashtanga",
+   "name": "Ashtanga.ru (йога в Москве)",
+   "url": "https://www.ashtanga.ru/",
+   "type": "club",
    "reason": "хост не ответил из нашего окружения: ConnectTimeout: _ssl.c:1015: The handshake operation timed out",
    "checked": "2026-10-24"
   },
@@ -4830,6 +5520,23 @@
    "checked": "2026-10-24"
   },
   {
+   "id": "dhamma",
+   "name": "Випассана в России (dhamma.ru)",
+   "url": "https://www.dhamma.ru/",
+   "type": "club",
+   "reason": "сайт буддийских текстов; RSS — новые переводы, а не события в Москве",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "domsmayakom",
+   "name": "Дом с маяком (детский хоспис)",
+   "url": "https://domsmayakom.ru/",
+   "type": "edu",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
    "id": "esse",
    "name": "Эссе Jazz Club",
    "url": "https://essejazz.ru/",
@@ -4896,6 +5603,14 @@
    "checked": "2026-10-24"
   },
   {
+   "id": "hospicefund",
+   "name": "Фонд помощи хосписам «Вера»",
+   "url": "https://www.hospicefund.ru/",
+   "type": "edu",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has ",
+   "checked": "2026-10-24"
+  },
+  {
    "id": "illuzion",
    "name": "Иллюзион (кинотеатр)",
    "url": "https://illuzion-cinema.ru/",
@@ -4929,6 +5644,14 @@
    "checked": "2026-10-24"
   },
   {
+   "id": "krasnopresnenskie",
+   "name": "Краснопресненские бани",
+   "url": "https://krasnopresnenskie-bani.ru/",
+   "type": "club",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
    "id": "luzhniki",
    "name": "Лужники",
    "url": "https://www.luzhniki.ru/",
@@ -4945,12 +5668,28 @@
    "checked": "2026-10-24"
   },
   {
+   "id": "mosgortur",
+   "name": "Мосгортур (экскурсии и прогулки)",
+   "url": "https://mosgortur.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectTimeout: _ssl.c:1015: The handshake operation timed out",
+   "checked": "2026-10-24"
+  },
+  {
    "id": "moskomsport",
    "name": "Москомспорт",
    "url": "https://www.mos.ru/moskomsport/",
    "type": "venue",
    "reason": "общая страница mos.ru без афиши",
    "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "mosvolonter",
+   "name": "Мосволонтёр (ресурсный центр)",
+   "url": "https://mosvolonter.ru/",
+   "type": "aggregator",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
    "checked": "2026-10-24"
   },
   {
@@ -4977,6 +5716,23 @@
    "type": "club",
    "reason": "адрес перенаправляет на другой сайт («АРМА», arma17.club): тот ли это клуб, не подтверждено",
    "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "muzeon",
+   "name": "Парк «Музеон»",
+   "url": "https://muzeon.ru/",
+   "type": "venue",
+   "reason": "адрес отвечает, но это не парк «Музеон» (заголовок «Все новости Москвы»)",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "neskuchny",
+   "name": "Нескучный сад",
+   "url": "https://neskuchny.ru/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
    "checked": "2026-10-24"
   },
   {
@@ -5039,6 +5795,39 @@
    "checked": "2026-10-24"
   },
   {
+   "id": "redcross",
+   "name": "Российский Красный Крест",
+   "url": "https://www.redcross.ru/",
+   "type": "edu",
+   "reason": "страница «Главная» без содержимого про события; не подтверждено, что это Российский Красный Крест",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "rzhevskie",
+   "name": "Ржевские бани",
+   "url": "https://rzhevskiebani.ru/",
+   "type": "club",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [SSL: TLSV1_ALERT_INTERNAL_ERROR] tlsv1 alert internal error (_ssl.c:1032)",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "sanduny",
+   "name": "Сандуновские бани",
+   "url": "https://sanduny.ru/",
+   "type": "club",
+   "reason": "хост не ответил из нашего окружения: ConnectTimeout: _ssl.c:1015: The handshake operation timed out",
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "sokolniki",
+   "name": "Парк «Сокольники»",
+   "url": "https://www.sokolniki.com/",
+   "type": "venue",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [Errno 104] Connection reset by peer",
+   "checked": "2026-10-24"
+  },
+  {
    "id": "strelka",
    "name": "Стрелка (институт и бар)",
    "url": "https://strelka.com/",
@@ -5060,6 +5849,15 @@
    "url": "https://ticketscloud.com/",
    "type": "aggregator",
    "reason": "B2B-платформа продажи билетов, публичной афиши не нашли",
+   "status": 200,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "tretyakov_quiet",
+   "name": "Лекторий и тишина: Дом-музей Чехова",
+   "url": "https://chekhovmuseum.ru/",
+   "type": "venue",
+   "reason": "это музей-заповедник «Мелихово» в Московской области, не Москва",
    "status": 200,
    "checked": "2026-10-24"
   },
@@ -5106,6 +5904,14 @@
    "checked": "2026-10-24"
   },
   {
+   "id": "voroncovskie",
+   "name": "Воронцовские бани",
+   "url": "https://voroncovskie-bani.ru/",
+   "type": "club",
+   "reason": "хост не ответил из нашего окружения: ProxyError: 502 Bad Gateway",
+   "checked": "2026-10-24"
+  },
+  {
    "id": "winwin",
    "name": "Клуб Win-Win",
    "url": "https://win-win.club/",
@@ -5121,6 +5927,14 @@
    "type": "media",
    "reason": "502/500 при двух попытках",
    "status": 502,
+   "checked": "2026-10-24"
+  },
+  {
+   "id": "yogapractice",
+   "name": "Йога-практика (центр йоги)",
+   "url": "https://www.yogapractice.com/",
+   "type": "club",
+   "reason": "хост не ответил из нашего окружения: ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_",
    "checked": "2026-10-24"
   },
   {

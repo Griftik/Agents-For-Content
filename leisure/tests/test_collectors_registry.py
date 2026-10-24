@@ -9,12 +9,12 @@ import pytest
 
 from leisure.collectors import load_collectors
 from leisure.collectors.base import REGISTRY
-from leisure.core.catalog import ALL_CATS
+from leisure.core.catalog import ALL_CATS, VALUES
 
 SOURCES_PATH = Path(__file__).parents[1] / "seed" / "sources.json"
 DATA = json.loads(SOURCES_PATH.read_text(encoding="utf-8"))
 SOURCES = DATA["sources"]
-TYPES = {"aggregator", "venue", "edu", "club", "media", "tg"}
+TYPES = {"aggregator", "venue", "edu", "ngo", "club", "media", "tg"}
 ACCESS = {"api", "rss", "ics", "json", "html", "tg", "manual"}
 ROBOTS_SECTIONS = {"открыт", "закрыт", "неизвестно", "не прочитан"}
 OLD_SITE_NAMES = {
@@ -122,3 +122,38 @@ def test_not_included_list_explains_itself():
 
 def test_legend_documents_the_vocabulary():
     assert {"type", "access", "needs_key", "robots_section", "free_now", "rank"} <= set(DATA["legend"])
+
+
+# ─── пакет «Забота» и «Покой» ───
+
+def with_values() -> list[dict]:
+    return [s for s in SOURCES if s.get("values")]
+
+
+def test_values_package_has_at_least_fifteen_records_with_valid_values():
+    package = with_values()
+    assert len(package) >= 15
+    for s in package:
+        assert set(s["values"]) <= set(VALUES), f"{s['id']}: неизвестная ценность в {s['values']}"
+        assert len(s["values"]) == len(set(s["values"]))
+
+
+def test_values_package_covers_care_and_calm_with_several_sources_each():
+    package = with_values()
+    assert sum("Забота" in s["values"] for s in package) >= 8
+    assert sum("Покой" in s["values"] for s in package) >= 8
+    kinds = {s["type"] for s in package}
+    assert {"ngo", "venue", "media", "tg"} <= kinds       # фонды, библиотеки и сад, медиа, каналы
+
+
+def test_values_package_robots_closed_sources_are_not_free_and_have_no_collector():
+    got = by_id()
+    for sid in ("dobro", "nekrasovka"):
+        assert got[sid]["robots"]["section"] == "закрыт" and not got[sid]["free_now"] and got[sid]["collector"] is None
+    assert got["dobro"]["access"] == "json"         # данные есть, но robots.txt: «Disallow: /*?*»
+
+
+def test_values_package_telegram_channels_are_collected_by_the_telegram_collector():
+    got = by_id()
+    for sid in ("tg_yogajournal_ru", "tg_nekrasovka_library"):
+        assert got[sid]["collector"] == "telegram" and got[sid]["tg"]["active"] and got[sid]["values"]
