@@ -14,6 +14,7 @@ from sqlalchemy import text  # noqa: E402
 from leisure.db.session import engine, session_factory  # noqa: E402
 
 TEST_USER = 999_000_001
+H = {"X-API-Key": "test-key"}
 
 
 def _db_ok() -> bool:
@@ -35,12 +36,7 @@ def client():
 
     with TestClient(app) as c:
         yield c
-    with session_factory()() as s:
-        s.execute(text("delete from profiles where user_id = :u"), {"u": TEST_USER})
-        s.commit()
-
-
-H = {"X-API-Key": "test-key"}
+        c.delete(f"/api/profile/{TEST_USER}", headers=H)
 
 
 def test_health_and_catalog(client):
@@ -111,6 +107,17 @@ def test_profile_digest_decisions_plan(client):
     assert client.post("/api/decisions", headers=H, json={"user_id": TEST_USER, "event": ev["slug"], "status": "иду", "day": "сб"}).status_code == 422
     assert client.post("/api/decisions", headers=H, json={"user_id": TEST_USER, "event": ev["slug"], "status": "мимо", "reason": "лень"}).status_code == 422
     assert client.get("/api/events/ges2-pocket-ongon-oct24/ics", params={"day": "вчера"}).status_code == 422
+
+
+def test_delete_profile_cascades(client):
+    uid = TEST_USER + 1
+    client.put(f"/api/profile/{uid}", headers=H, json={"interests": {"Джаз": 3}})
+    ev = client.get("/api/events", params={"today": "2026-10-24"}).json()[0]
+    client.post("/api/decisions", headers=H, json={"user_id": uid, "event": ev["slug"], "status": "иду"})
+    assert client.delete(f"/api/profile/{uid}", headers=H).json() == {"removed": True}
+    assert client.get(f"/api/profile/{uid}", headers=H).status_code == 404
+    assert client.get(f"/api/decisions/{uid}", headers=H).json() == []
+    assert client.delete(f"/api/profile/{uid}", headers=H).json() == {"removed": False}
 
 
 def test_admin_login_and_list(client):

@@ -3,10 +3,11 @@ from __future__ import annotations
 
 from html import escape
 
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
 
 from leisure import settings
 from leisure.api import services
@@ -105,5 +106,28 @@ async def profile(message: Message) -> None:
 @router.message(Command("help"))
 async def help_cmd(message: Message) -> None:
     await message.answer("/digest — подборка на ближайшие выходные\n/plan — мой план\n/profile — что я о тебе знаю\n"
-                         "/reset — пройти настройку заново\n\nКаждый четверг в 19:00 пришлю подборку сам; в субботу утром — план, "
-                         "в понедельник спрошу, как прошло.")
+                         "/reset — пройти настройку заново\n/delete — удалить мои данные\n\nКаждый четверг в 19:00 пришлю подборку сам; "
+                         "в субботу утром — план, в понедельник спрошу, как прошло.")
+
+
+DELETE_KEYBOARD = [[{"text": "Да, удалить всё", "callback_data": "del:yes"}, {"text": "Отмена", "callback_data": "del:no"}]]
+
+
+@router.message(Command("delete"))
+async def delete_cmd(message: Message) -> None:
+    await message.answer("Удалить профиль, все решения и подборки? Это отзыв согласия на обработку данных: "
+                         "восстановить будет нельзя, подборки перестанут приходить.", reply_markup=markup(DELETE_KEYBOARD))
+
+
+@router.callback_query(F.data == "del:yes")
+async def delete_yes(cb: CallbackQuery, state: FSMContext) -> None:
+    removed = await run_db(services.delete_profile, cb.from_user.id)
+    await state.clear()
+    await cb.message.edit_text("Готово: данные удалены. Если захочешь вернуться — /start." if removed else "Профиля уже нет.")
+    await cb.answer()
+
+
+@router.callback_query(F.data == "del:no")
+async def delete_no(cb: CallbackQuery) -> None:
+    await cb.message.edit_text("Оставляю всё как есть.")
+    await cb.answer()

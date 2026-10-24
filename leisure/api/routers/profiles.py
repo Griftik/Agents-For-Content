@@ -21,3 +21,9 @@ def put_profile(user_id: int, body: ProfileIn, session: Session = Depends(get_se
     p = services.get_or_create_profile(session, user_id)
     p = services.update_profile(session, p, body.model_dump(exclude_none=True))
     return services.profile_view(p, services.user_decisions(session, user_id))
+
+
+@router.delete("/{user_id}")
+def delete_profile(user_id: int, session: Session = Depends(get_session)) -> dict:
+    """Отзыв согласия (152-ФЗ): удаляет профиль, решения и дайджесты пользователя."""
+    return {"removed": services.delete_profile(session, user_id)}

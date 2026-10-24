@@ -34,6 +34,7 @@ async def run() -> None:
         BotCommand(command="plan", description="Мой план"),
         BotCommand(command="profile", description="Что я о тебе знаю"),
         BotCommand(command="reset", description="Настроить заново"),
+        BotCommand(command="delete", description="Удалить мои данные"),
         BotCommand(command="help", description="Помощь"),
     ])
     await build_dispatcher().start_polling(bot, allowed_updates=["message", "callback_query"])

@@ -114,6 +114,16 @@ def update_profile(session: Session, p: Profile, data: dict) -> Profile:
     return p
 
 
+def delete_profile(session: Session, user_id: int) -> bool:
+    """Отзыв согласия: профиль, решения и дайджесты удаляются каскадом. Обезличенной статистики пока нет."""
+    p = session.get(Profile, user_id)
+    if p is None:
+        return False
+    session.delete(p)
+    session.commit()
+    return True
+
+
 def profile_view(p: Profile, decisions: list[Decision] | None = None) -> dict:
     decs = [d.as_core() for d in (decisions or [])]
     aff = p.affinity or {"tag": {}, "cat": {}, "n": 0}
