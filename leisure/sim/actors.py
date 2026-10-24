@@ -22,9 +22,10 @@ from leisure.core.timeutil import MONTHS
 
 from .fakebot import FakeTelegram, Stored
 from .personas import Persona, sigmoid
-from leisure.bot.keyboards import REASON_LABEL
+from leisure.bot.keyboards import BUDGETS, REASON_LABEL
 
-BUDGET_LABEL = {0: "Без ограничения", 1000: "до 1 000 ₽", 2500: "до 2 500 ₽", 5000: "до 5 000 ₽"}
+BUDGET_LABEL = dict(BUDGETS)          # {0: "Не важно", 1000: "до 1 000 ₽", 2500: …, 5000: …}
+NUDGE_START = "Уже второй раз"        # начало подсказки про бюджет после второго «Мимо — дорого»
 LEVEL_OF_LABEL = {"—": 0, "иногда": 1, "интересно": 2, "в первую очередь": 3}
 BACK_RE = re.compile(r"назад|отмен|вернуть|← |изменить|исправ", re.I)
 DAY_RE = re.compile(r"^(?:(Пятница|Суббота|Воскресенье), )?(\d{1,2}) (" + "|".join(MONTHS) + r")\b")
@@ -109,6 +110,7 @@ class PState:
     churn_cycle: int | None = None
     onboarded_t: datetime | None = None
     last_digest: DigestRec | None = None
+    open_reasons: int | None = None     # mid карточки, на которой остался открытый блок причин «Мимо»
 
 
 def parse_card(st: Stored) -> CardRec | None:
@@ -149,7 +151,7 @@ class Driver:
     def _log(self, ps: PState, kind: str, **kw: Any) -> None:
         self.log.append({"t": self.clock.now.isoformat(), "u": ps.p.user_id, "k": kind, **kw})
 
-    async def _feed(self, ps: PState, upd, cb_id: str | None, what: str) -> dict:
+    async def _feed(self, ps: PState, upd, cb_id: str | None, what: str, mid: int | None = None) -> dict:
         self.updates += 1
         ps.taps += 1
         ps.active_cycles.add(self.cycle_of(self.clock.now))
@@ -168,6 +170,13 @@ class Driver:
         if cb is not None and cb["toast"] == ERROR_TOAST:
             self.f.add("error_toast", f"{what} → «{ERROR_TOAST}»", ps.p.user_id, self.clock.now)
         self._log(ps, "update", what=what, **out)
+        if ps.open_reasons is not None and ps.open_reasons != mid:      # следующее действие не на этой карточке: блок причин должен свернуться
+            st0 = self.world.get(ps.p.user_id, ps.open_reasons)
+            still = st0 is not None and any(str(b.get("callback_data", "")).startswith("r:") for b in st0.buttons())
+            self.f.add("reasons_not_collapsed" if still else "reasons_collapsed",
+                       f"после следующего действия ({what[:40]}) блок причин «Мимо» " + ("остался на карточке" if still else "свернулся"),
+                       ps.p.user_id, self.clock.now)
+            ps.open_reasons = None
         return out
 
     async def say(self, ps: PState, text: str) -> dict:
@@ -180,7 +189,7 @@ class Driver:
         if "callback_data" not in btn:
             raise ValueError(f"кнопка без callback_data: {btn}")
         upd, cb_id = self.world.callback_update(self.bot, p.user_id, p.name, p.username, st.mid, btn["callback_data"])
-        res = await self._feed(ps, upd, cb_id, f"нажатие «{btn['text']}» ({cb_short(btn['callback_data'])}) {why}".strip())
+        res = await self._feed(ps, upd, cb_id, f"нажатие «{btn['text']}» ({cb_short(btn['callback_data'])}) {why}".strip(), mid=st.mid)
         return res
 
     def screen(self, ps: PState) -> Stored | None:
@@ -346,9 +355,15 @@ class Driver:
         if "prefill" not in ps.onb:
             ps.onb["prefill"] = {"counts": dict(Counter(full.values())), "match": sum(1 for c in ALL_CATS if full[c] == p.interest_targets[c]),
                                  "total": len(ALL_CATS), "shown": len(shown), "shown_match": sum(1 for c, v in shown.items() if v == p.interest_targets[c])}
+        # строка бюджета на «Шаге 2»: одно нажатие, экран не закрывается
+        row_labels = {BUDGET_LABEL[a] for a in (1000, 2500, 0)}
+        if self.find(st, lambda t: t.removeprefix("● ") in row_labels) is None:
+            self.f.add("missing_button", "на «Шаге 2 из 2» нет строки бюджета", p.user_id, self.clock.now)
+        elif p.budget_on_step:
+            await self._budget_row(ps)
         left = p.max_interest_taps if p.abandon_step != "interests" else min(3, p.max_interest_taps)
         edits = 0
-        # 1) убрать лишнее из шести
+        # 1) убрать лишнее из восьми
         for c in [c for c in shown if p.interest_targets[c] == 0]:
             if left <= 0:
                 break
@@ -419,11 +434,33 @@ class Driver:
         ps.status = "abandoned"
         return "stuck"
 
+    async def _budget_row(self, ps: PState) -> None:
+        """Бюджет одним нажатием в строке «до 1 000 ₽ / до 2 500 ₽ / Не важно»; выбранное отмечается ●, экран остаётся."""
+        p = ps.p
+        want = BUDGET_LABEL[p.budget]
+        mid0 = self.screen(ps).mid
+        if p.misclick_step == "budget" and not ps.misclick_done:      # ошибся кнопкой, увидел ● не на той, нажал нужную
+            wrong = BUDGET_LABEL[1000] if p.budget != 1000 else BUDGET_LABEL[2500]
+            s = self.screen(ps)
+            await self.tap(ps, s, self.find(s, lambda t, w=wrong: t.removeprefix("● ") == w), "ошибка в бюджете")
+            ps.misclick_done = True
+            ps.onb["misclick"] = {"step": "budget", "wrong": wrong, "intended": want, "recovery": "retap"}
+            self.f.add("budget_row_fixed", f"ошибся кнопкой в строке бюджета («{wrong}»), увидел ● и нажал «{want}»", p.user_id, self.clock.now)
+        s = self.screen(ps)
+        b = self.find(s, lambda t: t.removeprefix("● ") == want)
+        await self.tap(ps, s, b, "бюджет в строке «Шага 2»")
+        s2 = self.screen(ps)
+        marked = self.find(s2, lambda t: t == "● " + want) is not None
+        stayed = s2 is not None and s2.mid == mid0 and "Шаг 2 из 2" in s2.text
+        self.f.add("budget_row_ok" if marked and stayed else "budget_row_broken",
+                   f"бюджет «{want}» в строке: ● {'есть' if marked else 'нет'}, экран {'остался' if stayed else 'сменился'}", p.user_id, self.clock.now)
+        ps.onb["budget_set"] = "step"
+
     # ───────── «Уточнить под себя» ─────────
     def refine_needs(self, ps: PState) -> list[str]:
         p = ps.p
         ops = []
-        if p.budget != 0:
+        if p.budget != 0 and not ps.onb.get("budget_set"):
             ops.append("budget")
         if p.aesthetics != default_aesthetics(p.top_values):
             ops.append("aesthetics")
@@ -431,8 +468,6 @@ class Driver:
             ops.append("times")
         if p.company == "с детьми":
             ops.append("kids")
-        if p.note:
-            ops.append("note")
         return ops
 
     async def refine(self, ps: PState) -> bool:
@@ -440,7 +475,7 @@ class Driver:
         p = ps.p
         ops = self.refine_needs(ps)
         first = next((r for r in ps.digests if r.origin == "first"), None)
-        if not ops or first is None or ps.status != "active":
+        if (not ops and not p.help_at_notes) or first is None or ps.status != "active":
             return False
         head = self.world.get(p.user_id, first.header_mid)
         btn = self.find(head, lambda t: t.startswith("Уточнить"))
@@ -450,6 +485,17 @@ class Driver:
         t0 = ps.taps
         await self.tap(ps, head, btn)
         done: list[str] = []
+        if p.help_at_notes and not ps.onb.get("help_used"):          # команда посреди меню «Уточнить» должна отработать как команда
+            ps.onb["help_used"] = True
+            h0 = len(self.world.chats[p.user_id])
+            await self.say(ps, "/help")
+            h = [m for m in self.world.chats[p.user_id][h0:] if not m.from_user]
+            ok = bool(h) and "/digest" in h[0].text
+            ps.onb["help_at_notes"] = ok
+            self.f.add("command_in_notes_ok" if ok else "command_eaten_by_notes",
+                       "в меню «Уточнить» /help " + ("отработал как команда" if ok else "не дал справки"), p.user_id, self.clock.now)
+            if ops and self.find(self.screen(ps), lambda t: t.startswith("Бюджет")) is None:    # справка закрыла меню: открыть заново
+                await self.tap(ps, head, btn)
 
         def menu() -> Stored | None:
             return self.screen(ps)
@@ -478,6 +524,7 @@ class Driver:
                 if b is None:
                     return False
                 await self.tap(ps, s, b)
+                ps.onb["budget_set"] = "menu"
             elif op == "aesthetics":
                 s = await open_item("Эстетика")
                 want = "Да, важна" if p.aesthetics else "Не принципиально"
@@ -501,18 +548,6 @@ class Driver:
                 if b is None:
                     return False
                 await self.tap(ps, s, b)
-            elif op == "note":
-                s = await open_item("Заметка")
-                if p.help_at_notes and not ps.onb.get("help_used"):
-                    ps.onb["help_used"] = True
-                    h0 = len(self.world.chats[p.user_id])
-                    await self.say(ps, "/help")
-                    h = [m for m in self.world.chats[p.user_id][h0:] if not m.from_user]
-                    ok = bool(h) and "/digest" in h[0].text
-                    ps.onb["help_at_notes"] = ok
-                    self.f.add("command_in_notes_ok" if ok else "command_eaten_by_notes",
-                               "на шаге заметки /help " + ("отработал как команда" if ok else "не дал справки"), p.user_id, self.clock.now)
-                await self.say(ps, p.note)
             done.append(op)
         rebuilt = False
         m = menu()
@@ -541,10 +576,11 @@ class Driver:
             return "stuck"
         await self.tap(ps, s, b)
         s = self.screen(ps)
-        b = self.find(s, lambda t: t.startswith("Сохранить"))
+        b = self.find(s, lambda t: t.startswith(("Сохранить", "Показать подборку")))
         if b is None:
             self._stuck(ps, "reset", "Сохранить")
             return "stuck"
+        ps.onb["reset_save_label"] = b["text"]
         await self.tap(ps, s, b)
         ps.onb["reset_taps"] = ps.taps - before
         _ = p
@@ -628,7 +664,7 @@ class Driver:
                 ps.first_go_taps = ps.taps
                 ps.first_go_cycle = self.cycle_of(self.clock.now)
 
-    async def _act_on_card(self, ps: PState, rec: DigestRec, card: CardRec, ev: dict, action: str) -> None:
+    async def _act_on_card(self, ps: PState, rec: DigestRec, card: CardRec, ev: dict, action: str, force_reason: str | None = None) -> None:
         p, rng = ps.p, ps.rng
         label = {"go": "Иду", "maybe": "Может быть", "interest": "Интересно", "skip": "Мимо"}[action]
         st = self.world.get(p.user_id, card.mid)
@@ -681,7 +717,7 @@ class Driver:
                 self.f.add("reasons_missing", "после «Мимо» нет кнопок причин", p.user_id, self.clock.now)
                 return
             by_label = {lbl: name for name, lbl in REASON_LABEL.items()}
-            reason = None if rng.random() < 0.15 else p.skip_reason(ev, rng, list(REASON_LABEL))
+            reason = force_reason or (None if rng.random() < 0.15 else p.skip_reason(ev, rng, list(REASON_LABEL)))
             if reason is None:
                 self.f.add("reason_not_answered", f"«Мимо» без выбора причины — блок причин остаётся в карточке «{card.title[:30]}»",
                            p.user_id, self.clock.now)
@@ -702,10 +738,14 @@ class Driver:
                     reason_chosen = True
                     if r3["exc"] is None and r3["toast"] != ERROR_TOAST:
                         self._set_decision(ps, rec, card, "мимо", r3, reason=by_label[want])
+                        if want == "Дорого":
+                            await self._after_dear(ps, rec, card)
                         self.taps.append({"t": self.clock.now.isoformat(), "u": p.user_id, "kind": "reason", "reason": by_label[want],
                                           "event_id": card.event_id, "week": rec.week, "cycle": self.cycle_of(self.clock.now),
-                                          "two_step": want not in ("Не моё", "Дорого", "Далеко")})
+                                          "two_step": want not in ("Не моё", "Дорого", "Далеко", "Уже был")})
         st_after = self.world.get(p.user_id, card.mid)
+        if action == "skip" and any(str(b.get("callback_data", "")).startswith("r:") for b in st_after.buttons()):
+            ps.open_reasons = card.mid
         links_after = [b["text"] for b in st_after.buttons() if "url" in b]
         lost = [x for x in links_before if x not in links_after]
         if lost:
@@ -713,6 +753,55 @@ class Driver:
             self.f.add("links_lost_after_click", f"после «{label}»{' и выбора причины' if reason_chosen else ''} из карточки пропали "
                        f"{lost}{' (последняя карточка — вместе с «Весь дайджест»)' if is_last and 'Весь дайджест' in lost else ''}",
                        p.user_id, self.clock.now)
+
+    async def nudge_probe(self, ps: PState, rec: DigestRec) -> bool:
+        """Сценарий: человек с бюджетом «не важно» дважды подряд жмёт «Мимо — дорого» на разных карточках первой подборки."""
+        cards = rec.cards[:2]
+        if len(cards) < 2:
+            return False
+        for card in cards:
+            await self._act_on_card(ps, rec, card, self.events.get(card.event_id) or {}, "skip", force_reason="дорого")
+        return True
+
+    async def _after_dear(self, ps: PState, rec: DigestRec, card: CardRec) -> None:
+        """Второй раз «Мимо — дорого» при бюджете «не важно»: бот один раз подсказывает про «Уточнить под себя»."""
+        p, rng = ps.p, ps.rng
+        n = sum(1 for d in ps.decisions.values() if d.get("status") == "мимо" and d.get("reason") == "дорого")
+        budget_free = not ps.onb.get("budget_set")
+        due = n >= 2 and budget_free and not ps.onb.get("nudge_seen")
+        last = next((m for m in reversed(self.world.chats[p.user_id]) if not m.from_user), None)
+        shown = last is not None and last.text.startswith(NUDGE_START)
+        if shown:
+            ps.onb["nudge_seen"] = True
+        if due:
+            self.f.add("nudge_ok" if shown else "nudge_missing",
+                       f"второе «Мимо — дорого» ({n}), бюджет «не важно»: подсказка " + ("пришла" if shown else "не пришла"), p.user_id, self.clock.now)
+            if not shown:
+                ps.onb["nudge_seen"] = True
+        elif shown:
+            self.f.add("nudge_unexpected", f"подсказка про бюджет пришла при {n} «дорого» и бюджете {'задан' if not budget_free else 'не важно'}", p.user_id, self.clock.now)
+            return
+        if not (shown and due):
+            return
+        btn = self.find(last, lambda t: t.startswith("Уточнить"))
+        if btn is None:
+            self.f.add("missing_button", "в подсказке про бюджет нет кнопки «Уточнить под себя»", p.user_id, self.clock.now)
+            return
+        if p.budget == 0 or rng.random() >= 0.55:
+            return
+        await self.tap(ps, last, btn, "из подсказки про бюджет")
+        m = self.screen(ps)
+        b = self.find(m, lambda t: t.startswith("Бюджет"))
+        if b is None:
+            self.f.add("missing_button", "в меню «Уточнить» из подсказки нет «Бюджет»", p.user_id, self.clock.now)
+            return
+        await self.tap(ps, m, b)
+        m = self.screen(ps)
+        b = self.find(m, lambda t: t.removeprefix("● ") == BUDGET_LABEL[p.budget])
+        if b is not None:
+            await self.tap(ps, m, b, "бюджет из подсказки")
+            ps.onb["budget_set"] = "nudge"
+            self.f.add("nudge_followed", f"из подсказки задал бюджет «{BUDGET_LABEL[p.budget]}»", p.user_id, self.clock.now)
 
     # ───────── оценки ─────────
     async def react_feedback(self, ps: PState, msgs: list[Stored]) -> None:

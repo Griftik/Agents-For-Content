@@ -38,7 +38,7 @@ def _dev_profiles() -> int | None:
     try:
         eng = create_engine(make_url(settings.DATABASE_URL), connect_args={"connect_timeout": 3})
         with eng.connect() as c:
-            return c.execute(text("select count(*) from profiles")).scalar()
+            return c.execute(text("select count(*) from profiles where user_id < 999000000")).scalar()   # тестовые id других прогонов (tests/ids.py) не считаем
     except Exception:  # noqa: BLE001
         return None
 
@@ -71,6 +71,8 @@ def test_sim_smoke_three_users_one_week(tmp_path):
     # симуляция не должна ломать продукт: ни исключений в обработчиках, ни потерянных нажатий, ни нарушений формата Bot API
     run = json.loads((tmp_path / "out" / "run_data.json").read_text(encoding="utf-8"))
     assert run["handler_errors"] == 0
+    # v2.1: бюджет строкой на «Шаге 2», свёртка блока причин, подсказка про бюджет не должны давать сбоев
+    assert not {k for k in ("budget_row_broken", "reasons_not_collapsed", "nudge_missing", "nudge_unexpected") if k in run["findings"]}, run["findings"]
     assert run["db"]["decision_integrity"]["missing"] == 0 and run["db"]["decision_integrity"]["mismatch"] == 0
     assert not {k for k in run["violations"] if k not in {"button_url_long", "html_warning"}}, run["violations"]
     # база симуляции удалена, база разработки не тронута

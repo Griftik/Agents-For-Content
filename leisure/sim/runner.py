@@ -237,6 +237,7 @@ class Sim:
         self.feedback_sent: list[dict] = []
         self.scenarios: dict = {}
         self.job_fns: dict = {}
+        self.resend: dict = {"stage": 0, "tried": []}
 
     # ── очередь ──
     def push(self, t: datetime, prio: int, kind: str, payload=None) -> None:
@@ -273,6 +274,7 @@ class Sim:
         if self.weeks >= 3:
             self.push(at_local(FRI0 + timedelta(days=21 - 2), 12), PRIO_USER, "fsm_restart")
         self.push(at_local(FRI0 + timedelta(days=7), 13), PRIO_USER, "not_ready")
+        self.push(at_local(FRI0 + timedelta(days=1), 15), PRIO_USER, "nudge_probe")
 
     def _local_date(self, ps, uid: int) -> str:
         tz = ps.p.tz if ps is not None else MSK
@@ -497,7 +499,59 @@ class Sim:
                 self.clock.now = t
             await getattr(self, "on_" + kind)(payload)
 
+    # ── проба «недоставленная карточка досылается»: одному человеку в четверговой рассылке 4 раза подряд 502 на первой карточке ──
+    def _resend_before(self, name: str) -> None:
+        from aiogram.exceptions import TelegramServerError
+        from aiogram.methods import SendMessage
+
+        rp = self.resend
+        now = self.clock.now
+        thu = now.weekday() == 3 and now.hour == 16 and now.minute == 0       # чт 19:00 МСК
+        if name != "send" or rp["stage"] != 0 or not thu or now < at_local(FRI0 + timedelta(days=6), 0):
+            return
+        cands = [ps for ps in self.states if ps.status == "active" and ps.p.tz == MSK and ps.p.user_id not in self.world.blocked
+                 and ps.p.user_id not in rp["tried"]]
+        if not cands:
+            return
+        uid = cands[0].p.user_id
+        rp.update(uid=uid, stage=1, week=(now.date() - FRI0).days // 7 + 1, chat_len=len(self.world.chats[uid]), log_len=len(self.catcher.records) if self.catcher else 0)
+        rp["tried"].append(uid)
+        dummy = SendMessage(chat_id=uid, text="x")
+        self.world.fail_for[uid] = [None] + [TelegramServerError(method=dummy, message="Bad Gateway") for _ in range(4)]
+
+    async def _resend_after(self, name: str) -> None:
+        from leisure.db.models import Digest
+
+        rp = self.resend
+        if name != "send" or rp["stage"] == 0 or rp["stage"] == 3:
+            return
+        uid = rp["uid"]
+        wk_start = FRI0 + timedelta(days=7 * rp["week"])
+
+        def facts(s):
+            row = s.query(Digest).filter(Digest.user_id == uid, Digest.weekend_start == wk_start).first()
+            items = list(row.items or []) if row else []
+            return {"row": row is not None and row.sent_at is not None, "items": len(items), "flagged": sum(1 for it in items if it.get("undelivered"))}
+
+        f = await db_call(facts)
+        new = [m for m in self.world.chats[uid][rp["chat_len"]:] if not m.from_user]
+        cards = [m for m in new if any(str(b.get("callback_data", "")).startswith("d:g:") for b in m.buttons())]
+        if rp["stage"] == 1:
+            self.world.fail_for.pop(uid, None)
+            if not f["row"] or not f["flagged"]:          # у человека не было подборки в эту неделю — попробуем на следующей
+                rp["stage"] = 0
+                if self.catcher:
+                    del self.catcher.records[rp["log_len"]:]
+                return
+            rp.update(stage=2, items=f["items"], flagged_first=f["flagged"], cards_first=len(cards))
+            if self.catcher:
+                del self.catcher.records[rp["log_len"]:]       # WARNING о недоставке вызван нашей пробой
+            return
+        rp.update(stage=3, flagged_after=f["flagged"], cards_after=len(cards), resent=len(cards) - rp["cards_first"])
+        self.scenarios["resend_probe"] = {k: rp[k] for k in ("uid", "week", "items", "flagged_first", "cards_first", "flagged_after", "cards_after", "resent")} | {"ran": True}
+
     async def on_job(self, name: str) -> None:
+        self._resend_before(name)
         t0 = time.perf_counter()
         n = await asyncio.to_thread(self.job_fns[name], self.clock.now)
         dt = time.perf_counter() - t0
@@ -505,6 +559,7 @@ class Sim:
         self.jobs.append({"job": name, "t": self.clock.now.isoformat(), "cycle": cycle_of(self.clock.now), "returned": n,
                           "messages": before, "seconds": round(dt, 3)})
         self.collect("weekly" if name == "send" else name)
+        await self._resend_after(name)
 
     async def on_onboard(self, ps) -> None:
         res = await self.driver.onboard(ps)
@@ -525,6 +580,20 @@ class Sim:
             return
         await self.driver.refine(ps)
         self.collect("rebuilt")
+
+    async def on_nudge_probe(self, _payload) -> None:
+        """Подсказка про бюджет: второй «Мимо — дорого» при бюджете «не важно» (человек без правок бюджета и без других «дорого»)."""
+        for ps in self.states:
+            if ps.status != "active" or ps.p.budget != 0 or ps.onb.get("budget_set") or ps.p.user_id in self.world.blocked:
+                continue
+            if any(d.get("reason") == "дорого" for d in ps.decisions.values()):
+                continue
+            rec = next((r for r in reversed(ps.digests) if len(r.cards) >= 2 and not any(c.event_id in ps.decisions for c in r.cards[:2])), None)
+            if rec is None:
+                continue
+            await self.driver.nudge_probe(ps, rec)
+            self.scenarios["nudge_probe"] = {"uid": ps.p.user_id, "week": rec.week}
+            return
 
     async def on_react_digest(self, payload) -> None:
         ps, rec = payload
@@ -722,7 +791,7 @@ def db_facts(sim: Sim) -> dict:
         # 3. что лежит в Digest.items против отправленного
         delivered: dict = {}
         for rec in sim.digest_recs:
-            if rec.origin in ("first", "weekly", "reset") and rec.week is not None:
+            if rec.origin in ("first", "weekly", "reset", "rebuilt") and rec.week is not None:
                 delivered.setdefault((rec.uid, rec.week), []).append([c.event_id for c in rec.cards])
         dg = {"rows_sent": 0, "items_differ": 0, "opened_true": 0, "decisions_count_nonzero": 0, "sent_not_delivered": 0, "examples": []}
         for row in digs:
@@ -733,6 +802,8 @@ def db_facts(sim: Sim) -> dict:
             dg["decisions_count_nonzero"] += int(bool(row.decisions_count))
             dg["decisions_count_sum"] = dg.get("decisions_count_sum", 0) + int(row.decisions_count or 0)
             week = (row.weekend_start - FRI0).days // 7
+            if row.user_id == sim.resend.get("uid") and week == sim.resend.get("week"):
+                continue                              # пробе специально не доставили карточку: items и сообщение расходятся по замыслу
             got = delivered.get((row.user_id, week))
             if not got:
                 dg["sent_not_delivered"] += 1
@@ -746,6 +817,7 @@ def db_facts(sim: Sim) -> dict:
                     dg["examples"].append(f"u{row.user_id}, уикенд {row.weekend_start}: в сообщении {len(got[-1])} событий, в Digest.items "
                                           f"{len(stored)} (только в БД: {only_db}, только в сообщении: {only_msg})")
         # пересобранные по «Пересобрать подборку» подборки: попали ли показанные карточки в журнал digests
+        digest_users = {r.user_id for r in digs}
         by_row = {(r.user_id, (r.weekend_start - FRI0).days // 7): {str(it.get("event_id")) for it in (r.items or [])} for r in digs if r.sent_at}
         rb = {"digests": 0, "cards": 0, "not_logged": 0, "new_events": 0, "example": None}
         shown_first: dict = {}
@@ -753,7 +825,7 @@ def db_facts(sim: Sim) -> dict:
             if rec.origin in ("first", "weekly", "reset"):
                 shown_first.setdefault((rec.uid, rec.week), set()).update(c.event_id for c in rec.cards)
         for rec in sim.digest_recs:
-            if rec.origin != "rebuilt":
+            if rec.origin != "rebuilt" or rec.uid not in digest_users:      # удалённые по /delete — строк в БД уже нет
                 continue
             rb["digests"] += 1
             logged = by_row.get((rec.uid, rec.week), set())
@@ -783,8 +855,8 @@ def db_facts(sim: Sim) -> dict:
                 mism["values"] += 1
             # ожидаемое в профиле: то, что человек реально ввёл в «Уточнить», иначе умолчания продукта
             exp = {"company": "с детьми" if "kids" in ops else "любая", "times": sorted(p.times) if "times" in ops else ["вечер", "день"],
-                   "budget": p.budget if "budget" in ops else 0,
-                   "aesthetics": p.aesthetics if "aesthetics" in ops else default_aesthetics(p.top_values), "notes": p.note if "note" in ops else ""}
+                   "budget": p.budget if ps.onb.get("budget_set") else 0,
+                   "aesthetics": p.aesthetics if "aesthetics" in ops else default_aesthetics(p.top_values)}
             if prm.get("company") != exp["company"]:
                 mism["company"] += 1
             if sorted(prm.get("times") or []) != sorted(exp["times"]):
@@ -793,12 +865,10 @@ def db_facts(sim: Sim) -> dict:
                 mism["budget"] += 1
             if bool(prm.get("aesthetics")) != exp["aesthetics"]:
                 mism["aesthetics"] += 1
-            if (pr.notes or "") != exp["notes"]:
-                mism["notes"] += 1
             # разрыв «что хотел человек» — «что в профиле»: у не открывших «Уточнить» остаются умолчания
             gap = [k for k, want, have in (("budget", p.budget, prm.get("budget")), ("aesthetics", p.aesthetics, bool(prm.get("aesthetics"))),
                                            ("times", sorted(p.times), sorted(prm.get("times") or [])),
-                                           ("kids", p.company == "с детьми", prm.get("company") == "с детьми"), ("notes", p.note, pr.notes or ""))
+                                           ("kids", p.company == "с детьми", prm.get("company") == "с детьми"))
                    if want != have]
             g = intent.setdefault("refined" if "refine_ops" in ps.onb else "not_refined", {"n": 0, "with_gap": 0, "fields": Counter()})
             g["n"] += 1
@@ -910,7 +980,6 @@ def sensitivity(sim: Sim) -> dict:
             tests = {
                 "company": [_variant(base, company=c) for c in COMPANY_OPTIONS if c != prm.get("company")],
                 "kids": [_variant(base, kids=not prm.get("kids"))],
-                "notes": [{**base, "notes": "ищу тишину, природу и камерные места, не люблю шум"}],
                 "budget (контроль)": [_variant(base, budget=b) for b in (0, 1000, 5000) if b != prm.get("budget")],
                 "times (контроль)": [_variant(base, times=t) for t in (["утро"], ["ночь"])],
                 "aesthetics (контроль)": [_variant(base, aesthetics=not prm.get("aesthetics"))],
@@ -943,6 +1012,7 @@ def build_results(sim: Sim, args: dict, db_url: str, facts: dict, sens: dict, lo
             "misclick": ps.onb.get("misclick"), "screens_back": ps.onb.get("screens"),
             "prefill": ps.onb.get("prefill"), "interest_buttons": ps.onb.get("interest_buttons"), "interest_rows": ps.onb.get("interest_rows"),
             "weight_prompts": ps.onb.get("weight_prompts"), "refine": p.refine, "refine_ops": ps.onb.get("refine_ops"),
+            "budget_on_step": p.budget_on_step, "budget_set": ps.onb.get("budget_set"), "nudge_seen": ps.onb.get("nudge_seen"),
             "refine_taps": ps.onb.get("refine_taps"), "refine_rebuilt": ps.onb.get("refine_rebuilt"), "used_all_screen": ps.onb.get("used_all_screen"),
             "reset_taps": ps.onb.get("reset_taps"), "top_values": p.top_values, "first_go_taps": ps.first_go_taps, "first_go_cycle": ps.first_go_cycle,
             "active_cycles": sorted(ps.active_cycles), "digest_cycles": sorted(ps.digest_cycles), "churn_cycle": ps.churn_cycle,

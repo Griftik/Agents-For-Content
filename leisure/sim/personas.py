@@ -180,6 +180,7 @@ class Persona:
     reason_none_p: float
     refine: bool = False                 # откроет ли «Уточнить под себя» после первой подборки
     legacy_abandon: str | None = None    # где бросил бы прежний онбординг (для сравнения когорт)
+    budget_on_step: bool = False         # нажмёт бюджет в строке «Шага 2» (v2.1); бюджет 5 000 ₽ в строке нет — только через «Уточнить»
     seed_key: str = ""
     taste_cats: dict[str, float] = field(default_factory=dict)
     value_w: dict[str, int] = field(default_factory=dict)
@@ -328,6 +329,9 @@ def make_persona(seed: int, idx: int, archetype: str, n_users: int) -> Persona:
         persona.refine = vrng.random() < 0.15 + 0.7 * a["patience"]
     else:
         vrng.random()
+    # v2.1: строка бюджета на «Шаге 2» — одно нажатие, большинство с бюджетом её использует. Отдельный поток, чтобы не сдвигать прежнюю когорту.
+    brng = random.Random(f"{seed}:{idx}:v21")
+    persona.budget_on_step = persona.budget in (1000, 2500) and brng.random() < 0.85
     return persona
 
 
@@ -341,7 +345,7 @@ def generate(n_users: int = 50, seed: int = DEFAULT_SEED) -> list[Persona]:
     while len(pool) < n_users:               # больше 50 — добираем архетипы по кругу
         pool.append(pool[len(pool) % 50])
     personas = [make_persona(seed, i, pool[i], n_users) for i in range(n_users)]
-    # особые случаи, детерминированно: смена часового пояса, /reset, /delete, «/help» в шаге заметки
+    # особые случаи, детерминированно: смена часового пояса, /reset, /delete, «/help» посреди меню «Уточнить»
     srng = random.Random(f"{seed}:special")
     order = list(range(n_users))
     srng.shuffle(order)

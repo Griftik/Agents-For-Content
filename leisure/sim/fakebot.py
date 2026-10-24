@@ -130,6 +130,7 @@ class FakeTelegram:
         self._update_seq = 0
         self.new_since_drain: list[Stored] = []
         self.fail_plan: list[Exception | None] = []   # план сбоев для ближайших sendMessage: None — отправить нормально
+        self.fail_for: dict[int, list[Exception | None]] = {}   # то же, но по чату: сбои только для сообщений этому пользователю
         self.bot: Bot | None = None
 
     # ── служебное ──
@@ -248,6 +249,11 @@ class FakeTelegram:
         pm = self._resolve(bot, m.parse_mode)
         pm = pm.value if hasattr(pm, "value") else pm
         rows = markup_rows(m.reply_markup)
+        if self.fail_for.get(chat_id):
+            exc = self.fail_for[chat_id].pop(0)
+            if exc is not None:
+                self._record(method="SendMessage", chat_id=chat_id, ok=False, error=type(exc).__name__, text=plain_text(m.text, pm)[:80])
+                raise exc
         if self.fail_plan:
             exc = self.fail_plan.pop(0)
             if exc is not None:
