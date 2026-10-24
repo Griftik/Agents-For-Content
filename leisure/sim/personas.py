@@ -14,8 +14,9 @@ from leisure.core.catalog import ALL_CATS, VALUE_MAP, VALUES
 from leisure.core.timeutil import slot_of
 
 DEFAULT_SEED = 20261024
-# Ценности, из которых лепятся персоны, — 13 исходных (порядок прототипа). В каталоге продукта их стало больше (аудит ценностей),
-# но состав персон должен оставаться тем же между прогонами; на новые ценности персона отвечает «не очень», выбрать их среди пяти главных не может.
+# Ядро персон — 13 исходных ценностей (порядок прототипа): от него зависит розыгрыш случайных чисел, поэтому состав людей (архетипы,
+# вероятности отвала, интересы, время онбординга) остаётся тем же, что в прошлых прогонах. Шесть новых ценностей каталога (аудит ценностей)
+# персоны получают отдельным розыгрышем (NEW_VALUE_POOL): часть заменяет в пятёрке главных последние по порядку ценности.
 BASE_VALUES = ["Творчество", "Наставничество", "Забота", "Единство/Дружба", "Развитие", "Красота/эстетика", "Инновации/новизна", "Свобода", "Семья",
                "Исследования", "Здоровье", "Сохранение традиций", "Природа"]
 FIRST_USER_ID = 900_000_001
@@ -119,6 +120,16 @@ ARCHETYPES: dict[str, dict] = {
 ENGAGEMENT_SCALE = 0.72
 CHURN_SHIFT = 0.12
 
+NEW_VALUES = ["Удовольствие", "Веселье", "Азарт", "Покой", "Близость", "Смысл"]
+NEW_VALUE_POOL = {
+    "эстет": ["Покой", "Близость"], "нетворкер": ["Азарт", "Веселье"], "интеллектуал": ["Смысл", "Покой"],
+    "родитель": ["Близость", "Покой"], "спортсмен": ["Азарт", "Веселье"], "тусовщик": ["Веселье", "Удовольствие"],
+    "экономный": ["Покой", "Смысл"], "занятой": ["Азарт", "Смысл"], "мастер": ["Удовольствие", "Смысл"],
+}
+# Шаги онбординга v2 на пути до подборки: согласие → 5 ценностей → интересы. Остальные шаги прежнего онбординга
+# (важно / не очень, компания, время, бюджет, эстетика, заметка) перенесены в необязательное «Уточнить под себя».
+V2_STEPS = ("consent", "values", "interests")
+
 TZ_OVERRIDES = ["Europe/Kaliningrad", "Asia/Yekaterinburg", "Asia/Novosibirsk"]  # «переехавшие»: у остальных Москва
 
 
@@ -167,6 +178,8 @@ class Persona:
     delete_week: int | None
     reset_week: int | None
     reason_none_p: float
+    refine: bool = False                 # откроет ли «Уточнить под себя» после первой подборки
+    legacy_abandon: str | None = None    # где бросил бы прежний онбординг (для сравнения когорт)
     seed_key: str = ""
     taste_cats: dict[str, float] = field(default_factory=dict)
     value_w: dict[str, int] = field(default_factory=dict)
@@ -265,9 +278,10 @@ def make_persona(seed: int, idx: int, archetype: str, n_users: int) -> Persona:
     else:
         sub = 0
     misclick = _pick(rng, ["company", "budget", "aesthetics", "areas"]) if rng.random() < 0.12 else None
-    if misclick == "areas":
-        misclick = None                                     # шага «район» в продукте больше нет
+    # v2: «company» → ошибка на экране ценностей (исправляется «← Назад»); «areas» в продукте нет; бюджет и эстетика — в меню «Уточнить»
+    misclick = {"company": "values", "areas": None}.get(misclick, misclick)
     noise = _pick(rng, ["values", "interests", "company", "budget"]) if rng.random() < 0.08 else None
+    noise = noise if noise in ("values", "interests") else None
     # время онбординга: 85 % во вторник–четверг днём, остальные в пятницу–воскресенье
     if rng.random() < 0.88:
         offset = rng.uniform(8.0, 24.0 + 24.0 + 17.0)       # вт 08:00 … чт 17:00 UTC
@@ -292,7 +306,28 @@ def make_persona(seed: int, idx: int, archetype: str, n_users: int) -> Persona:
         double_tap=0.04 if a["patience"] < 0.6 else 0.02,
         delay_profile=_pick(rng, ["evening", "evening", "next_day", "weekend"]), churn_thr=a["churn_thr"] + CHURN_SHIFT,
         blocks_on_churn=rng.random() < a["blocks"], p_cmd=p_cmd, delete_week=None, reset_week=None,
-        reason_none_p=0.25, seed_key=f"{seed}:{idx}", taste_cats=taste, value_w=value_w)
+        reason_none_p=0.25, seed_key=f"{seed}:{idx}", taste_cats=taste, value_w=value_w, legacy_abandon=abandon)
+    # v2: что уходит в «Уточнить» и где реально можно бросить
+    persona.abandon_step = abandon if abandon in V2_STEPS else None
+    if abandon not in (None, *V2_STEPS):
+        persona.refine = False
+    # шесть новых ценностей: отдельный розыгрыш, чтобы не сдвигать прежнюю когорту
+    vrng = random.Random(f"{seed}:{idx}:v19")
+    k = vrng.choices([0, 1, 2], [0.25, 0.5, 0.25])[0]
+    pool = list(NEW_VALUE_POOL[archetype])
+    vrng.shuffle(pool)
+    top2 = list(persona.top_values)
+    for j, v in enumerate(pool[:k]):
+        top2[-(j + 1)] = v
+    persona.top_values = top2
+    imp = [v for v in persona.important if v not in top2]
+    imp += [v for v in NEW_VALUE_POOL[archetype] if v not in top2 and v not in imp and vrng.random() < 0.5]
+    persona.important = imp
+    persona.value_w = {v: 5 if v in top2 else 3 if v in imp else 1 for v in VALUES}
+    if abandon in (None, *V2_STEPS):
+        persona.refine = vrng.random() < 0.15 + 0.7 * a["patience"]
+    else:
+        vrng.random()
     return persona
 
 
@@ -320,6 +355,8 @@ def generate(n_users: int = 50, seed: int = DEFAULT_SEED) -> list[Persona]:
         personas[i].delete_week = 3
     for i in tail[4:5]:
         personas[i].help_at_notes = True
+        personas[i].refine = True
+        personas[i].note = personas[i].note or NOTES[0]
     # поздний онбординг: суббота днём/вечером и воскресенье — первая подборка приходит, когда часть событий уже началась
     for i, off in zip(tail[5:9], (107.0, 113.0, 132.0, 137.0), strict=False):     # сб 11:00, сб 17:00, вс 12:00, вс 17:00 UTC
         personas[i].onboard_offset_h = off

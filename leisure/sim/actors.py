@@ -17,11 +17,12 @@ from typing import Any, Callable
 from aiogram import Bot
 from aiogram.dispatcher.event.bases import UNHANDLED
 
-from leisure.core.catalog import ALL_CATS, VALUES
+from leisure.core.catalog import ALL_CATS, SLOTS, VALUE_SHORT, VALUES, cat_label, default_aesthetics
 from leisure.core.timeutil import MONTHS
 
 from .fakebot import FakeTelegram, Stored
 from .personas import Persona, sigmoid
+from leisure.bot.keyboards import REASON_LABEL
 
 BUDGET_LABEL = {0: "Без ограничения", 1000: "до 1 000 ₽", 2500: "до 2 500 ₽", 5000: "до 5 000 ₽"}
 LEVEL_OF_LABEL = {"—": 0, "иногда": 1, "интересно": 2, "в первую очередь": 3}
@@ -68,6 +69,7 @@ class CardRec:
     in_weekend: bool         # карточка с названием дня недели (слот), а не «на горизонте»
     time_text: str
     buttons: list[str]
+    has_days: bool = False   # в карточке есть ряд выбора дня «Пт / Сб / Вс»
 
 
 @dataclass
@@ -124,7 +126,8 @@ def parse_card(st: Stored) -> CardRec | None:
             day = f"2026-{MONTHS.index(m.group(3)) + 1:02d}-{int(m.group(2)):02d}"
             time_text = lines[1][m.end():].lstrip(", ")
     return CardRec(st.mid, btn["callback_data"].split(":")[2], lines[0], day, in_weekend, time_text,
-                   [b["text"] for b in st.buttons()])
+                   [b["text"] for b in st.buttons()],
+                   any(str(b.get("callback_data", "")).startswith("y:") for b in st.buttons()))
 
 
 class Driver:
@@ -220,13 +223,11 @@ class Driver:
         return "abandoned"
 
     async def onboard(self, ps: PState, command: str = "/start") -> str:
-        """Полный проход онбординга. Возвращает completed | abandoned | stuck."""
+        """Онбординг v2: приветствие → «Шаг 1 из 2» ценности → «Шаг 2 из 2» интересы → подборка. Возвращает completed | abandoned | stuck."""
         p = ps.p
-        if ps.status != "onboarding":
-            ps.status = "onboarding"
+        ps.status = "onboarding"
         ps.onb.setdefault("started", self.clock.now.isoformat())
         ps.onb.setdefault("taps_at_start", ps.taps)
-        ps.onb.setdefault("redo", 0)
         steps_taps: dict[str, int] = ps.onb.setdefault("steps", {})
         mark = ps.taps
 
@@ -253,237 +254,302 @@ class Driver:
         if st is None or not st.buttons():
             self._stuck(ps, "consent", "ответ на " + command)
             return "stuck"
-        self._check_back(ps, "consent")
         if p.abandon_step == "consent" and not ps.onb.get("abandon_used"):
             ps.onb["abandon_used"] = True
             close("consent")
             return self._abandon(ps, "consent")
-        btn = self.find(st, lambda t: t.startswith("Согласен"))
+        btn = self.find(st, lambda t: t.startswith("Принять"))
         if btn is None:
-            self._stuck(ps, "consent", "Согласен, поехали")
+            self._stuck(ps, "consent", "Принять и начать")
             return "stuck"
         await self.tap(ps, st, btn)
         close("consent")
 
-        # ── 1. ценности ──
+        # ── Шаг 1 из 2: пять ценностей (по 19) ──
         st = self.screen(ps)
         self._check_back(ps, "values")
         await noise("values")
-        for i, v in enumerate(p.top_values):
+        picks = list(p.top_values)
+        wrong = None
+        if p.misclick_step == "values" and not ps.misclick_done:
+            wrong = next(v for v in VALUES if v not in picks)       # по ошибке нажал соседнюю ценность вместо последней
+            picks = picks[:-1] + [wrong]
+
+        async def pick(v: str) -> bool:
+            s = self.screen(ps)
+            b = self.find(s, lambda t, v=v: t.removeprefix("✓ ") == VALUE_SHORT.get(v, v))
+            if b is None:
+                self._stuck(ps, "values", v)
+                return False
+            await self.tap(ps, s, b, f"ценность {v}")
+            return True
+
+        for i, v in enumerate(picks):
             if p.abandon_step == "values" and i == p.abandon_sub and not ps.onb.get("abandon_used"):
                 ps.onb["abandon_used"] = True
                 close("values")
                 return self._abandon(ps, "values", i)
-            st = self.screen(ps)
-            btn = self.find(st, lambda t, v=v: t.removeprefix("✓ ") == v)
-            if btn is None:
-                self._stuck(ps, "values", v)
+            if not await pick(v):
                 return "stuck"
-            await self.tap(ps, st, btn, f"ценность {v}")
         if p.overselect:
-            st = self.screen(ps)
-            extra = self.find(st, lambda t: t.removeprefix("✓ ") in VALUES and not t.startswith("✓ "))
+            s = self.screen(ps)
+            extra = self.find(s, lambda t: not t.startswith("✓ ") and t in {VALUE_SHORT.get(x, x) for x in VALUES})
             if extra is not None:
-                r = await self.tap(ps, st, extra, "шестая ценность")
+                r = await self.tap(ps, s, extra, "шестая ценность")
                 ps.onb["overselect_toast"] = r["toast"]
                 self.f.add("sixth_value", f"шестая ценность «{extra['text']}» → тост «{r['toast']}»", p.user_id, self.clock.now)
-        st = self.screen(ps)
-        btn = self.find(st, lambda t: t.startswith("Дальше"))
+        s = self.screen(ps)
+        btn = self.find(s, lambda t: t.startswith("Дальше"))
         if btn is None:
             self._stuck(ps, "values", "Дальше →")
             return "stuck"
-        await self.tap(ps, st, btn)
+        await self.tap(ps, s, btn)
         close("values")
 
-        # ── 2. остальные ценности: важно / не очень ──
-        k = 0
-        while True:
-            st = self.screen(ps)
-            if st is None or "насколько важно" not in st.text:
-                break
-            if k == 0:
-                self._check_back(ps, "weights")
-                await noise("weights")
-            if p.abandon_step == "weights" and k == p.abandon_sub and not ps.onb.get("abandon_used"):
-                ps.onb["abandon_used"] = True
-                close("weights")
-                return self._abandon(ps, "weights", k)
-            m = re.search(r"«(.+?)»", st.text)
-            val = m.group(1) if m else ""
-            want = "Важно" if val in p.important else "Не очень"
-            btn = self.find(st, lambda t, w=want: t == w)
-            if btn is None:
-                self._stuck(ps, "weights", want)
-                return "stuck"
-            await self.tap(ps, st, btn, f"«{val}» {want}")
-            k += 1
-            if k > 20:
-                break
-        ps.onb["weight_prompts"] = k
-        close("weights")
-
-        # ── 3. интересы ──
+        # ── Шаг 2 из 2: интересы ──
         st = self.screen(ps)
-        if st is None or "Интересы" not in st.text:
+        if st is None or "Шаг 2 из 2" not in st.text:
             self._stuck(ps, "interests", "экран интересов")
             return "stuck"
         self._check_back(ps, "interests")
-        ps.onb["interest_buttons"] = len([b for b in st.buttons() if "·" in b["text"]])
-        ps.onb["interest_rows"] = len(st.rows or [])
         await noise("interests")
+        if wrong is not None:                                       # заметил ошибку: «← Назад», исправил, «Дальше»
+            back = self.find(st, lambda t: t == "← Назад")
+            ps.misclick_done = True
+            ps.onb["misclick"] = {"step": "values", "wrong": wrong, "intended": p.top_values[-1], "recovery": "back"}
+            if back is None:
+                self.f.add("no_back_after_misclick", f"ошибся в ценностях (выбрал «{wrong}»), «← Назад» на экране интересов нет", p.user_id, self.clock.now)
+                self._stuck(ps, "interests", "← Назад")
+                return "stuck"
+            await self.tap(ps, st, back, "исправить ценность")
+            if not await pick(wrong) or not await pick(p.top_values[-1]):
+                return "stuck"
+            s = self.screen(ps)
+            await self.tap(ps, s, self.find(s, lambda t: t.startswith("Дальше")), "после исправления")
+            self.f.add("misclick_fixed_with_back", f"ошибся в ценностях и исправил через «← Назад» ({ps.taps - mark} нажатий)", p.user_id, self.clock.now)
+            st = self.screen(ps)
+
+        label_cat = {cat_label(c): c for c in ALL_CATS}
 
         def levels() -> dict[str, int]:
-            s = self.screen(ps)
-            out = {}
-            for b in (s.buttons() if s else []):
-                m = re.match(r"(.+?) · (.+)$", b["text"])
-                if m and m.group(1) in ALL_CATS:
-                    out[m.group(1)] = LEVEL_OF_LABEL.get(m.group(2), -1)
+            s2 = self.screen(ps)
+            out: dict[str, int] = {}
+            for b in (s2.buttons() if s2 else []):
+                m = re.match(r"^(✓✓ |✓ |— )?(.+)$", b["text"])
+                c = label_cat.get(m.group(2)) if m else None
+                if c:
+                    out[c] = {"✓✓ ": 3, "✓ ": 2, "— ": 0}.get(m.group(1), 1)
             return out
 
-        if "prefill" not in ps.onb:       # что бот предзаполнил до правок человека
-            pre = levels()
-            ps.onb["prefill"] = {"counts": dict(Counter(pre.values())), "match": sum(1 for c, v in pre.items() if v == p.interest_targets[c]),
-                                 "total": len(pre)}
-
-        taps_left = p.max_interest_taps if not (p.abandon_step == "interests") else min(3, p.max_interest_taps)
-        order = ([c for c in ALL_CATS if p.interest_targets[c] == 3] + [c for c in ALL_CATS if p.interest_targets[c] == 0]
-                 + [c for c in ALL_CATS if p.interest_targets[c] == 2])
+        shown = levels()
+        full = {c: shown.get(c, 1) for c in ALL_CATS}                # скрытые направления бот держит на уровне 1
+        if "prefill" not in ps.onb:
+            ps.onb["prefill"] = {"counts": dict(Counter(full.values())), "match": sum(1 for c in ALL_CATS if full[c] == p.interest_targets[c]),
+                                 "total": len(ALL_CATS), "shown": len(shown), "shown_match": sum(1 for c, v in shown.items() if v == p.interest_targets[c])}
+        left = p.max_interest_taps if p.abandon_step != "interests" else min(3, p.max_interest_taps)
         edits = 0
-        for c in order:
-            while taps_left > 0:
-                cur_lv = levels().get(c, -1)
-                tgt = p.interest_targets[c]
-                if cur_lv == tgt or cur_lv < 0:
-                    break
-                st = self.screen(ps)
-                btn = self.find(st, lambda t, c=c: t.startswith(c + " · "))
-                await self.tap(ps, st, btn, f"интерес {c}")
-                taps_left -= 1
+        # 1) убрать лишнее из шести
+        for c in [c for c in shown if p.interest_targets[c] == 0]:
+            if left <= 0:
+                break
+            s = self.screen(ps)
+            b = self.find(s, lambda t, c=c: re.sub(r"^(✓✓ |✓ |— )", "", t) == cat_label(c))
+            if b is not None and levels().get(c, 1) > 0:
+                await self.tap(ps, s, b, f"убрать {c}")
+                left -= 1
                 edits += 1
+        # 2) добавить своё через «Все направления»
+        want = [c for c in ALL_CATS if p.interest_targets[c] >= 2 and shown.get(c, 1) < 2]
+        want.sort(key=lambda c: -p.interest_targets[c])
+        on_all = False
+        if want and left >= 2:
+            s = self.screen(ps)
+            b = self.find(s, lambda t: t.startswith("Все направления"))
+            if b is None:
+                self._stuck(ps, "interests", "Все направления")
+                return "stuck"
+            await self.tap(ps, s, b)
+            left -= 1
+            edits += 1
+            on_all = True
+            ps.onb["used_all_screen"] = True
+            self._check_back(ps, "interests_all")
+            brush = 2
+            for c in want:
+                if left <= 0:
+                    break
+                tgt = p.interest_targets[c]
+                if tgt != brush:
+                    s = self.screen(ps)
+                    bb = self.find(s, lambda t, tgt=tgt: re.sub(r"^● ", "", t) == ("В первую очередь" if tgt == 3 else "Интересно"))
+                    await self.tap(ps, s, bb, "кисть")
+                    brush = tgt
+                    left -= 1
+                    edits += 1
+                    if left <= 0:
+                        break
+                s = self.screen(ps)
+                b = self.find(s, lambda t, c=c: re.sub(r"^(✓✓ |✓ |— )", "", t) == cat_label(c))
+                if b is not None:
+                    await self.tap(ps, s, b, f"добавить {c}")
+                    left -= 1
+                    edits += 1
         ps.onb["interest_edits"] = edits
         if p.abandon_step == "interests" and not ps.onb.get("abandon_used"):
             ps.onb["abandon_used"] = True
             close("interests")
             return self._abandon(ps, "interests", edits)
-        st = self.screen(ps)
-        btn = self.find(st, lambda t: t.startswith("Готово"))
+        s = self.screen(ps)
+        btn = self.find(s, lambda t: t.startswith("Показать подборку"))
         if btn is None:
-            self._stuck(ps, "interests", "Готово →")
+            self._stuck(ps, "interests", "Показать подборку →")
             return "stuck"
-        await self.tap(ps, st, btn)
+        saved_mid = s.mid
+        await self.tap(ps, s, btn)
         close("interests")
-
-        # ── 4. параметры ──
-        async def single(step: str, texts: list[str], intended: str, wrong: str | None) -> str | None:
-            """Один выбор из списка кнопок. wrong — подпись, которую человек нажмёт по ошибке (misclick)."""
-            if p.abandon_step == step and not ps.onb.get("abandon_used"):
-                ps.onb["abandon_used"] = True
-                close(step)
-                return self._abandon(ps, step)
-            await noise(step)
-            self._check_back(ps, step)
-            st = self.screen(ps)
-            mis = p.misclick_step == step and not ps.misclick_done and wrong is not None
-            label = wrong if mis else intended
-            btn = self.find(st, lambda t: t.removeprefix("✓ ") == label)
-            if btn is None:
-                self._stuck(ps, step, label)
-                return "stuck"
-            await self.tap(ps, st, btn, f"{step}: {label}")
-            close(step)
-            if mis:
-                ps.misclick_done = True
-                has_back = self._check_back(ps, step + "_after_misclick")
-                self.f.add("no_back_after_misclick", f"выбрал «{label}» вместо «{intended}» на шаге «{step}»; кнопка «Назад»: "
-                           f"{'есть' if has_back else 'нет'}; кнопки: {[b['text'] for b in self.screen(ps).buttons()][:5]}",
-                           p.user_id, self.clock.now)
-                ps.onb["misclick"] = {"step": step, "wrong": label, "intended": intended, "recovery": p.misclick_recovery}
-                if p.misclick_recovery == "reset":
-                    return "restart"
-            return None
-
-        wrong_company = next(c for c in ["один", "с партнёром", "с друзьями", "с детьми", "любая"] if c != p.company)
-        r = await single("company", [], p.company, wrong_company)
-        if r:
-            return await self._finish_flow(ps, r)
-        if p.abandon_step == "times" and not ps.onb.get("abandon_used"):
-            ps.onb["abandon_used"] = True
-            close("times")
-            return self._abandon(ps, "times")
-        await noise("times")
-        self._check_back(ps, "times")
-        for t in p.times:
-            st = self.screen(ps)
-            btn = self.find(st, lambda x, t=t: x.removeprefix("✓ ") == t)
-            if btn is None:
-                self._stuck(ps, "times", t)
-                return "stuck"
-            await self.tap(ps, st, btn, f"время {t}")
-        st = self.screen(ps)
-        btn = self.find(st, lambda t: t.startswith("Дальше"))
-        if btn is None:
-            self._stuck(ps, "times", "Дальше →")
-            return "stuck"
-        await self.tap(ps, st, btn)
-        close("times")
-        wrong_budget = BUDGET_LABEL[0] if p.budget else BUDGET_LABEL[1000]
-        r = await single("budget", [], BUDGET_LABEL[p.budget], wrong_budget)
-        if r:
-            return await self._finish_flow(ps, r)
-        r = await single("aesthetics", [], "Да, важна" if p.aesthetics else "Не принципиально",
-                         "Не принципиально" if p.aesthetics else "Да, важна")
-        if r:
-            return await self._finish_flow(ps, r)
-
-        # ── 5. заметка ──
-        if p.abandon_step == "notes" and not ps.onb.get("abandon_used"):
-            ps.onb["abandon_used"] = True
-            close("notes")
-            return self._abandon(ps, "notes")
-        self._check_back(ps, "notes")
-        if p.help_at_notes and not ps.onb.get("help_used"):
-            ps.onb["help_used"] = True
-            h0 = len(self.world.chats[p.user_id])
-            await self.say(ps, "/help")
-            h = [m for m in self.world.chats[p.user_id][h0:] if not m.from_user]
-            ps.onb["help_at_notes"] = "команды" in (h[0].text if h else "") or "/digest" in (h[0].text if h else "")
-            if ps.onb["help_at_notes"]:
-                self.f.add("command_in_notes_ok", "на шаге заметки /help отработал как команда (онбординг не завершён)", p.user_id, self.clock.now)
-            else:
-                self.f.add("command_eaten_by_notes", "на шаге заметки /help не дал справки", p.user_id, self.clock.now)
-        before = len(self.world.chats[p.user_id])
-        if p.note:
-            await self.say(ps, p.note)
-        else:
-            st = self.screen(ps)
-            btn = self.find(st, lambda t: t.startswith("Пропустить"))
-            if btn is None:
-                self._stuck(ps, "notes", "Пропустить")
-                return "stuck"
-            await self.tap(ps, st, btn)
-        close("notes")
-        replies = [m for m in self.world.chats[p.user_id][before:] if not m.from_user]
+        _ = on_all
         ps.onb["taps_total"] = ps.taps - ps.onb["taps_at_start"]
-        if any("Профиль сохранён" in m.text for m in replies):
+        if self.world.get(p.user_id, saved_mid).text.startswith("Профиль сохранён"):
             ps.status = "active"
             ps.onb["completed"] = self.clock.now.isoformat()
             ps.onboarded_t = self.clock.now
             return "completed"
-        self.f.add("onboarding_not_saved", f"после последнего шага нет «Профиль сохранён»: {[m.text[:60] for m in replies][:2]}",
+        self.f.add("onboarding_not_saved", f"после «Показать подборку» экран не стал «Профиль сохранён»: {self.world.get(p.user_id, saved_mid).text[:60]!r}",
                    p.user_id, self.clock.now)
         ps.status = "abandoned"
         return "stuck"
 
-    async def _finish_flow(self, ps: PState, r: str) -> str:
-        """Обработка результата шага: restart → /reset и заново (повторный проход без новых промахов)."""
-        if r == "restart":
-            ps.onb["redo"] = ps.onb.get("redo", 0) + 1
-            res = await self.onboard(ps, "/reset")
-            return res
-        return r
+    # ───────── «Уточнить под себя» ─────────
+    def refine_needs(self, ps: PState) -> list[str]:
+        p = ps.p
+        ops = []
+        if p.budget != 0:
+            ops.append("budget")
+        if p.aesthetics != default_aesthetics(p.top_values):
+            ops.append("aesthetics")
+        if sorted(p.times) != ["вечер", "день"]:
+            ops.append("times")
+        if p.company == "с детьми":
+            ops.append("kids")
+        if p.note:
+            ops.append("note")
+        return ops
 
-    # ───────── реакция на дайджест ─────────
+    async def refine(self, ps: PState) -> bool:
+        """Первая подборка → кнопка «Уточнить под себя» в её заголовке → меню. True, если пересобрал подборку."""
+        p = ps.p
+        ops = self.refine_needs(ps)
+        first = next((r for r in ps.digests if r.origin == "first"), None)
+        if not ops or first is None or ps.status != "active":
+            return False
+        head = self.world.get(p.user_id, first.header_mid)
+        btn = self.find(head, lambda t: t.startswith("Уточнить"))
+        if btn is None:
+            self.f.add("missing_button", "в заголовке первой подборки нет «Уточнить под себя»", p.user_id, self.clock.now)
+            return False
+        t0 = ps.taps
+        await self.tap(ps, head, btn)
+        done: list[str] = []
+
+        def menu() -> Stored | None:
+            return self.screen(ps)
+
+        async def open_item(prefix: str) -> Stored | None:
+            m = menu()
+            b = self.find(m, lambda t: t.startswith(prefix))
+            if b is None:
+                self.f.add("missing_button", f"в меню «Уточнить» нет пункта «{prefix}»", p.user_id, self.clock.now)
+                return None
+            await self.tap(ps, m, b)
+            return self.screen(ps)
+
+        for op in ops:
+            if op == "budget":
+                if p.misclick_step == "budget" and not ps.misclick_done:
+                    ps.misclick_done = True
+                    ps.onb["misclick"] = {"step": "budget", "wrong": "до 1 000 ₽", "intended": BUDGET_LABEL[p.budget], "recovery": "back"}
+                    s = await open_item("Бюджет")
+                    wrong_label = BUDGET_LABEL[0] if p.budget else BUDGET_LABEL[1000]
+                    b = self.find(s, lambda t, wl=wrong_label: t.removeprefix("● ") == wl)
+                    await self.tap(ps, s, b, "ошибка в бюджете")
+                    self.f.add("misclick_fixed_with_back", "ошибся с бюджетом, меню показало выбранное, поправил повторным входом", p.user_id, self.clock.now)
+                s = await open_item("Бюджет")
+                b = self.find(s, lambda t: t.removeprefix("● ") == BUDGET_LABEL[p.budget]) if s else None
+                if b is None:
+                    return False
+                await self.tap(ps, s, b)
+            elif op == "aesthetics":
+                s = await open_item("Эстетика")
+                want = "Да, важна" if p.aesthetics else "Не принципиально"
+                b = self.find(s, lambda t, w=want: t.removeprefix("● ") == w) if s else None
+                if b is None:
+                    return False
+                await self.tap(ps, s, b)
+            elif op == "times":
+                s = await open_item("Время")
+                for t in SLOTS:
+                    s = self.screen(ps)
+                    b = self.find(s, lambda x, t=t: x.removeprefix("✓ ").lower() == t)
+                    have = b is not None and b["text"].startswith("✓ ")
+                    if b is not None and have != (t in p.times):
+                        await self.tap(ps, s, b, f"время {t}")
+                s = self.screen(ps)
+                await self.tap(ps, s, self.find(s, lambda x: x == "Готово"))
+            elif op == "kids":
+                s = await open_item("С детьми")
+                b = self.find(s, lambda t: t.removeprefix("● ").startswith("Да")) if s else None
+                if b is None:
+                    return False
+                await self.tap(ps, s, b)
+            elif op == "note":
+                s = await open_item("Заметка")
+                if p.help_at_notes and not ps.onb.get("help_used"):
+                    ps.onb["help_used"] = True
+                    h0 = len(self.world.chats[p.user_id])
+                    await self.say(ps, "/help")
+                    h = [m for m in self.world.chats[p.user_id][h0:] if not m.from_user]
+                    ok = bool(h) and "/digest" in h[0].text
+                    ps.onb["help_at_notes"] = ok
+                    self.f.add("command_in_notes_ok" if ok else "command_eaten_by_notes",
+                               "на шаге заметки /help " + ("отработал как команда" if ok else "не дал справки"), p.user_id, self.clock.now)
+                await self.say(ps, p.note)
+            done.append(op)
+        rebuilt = False
+        m = menu()
+        b = self.find(m, lambda t: t.startswith("Пересобрать"))
+        if b is not None:
+            await self.tap(ps, m, b)
+            rebuilt = True
+        m = menu()
+        b = self.find(m, lambda t: t == "Готово")
+        if b is not None:
+            await self.tap(ps, m, b)
+        ps.onb["refine_ops"] = done
+        ps.onb["refine_taps"] = ps.taps - t0
+        ps.onb["refine_rebuilt"] = rebuilt
+        return rebuilt
+
+    async def reset_flow(self, ps: PState) -> str:
+        """/reset у настроенного профиля: экран ценностей с прежним выбором → «Дальше» → «Сохранить»."""
+        p = ps.p
+        before = ps.taps
+        await self.say(ps, "/reset")
+        s = self.screen(ps)
+        b = self.find(s, lambda t: t.startswith("Дальше"))
+        if b is None:
+            self._stuck(ps, "reset", "Дальше →")
+            return "stuck"
+        await self.tap(ps, s, b)
+        s = self.screen(ps)
+        b = self.find(s, lambda t: t.startswith("Сохранить"))
+        if b is None:
+            self._stuck(ps, "reset", "Сохранить")
+            return "stuck"
+        await self.tap(ps, s, b)
+        ps.onb["reset_taps"] = ps.taps - before
+        _ = p
+        return "completed"
+
     def _decide(self, ps: PState, f: float) -> str | None:
         """go | maybe | interest | skip | None по скрытой «подходит ли на самом деле» f."""
         p, rng = ps.p, ps.rng
@@ -502,7 +568,7 @@ class Driver:
         if ps.status != "active" or not rec.cards:
             return
         first = rec.origin in ("first", "reset")
-        p_open = 0.97 if first or rec.origin == "manual" else max(0.05, min(0.98, ps.E * p.p_open_scale))
+        p_open = 0.97 if first or rec.origin in ("manual", "rebuilt") else max(0.05, min(0.98, ps.E * p.p_open_scale))
         if rng.random() > p_open:
             ps.E *= 0.92
             return
@@ -520,6 +586,18 @@ class Driver:
             if action is None:
                 continue
             await self._act_on_card(ps, rec, card, ev, action)
+        if rec.go and rng.random() < 0.2:                    # «Мой план» под заголовком подборки
+            head = self.world.get(p.user_id, rec.header_mid)
+            b = self.find(head, lambda t: t == "Мой план")
+            if b is not None:
+                n0 = len(self.world.chats[p.user_id])
+                res = await self.tap(ps, head, b, "кнопка «Мой план»")
+                replies = [m for m in self.world.chats[p.user_id][n0:] if not m.from_user]
+                self.commands.append({"t": self.clock.now.isoformat(), "u": p.user_id, "cmd": "/plan", "via": "button", "handled": res["handled"],
+                                      "replies": [m.text[:160] for m in replies], "n": len(replies), "cycle": self.cycle_of(self.clock.now),
+                                      "lines": len(replies[0].text.splitlines()) if replies else 0,
+                                      "max_line": max((len(x) for x in replies[0].text.splitlines()), default=0) if replies else 0,
+                                      "first_pre": False, "empty": bool(replies) and "пока ничего" in replies[0].text})
         if fits:
             s = sum(fits) / len(fits)
             coverage = min(1.0, len(rec.cards) / 5.0)       # меньше пяти карточек — подборка кажется скудной
@@ -554,17 +632,31 @@ class Driver:
         p, rng = ps.p, ps.rng
         label = {"go": "Иду", "maybe": "Может быть", "interest": "Интересно", "skip": "Мимо"}[action]
         st = self.world.get(p.user_id, card.mid)
+        # многодневное событие: иногда человек сначала выбирает другой день в ряду «Пт / Сб / Вс»
+        days = [b for b in st.buttons() if str(b.get("callback_data", "")).startswith("y:")]
+        if days and rng.random() < 0.25:
+            other = [b for b in days if not b["text"].startswith("● ")]
+            if other:
+                pick = other[rng.randrange(len(other))]
+                res0 = await self.tap(ps, st, pick, f"другой день {pick['text']}")
+                fresh = parse_card(self.world.get(p.user_id, card.mid))
+                if fresh is not None:
+                    card.day, card.time_text, card.buttons = fresh.day, fresh.time_text, fresh.buttons
+                prev = ps.decisions.get(card.event_id)
+                if prev and prev.get("status") in ("иду", "может") and fresh is not None:
+                    prev["card_day"] = fresh.day
+                self.f.add("day_picked", f"на «{card.title[:30]}» выбрал день {pick['text']} → карточка показывает {card.day}, тост «{res0['toast']}»",
+                           p.user_id, self.clock.now)
+                self.taps.append({"t": self.clock.now.isoformat(), "u": p.user_id, "kind": "day_pick", "event_id": card.event_id,
+                                  "week": rec.week, "cycle": self.cycle_of(self.clock.now), "day": card.day})
+                st = self.world.get(p.user_id, card.mid)
         btn = self.find(st, lambda t, label=label: t.removeprefix("● ") == label)
         if btn is None and action == "interest":
             self.f.add("interest_button_missing", f"хотел нажать «Интересно» на «{card.title[:40]}», кнопки карточки: "
                        f"{[b['text'] for b in st.buttons()]}", p.user_id, self.clock.now)
             self.taps.append({"t": self.clock.now.isoformat(), "u": p.user_id, "kind": "wanted_interest", "event_id": card.event_id,
                               "week": rec.week, "cycle": self.cycle_of(self.clock.now)})
-            if rng.random() < 0.5:
-                action, label = "maybe", "Может быть"
-                btn = self.find(st, lambda t: t.removeprefix("● ") == "Может быть")
-            else:
-                return
+            return
         if btn is None:
             self.f.add("missing_button", f"карточка «{card.title[:40]}»: кнопки «{label}» нет", p.user_id, self.clock.now)
             return
@@ -584,23 +676,35 @@ class Driver:
         reason_chosen = False
         if action == "skip":
             st = self.world.get(p.user_id, card.mid)
-            avail = [b["text"] for b in st.buttons() if str(b.get("callback_data", "")).startswith("r:")]
+            avail = {b["text"]: b for b in st.buttons() if str(b.get("callback_data", "")).startswith("r:")}
             if not avail:
                 self.f.add("reasons_missing", "после «Мимо» нет кнопок причин", p.user_id, self.clock.now)
                 return
-            if rng.random() < 0.15:
-                self.f.add("reason_not_answered", f"«Мимо» без выбора причины — кнопки причин остаются в карточке «{card.title[:30]}»",
+            by_label = {lbl: name for name, lbl in REASON_LABEL.items()}
+            reason = None if rng.random() < 0.15 else p.skip_reason(ev, rng, list(REASON_LABEL))
+            if reason is None:
+                self.f.add("reason_not_answered", f"«Мимо» без выбора причины — блок причин остаётся в карточке «{card.title[:30]}»",
                            p.user_id, self.clock.now)
             else:
-                reason = p.skip_reason(ev, rng, avail)
-                want = reason if reason else "Без причины"
-                b2 = self.find(st, lambda t: t == want)
-                r3 = await self.tap(ps, st, b2, f"причина {want}")
-                reason_chosen = True
-                if r3["exc"] is None and r3["toast"] != ERROR_TOAST:
-                    self._set_decision(ps, rec, card, "мимо", r3, reason=reason or "")
-                    self.taps.append({"t": self.clock.now.isoformat(), "u": p.user_id, "kind": "reason", "reason": reason or "",
-                                      "event_id": card.event_id, "week": rec.week, "cycle": self.cycle_of(self.clock.now)})
+                want = REASON_LABEL[reason]
+                if want not in avail:                           # причина спрятана за «Ещё…»
+                    more = next((b for t, b in avail.items() if t.startswith("Ещё")), None)
+                    if more is None:
+                        self.f.add("reasons_missing", f"нет ни «{want}», ни «Ещё…»", p.user_id, self.clock.now)
+                        return
+                    await self.tap(ps, st, more, "ещё причины")
+                    ps.onb["more_reasons_taps"] = ps.onb.get("more_reasons_taps", 0) + 1
+                    st = self.world.get(p.user_id, card.mid)
+                    avail = {b["text"]: b for b in st.buttons() if str(b.get("callback_data", "")).startswith("r:")}
+                b2 = avail.get(want)
+                if b2 is not None:
+                    r3 = await self.tap(ps, st, b2, f"причина {want}")
+                    reason_chosen = True
+                    if r3["exc"] is None and r3["toast"] != ERROR_TOAST:
+                        self._set_decision(ps, rec, card, "мимо", r3, reason=by_label[want])
+                        self.taps.append({"t": self.clock.now.isoformat(), "u": p.user_id, "kind": "reason", "reason": by_label[want],
+                                          "event_id": card.event_id, "week": rec.week, "cycle": self.cycle_of(self.clock.now),
+                                          "two_step": want not in ("Не моё", "Дорого", "Далеко")})
         st_after = self.world.get(p.user_id, card.mid)
         links_after = [b["text"] for b in st_after.buttons() if "url" in b]
         lost = [x for x in links_before if x not in links_after]
@@ -625,13 +729,22 @@ class Driver:
                 continue
             if rng.random() > p.p_rate:
                 continue
-            if rng.random() > p.p_attend:     # не дошёл — не оценивает
+            if rng.random() > p.p_attend:     # не дошёл — иногда нажимает «Не получилось пойти», оценку не ставит
+                if rng.random() < 0.4:
+                    skip = self.find(st, lambda t: t == "Не получилось пойти")
+                    if skip is not None:
+                        res = await self.tap(ps, st, skip, "не получилось пойти")
+                        if res["exc"] is None and res["toast"] != ERROR_TOAST:
+                            ps.decisions.setdefault(eid, {"reason": None, "week": None, "card_day": None})["status"] = "пропуск"
+                            self.taps.append({"t": self.clock.now.isoformat(), "u": p.user_id, "kind": "decision", "status": "пропуск",
+                                              "event_id": eid, "week": None, "cycle": self.cycle_of(self.clock.now), "card_day": None,
+                                              "toast": res["toast"], "origin": "feedback", "taps": ps.taps})
                 continue
             f = p.fit(ev)
             rating = int(max(1, min(5, round(1 + 4 * f + p.rating_bias + rng.gauss(0.05, 0.9)))))
-            btn = self.find(st, lambda t, r=rating: t == "★" * r)
+            btn = self.find(st, lambda t, r=rating: t.removeprefix("● ") == f"{r} ★")
             if btn is None:
-                self.f.add("missing_button", f"оценка: кнопки {'★' * rating} нет", p.user_id, self.clock.now)
+                self.f.add("missing_button", f"оценка: кнопки {rating} ★ нет", p.user_id, self.clock.now)
                 continue
             res = await self.tap(ps, st, btn, f"оценка {rating}")
             ok = res["exc"] is None and res["toast"] != ERROR_TOAST
@@ -661,7 +774,7 @@ class Driver:
         p = ps.p
         replies = await self.run_cmd(ps, "/delete")
         st = replies[-1] if replies else None
-        btn = self.find(st, lambda t: t.startswith("Да, удалить"))
+        btn = self.find(st, lambda t: t.startswith("Удалить"))
         if btn is None:
             self.f.add("missing_button", "/delete: нет кнопки подтверждения", p.user_id, self.clock.now)
             return False
