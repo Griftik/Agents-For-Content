@@ -285,22 +285,23 @@ def view(session: Session, inv: Invite, user_id: int | None = None) -> dict:
             "why": item["why"] if item and item["score"] is not None else None}
 
 
-def log_open_without_consent(session: Session, inv: Invite) -> None:
-    """Открытие без профиля или согласия: профиль не создаём и персональных данных не храним, только строка в growth_events по коду."""
-    session.add(GrowthEvent(user_id=None, kind="invite_open", invite_code=inv.code))
+def log_open_without_consent(session: Session, inv: Invite, kind: str = "invite_open") -> None:
+    """Открытие или отказ без профиля и согласия: профиль не создаём и персональных данных не храним, только строка в
+    growth_events по коду (invite_open | invite_declined)."""
+    session.add(GrowthEvent(user_id=None, kind=kind, invite_code=inv.code))
     session.commit()
 
 
 def web_open(session: Session, inv: Invite, user_id: int, name: str = "", username: str = "",
-             create: bool = False) -> InviteAccept | None:
+             kind: str = "invite_open") -> InviteAccept | None:
     """Человек открыл приглашение или ref-ссылку в Mini App. Есть профиль с согласием: учёт открытия (InviteAccept), для
-    ref-ссылки новому человеку ставится источник «ref» и пригласивший. Нет профиля или согласия: профиль НЕ создаётся, открытие
-    считается в growth_events по коду, возвращается None. create=True (только declined) создаёт профиль-заготовку без согласия."""
+    ref-ссылки новому человеку ставится источник «ref» и пригласивший. Нет профиля или согласия: профиль НЕ создаётся, событие
+    (kind: invite_open, для отказа invite_declined) пишется в growth_events по коду, возвращается None."""
     if user_id == inv.inviter_id:
         raise OwnInvite()
     p = services.get_profile(session, user_id)
-    if not create and (p is None or p.consent_at is None):
-        log_open_without_consent(session, inv)
+    if p is None or p.consent_at is None:
+        log_open_without_consent(session, inv, kind)
         return None
     p = services.get_or_create_profile(session, user_id, name, username, via_bot=False)
     acc, _ = open_invite(session, inv, user_id)
@@ -322,14 +323,16 @@ def web_accept(session: Session, inv: Invite, user_id: int, status: str, name: s
 
     going / maybe: первое касание без профиля или согласия требует consent=True — профиль получает согласие, source=invite и
     referred_by. Повтор идемпотентен (счётчики и уведомление не дублируются; смена «может» ↔ «иду» разрешена).
-    declined («Другие выходные под меня»): запись в invite_accepts без решения и без согласия; уже принявшего не откатывает.
+    declined («Другие выходные под меня»): с согласием — запись в invite_accepts без решения; без согласия — только строка growth_events (invite_declined), профиль не создаётся; уже принявшего не откатывает.
     Возвращает (решение или None, первое_ли_принятие)."""
     if inv.kind != "event":
         raise ValueError("принять можно только приглашение на событие")
     if inv.inviter_id == user_id:
         raise OwnInvite()
     if status == "declined":
-        acc = web_open(session, inv, user_id, name, username, create=True)
+        acc = web_open(session, inv, user_id, name, username, kind="invite_declined")
+        if acc is None:                          # согласия нет: профиль и invite_accepts не создаём, отказ — строка в журнале
+            return None, False
         if acc.status in ("opened", "declined"):
             acc.status = "declined"
             session.commit()

@@ -501,11 +501,21 @@ def test_declined_records_without_decision_or_consent(client, db, event, sent):
     r = _accept(client, code, F1, status="declined", consent=False)
     assert r.status_code == 200 and r.json()["decision"] is None and r.json()["profile_state"] == "new"
     db.expire_all()
-    acc = db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1))
-    assert acc.status == "declined" and acc.accepted_at is None
-    assert db.scalar(select(Decision).where(Decision.user_id == F1)) is None and db.get(Profile, F1).consent_at is None
+    # без согласия профиля и записи принятия нет: отказ — строка журнала по коду, без user_id
+    assert db.get(Profile, F1) is None and db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1)) is None
+    assert db.scalar(select(Decision).where(Decision.user_id == F1)) is None
+    ev = db.scalars(select(GrowthEvent).where(GrowthEvent.kind == "invite_declined", GrowthEvent.invite_code == code)).all()
+    assert len(ev) == 1 and ev[0].user_id is None
     assert db.scalar(select(Invite).where(Invite.code == code)).accepted == 0 and not sent
     assert _accept(client, code, F1, status="declined", consent=False).status_code == 200            # повтор безвреден
+    assert db.get(Profile, F1) is None
+    # человек с согласием: запись declined создаётся
+    p3 = services.get_or_create_profile(db, F3, "Согласная", "s", via_bot=False)
+    services.update_profile(db, p3, {"consent": True})
+    assert _accept(client, code, F3, status="declined", consent=False).json()["decision"] is None
+    db.expire_all()
+    acc = db.scalar(select(InviteAccept).where(InviteAccept.user_id == F3))
+    assert acc.status == "declined" and acc.accepted_at is None and db.scalar(select(Decision).where(Decision.user_id == F3)) is None
     # потом передумал и пошёл: declined уступает going
     assert _accept(client, code, F1).json()["decision"]["status"] == "иду"
     # а принявшего declined не откатывает
@@ -633,7 +643,7 @@ def test_invite_gives_score_and_why_only_for_ready_profile(client, db, event):
 def test_accept_sets_offer_due_to_event_day_plus_one_once(client, db, event, sent):
     code = _create(client, event)["code"]
     assert _accept(client, code, F1, status="declined", consent=False).status_code == 200
-    assert client.get(f"/api/profile/{F1}", headers=H).json()["offer_due"] is None            # отказ срок не ставит
+    assert client.get(f"/api/profile/{F1}", headers=H).status_code == 404                     # отказ профиль и срок не создаёт
     assert _accept(client, code, F1, status="maybe").status_code == 200
     assert client.get(f"/api/profile/{F1}", headers=H).json()["offer_due"] == "2026-10-25"
     other = _create(client, event, day="2026-10-25")["code"]
