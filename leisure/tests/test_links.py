@@ -95,3 +95,15 @@ def test_is_local_url():
     from leisure.core.links import is_local_url
     assert is_local_url("http://localhost:8000") and is_local_url("http://127.0.0.1/x") and is_local_url("http://[::1]:8000")
     assert not is_local_url("https://leisure.example.org") and not is_local_url("")
+
+
+def test_calendar_urls_fit_button_limit_for_all_seed_events(seed_events):
+    """Кнопки «Google Календарь» и «Outlook» тоже не длиннее 1 800 символов; ссылка на источник в описании остаётся."""
+    for ev in seed_events:
+        day = (ev["dates"] or [None])[0]
+        g, o = gcal_url(ev, day), outlook_url(ev, day)
+        assert len(g) <= 1800 and len(o) <= 1800, ev["slug"]
+        if ev.get("url"):
+            assert ev["url"] in _q(g)["details"] and ev["url"] in _q(o)["body"]
+    long_ev = {**seed_events[0], "description": "Очень длинное описание. " * 200}
+    assert len(gcal_url(long_ev)) <= 1800 and len(ics_text(long_ev)) > 4000    # .ics описание не режет

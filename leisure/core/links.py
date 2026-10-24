@@ -23,46 +23,69 @@ def event_location(ev: Mapping, city: str = DEFAULT_CITY) -> str:
     return s + (f", {city}" if ev.get("address") else "")
 
 
-def event_desc(ev: Mapping) -> str:
-    parts = [
+CAL_URL_MAX = 1800  # URL кнопки «Google Календарь» / «Outlook»: описание режем, чтобы влезть (Telegram — до ~2048)
+
+
+def event_desc(ev: Mapping, desc_limit: int | None = None) -> str:
+    """Описание для календаря: текст (описание, цена, примечание) + ссылка на источник. desc_limit режет текст, ссылку — нет."""
+    body = "\n\n".join(p for p in (
         ev.get("description") or "",
         f"Цена: {ev['price_text']}" if ev.get("price_text") else "",
         f"Примечание: {ev['note']}" if ev.get("note") else "",
-        _clean_url(ev.get("url") or ""),
-    ]
-    return "\n\n".join(p for p in parts if p)
+    ) if p)
+    if desc_limit is not None and len(body) > desc_limit:
+        body = (body[:desc_limit].rstrip() + "…") if desc_limit > 0 else ""
+    return "\n\n".join(p for p in (body, _clean_url(ev.get("url") or "")) if p)
 
 
 def _gcal_stamp(dt: datetime, all_day: bool) -> str:
     return dt.strftime("%Y%m%d") if all_day else dt.strftime("%Y%m%dT%H%M00")
 
 
-def gcal_url(ev: Mapping, day: str | None = None, tz: str = DEFAULT_TZ, city: str = DEFAULT_CITY) -> str:
-    all_day, start, end = event_times(ev, day)
-    q = {
-        "action": "TEMPLATE",
-        "text": ev.get("title") or "",
-        "dates": f"{_gcal_stamp(start, all_day)}/{_gcal_stamp(end, all_day)}",
-        "details": event_desc(ev),
-        "location": event_location(ev, city),
-        "ctz": tz,
-    }
-    return "https://calendar.google.com/calendar/render?" + urlencode(q)
+def _fit_description(ev: Mapping, build, max_len: int) -> str:
+    """build(desc_limit) → URL. Сокращает текст описания (описание, цена, примечание), пока URL не уложится в max_len (остальное не режем)."""
+    url, limit = build(None), len(event_desc(ev))
+    while len(url) > max_len and limit > 0:
+        limit = int(limit * 0.7) if limit > 40 else 0
+        url = build(limit)
+    return url
 
 
-def outlook_url(ev: Mapping, day: str | None = None, city: str = DEFAULT_CITY) -> str:
+def gcal_url(ev: Mapping, day: str | None = None, tz: str = DEFAULT_TZ, city: str = DEFAULT_CITY,
+             max_len: int = CAL_URL_MAX) -> str:
     all_day, start, end = event_times(ev, day)
-    q = {
-        "path": "/calendar/action/compose",
-        "rru": "addevent",
-        "subject": ev.get("title") or "",
-        "startdt": start.strftime("%Y-%m-%dT%H:%M:00"),
-        "enddt": end.strftime("%Y-%m-%dT%H:%M:00"),
-        "allday": "true" if all_day else "false",
-        "location": event_location(ev, city),
-        "body": event_desc(ev),
-    }
-    return "https://outlook.live.com/calendar/0/deeplink/compose?" + urlencode(q)
+
+    def build(limit):
+        q = {
+            "action": "TEMPLATE",
+            "text": ev.get("title") or "",
+            "dates": f"{_gcal_stamp(start, all_day)}/{_gcal_stamp(end, all_day)}",
+            "details": event_desc(ev, limit),
+            "location": event_location(ev, city),
+            "ctz": tz,
+        }
+        return "https://calendar.google.com/calendar/render?" + urlencode(q)
+
+    return _fit_description(ev, build, max_len)
+
+
+def outlook_url(ev: Mapping, day: str | None = None, city: str = DEFAULT_CITY, max_len: int = CAL_URL_MAX) -> str:
+    all_day, start, end = event_times(ev, day)
+
+    def build(limit):
+        q = {
+            "path": "/calendar/action/compose",
+            "rru": "addevent",
+            "subject": ev.get("title") or "",
+            "startdt": start.strftime("%Y-%m-%dT%H:%M:00"),
+            "enddt": end.strftime("%Y-%m-%dT%H:%M:00"),
+            "allday": "true" if all_day else "false",
+            "location": event_location(ev, city),
+            "body": event_desc(ev, limit),
+        }
+        return "https://outlook.live.com/calendar/0/deeplink/compose?" + urlencode(q)
+
+    return _fit_description(ev, build, max_len)
 
 
 def is_local_url(url: str) -> bool:
