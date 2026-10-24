@@ -118,6 +118,16 @@ def score(ev: Mapping, profile: Mapping, aff: Mapping | None = None, cfg: dict |
     elif params.get("adults30"):
         s += float(W["audience"]["adults30_penalty"])
 
+    # с детьми (params.kids или company «с детьми»): +детские события, −ночные и шумные. Выключено в профиле по умолчанию
+    if params.get("kids") or params.get("company") == "с детьми":
+        K = W["kids"]
+        if ev.get("audience_kids"):
+            s += float(K["audience_bonus"])
+            why.append(Why("подходит с детьми"))
+        if set(ev.get("tags") or []) & set(K["night_noisy_tags"]):
+            s += float(K["night_noisy_penalty"])
+            why.append(Why("поздно или шумно для детей", "neg"))
+
     # бюджет (бесплатное никогда не «выше бюджета»)
     budget = float(params.get("budget") or 0)
     pr = price_num(ev)

@@ -47,3 +47,13 @@ def make_event(**over) -> dict:
     }
     base.update(over)
     return base
+
+
+def fresh_dispatcher():
+    """Диспетчер бота для теста. Роутеры модульные и цепляются к одному диспетчеру — отцепляем от прежнего."""
+    from leisure.bot import commands, decisions, fallback, onboarding
+    from leisure.bot.main import build_dispatcher
+
+    for r in (onboarding.router, decisions.router, commands.router, fallback.router):
+        r._parent_router = None
+    return build_dispatcher()

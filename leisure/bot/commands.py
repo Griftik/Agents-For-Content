@@ -27,7 +27,7 @@ def _digest(session, user_id: int):
     p = services.get_profile(session, user_id)
     if p is None or p.onboarded_at is None:
         return None, None
-    dg, _, _ = services.core_digest(session, p, services.local_today(p))
+    dg, _, _ = services.core_digest(session, p, services.local_today(p), now=services.utcnow())
     return p, services.digest_view(p, dg)
 
 
@@ -37,11 +37,7 @@ async def digest(message: Message) -> None:
     if p is None:
         await message.answer(NOT_READY)
         return
-    msgs = digest_messages(p, view)
-    if len(msgs) <= 1:
-        await message.answer("На ближайшие выходные под твой профиль пока пусто. Загляни в /profile — может, стоит включить ещё категории.")
-        return
-    await send_with_bot(message.bot, msgs)
+    await send_with_bot(message.bot, digest_messages(p, view))
 
 
 def _plan(session, user_id: int):
@@ -107,7 +103,7 @@ async def profile(message: Message) -> None:
 async def help_cmd(message: Message) -> None:
     await message.answer("/digest — подборка на ближайшие выходные\n/plan — мой план\n/profile — что я о тебе знаю\n"
                          "/reset — пройти настройку заново\n/delete — удалить мои данные\n\nКаждый четверг в 19:00 пришлю подборку сам; "
-                         "в субботу утром — план, в понедельник спрошу, как прошло.")
+                         "утром в день события — план, на следующий день спрошу, как прошло.")
 
 
 DELETE_KEYBOARD = [[{"text": "Да, удалить всё", "callback_data": "del:yes"}, {"text": "Отмена", "callback_data": "del:no"}]]

@@ -2,17 +2,17 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import datetime
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from leisure import settings
 from leisure.api import services
-from leisure.core.catalog import ALL_CATS, AREA_OPTIONS, COMPANY_OPTIONS, SLOTS, VALUES, interests_from_values
+from leisure.core.catalog import ALL_CATS, COMPANY_OPTIONS, SLOTS, VALUES, interests_from_values
 from leisure.worker.schedules import digest_messages
 from leisure.worker.send import send_with_bot
 
@@ -31,7 +31,6 @@ class Onb(StatesGroup):
     times = State()
     budget = State()
     aesthetics = State()
-    areas = State()
     notes = State()
 
 
@@ -40,6 +39,16 @@ def markup(rows) -> InlineKeyboardMarkup:
 
 
 POLICY_URL = f"{settings.WEB_BASE_URL.rstrip('/')}/policy"
+STALE_SCREEN = "Этот экран устарел. Начни заново: /start"
+PRESS_BUTTON = "Здесь нужно нажать кнопку выше"
+PROFILE_GONE = "Профиль удалён. Чтобы начать заново — /start"
+
+
+def hello_message() -> tuple[str, list]:
+    """Приветствие и клавиатура согласия. При WEB_BASE_URL=localhost URL-кнопки нет: политика уходит ссылкой в тексте."""
+    if services.web_links_enabled():
+        return HELLO, kb.consent_keyboard(POLICY_URL)
+    return f"{HELLO}\n\nПолитика обработки данных: {POLICY_URL}", kb.consent_keyboard(None)
 HELLO = ("Привет! Я подбираю события на выходные под твои ценности, а не под рубрики афиши: 5–7 карточек "
          "в четверг вечером, с объяснением, почему именно тебе.\n\n"
          "Чтобы начать, мне нужны твой Telegram id, имя и ответы на несколько вопросов — три минуты. "
@@ -50,18 +59,22 @@ HELLO = ("Привет! Я подбираю события на выходные
 async def start(message: Message, state: FSMContext) -> None:
     u = message.from_user
     p = await run_db(services.get_or_create_profile, u.id, u.full_name or "", u.username or "")
+    if not p.active:
+        await run_db(services.set_active, u.id, True)  # вернулся после блокировки бота — рассылки снова включены
     if p.onboarded_at is not None:
         await message.answer("С возвращением. Команды: /digest — подборка на выходные, /plan — план, "
                              "/profile — что я о тебе знаю, /reset — пройти настройку заново.")
         return
     await state.clear()
-    await message.answer(HELLO, reply_markup=markup(kb.consent_keyboard(POLICY_URL)))
+    text, rows = hello_message()
+    await message.answer(text, reply_markup=markup(rows))
 
 
 @router.message(Command("reset"))
 async def reset(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer("Настроим заново. " + HELLO, reply_markup=markup(kb.consent_keyboard(POLICY_URL)))
+    text, rows = hello_message()
+    await message.answer("Настроим заново. " + text, reply_markup=markup(rows))
 
 
 @router.callback_query(F.data == "ob:consent")
@@ -194,21 +207,13 @@ async def budget(cb: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(Onb.aesthetics, F.data.startswith("ob:a:"))
 async def aesthetics(cb: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(aesthetics=cb.data.endswith(":1"))
-    await state.set_state(Onb.areas)
-    await cb.message.edit_text("Куда готов ехать?", reply_markup=markup(kb.areas_keyboard()))
-    await cb.answer()
-
-
-@router.callback_query(Onb.areas, F.data.startswith("ob:ar:"))
-async def areas(cb: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(areas=[AREA_OPTIONS[int(cb.data.split(":")[2])]])
     await state.set_state(Onb.notes)
     await cb.message.edit_text("Шаг 4 из 5. Напиши пару слов: что надоело, что хочется попробовать. Или пропусти.",
                                reply_markup=markup(kb.notes_keyboard()))
     await cb.answer()
 
 
-@router.message(Onb.notes, F.text)
+@router.message(Onb.notes, F.text, ~F.text.startswith("/"))
 async def notes_text(message: Message, state: FSMContext) -> None:
     await _finish(message, state, (message.text or "")[:2000], user_id=message.from_user.id)
 
@@ -220,17 +225,18 @@ async def notes_skip(cb: CallbackQuery, state: FSMContext) -> None:
 
 
 def _save_profile(session, user_id: int, data: dict):
-    p = services.get_or_create_profile(session, user_id)
+    p = services.get_profile(session, user_id)
+    if p is None:
+        return None  # профиль удалён по /delete посреди настройки — не воскрешаем без нового согласия
     params = {"company": data["company"], "times": data["times"], "budget": data["budget"],
-              "aesthetics": data["aesthetics"], "areas": data["areas"], "adults30": True,
-              "kids": data["company"] == "с детьми"}
+              "aesthetics": data["aesthetics"], "adults30": True, "kids": data["company"] == "с детьми"}
     return services.update_profile(session, p, {"values": data["values"], "interests": data["interests"],
                                                  "params": params, "notes": data.get("notes", ""), "onboarded": True})
 
 
-def _first_digest(session, user_id: int, today: date):
+def _first_digest(session, user_id: int, now: datetime):
     p = services.get_profile(session, user_id)
-    dg, _, _ = services.core_digest(session, p, today)
+    dg, _, _ = services.core_digest(session, p, services.local_today(p), now=now)
     view = services.digest_view(p, dg)
     if dg.items():
         services.save_digest(session, p, dg, sent=True)  # в четверг этот уикенд повторно не шлём
@@ -242,15 +248,34 @@ async def _finish(message: Message, state: FSMContext, notes: str, user_id: int)
     data["notes"] = notes
     await state.clear()
     try:
-        await run_db(_save_profile, user_id, data)
+        saved = await run_db(_save_profile, user_id, data)
     except Exception:  # noqa: BLE001
         log.exception("не сохранился профиль %s", user_id)
         await message.answer("Не получилось сохранить профиль. Попробуй /reset ещё раз.")
         return
-    await message.answer("Шаг 5 из 5. Профиль сохранён. Собираю первую подборку на ближайшие выходные…")
-    p, view = await run_db(_first_digest, user_id, services.local_today())
-    msgs = digest_messages(p, view)
-    if len(msgs) <= 1:
-        await message.answer("На эти выходные под твой профиль пока ничего не нашлось — в четверг пришлю свежую подборку.")
+    if saved is None:
+        await message.answer(PROFILE_GONE)
         return
-    await send_with_bot(message.bot, msgs)
+    await message.answer("Шаг 5 из 5. Профиль сохранён. Собираю первую подборку на ближайшие выходные…")
+    p, view = await run_db(_first_digest, user_id, services.utcnow())
+    await send_with_bot(message.bot, digest_messages(p, view))
+
+
+# ─── запасные обработчики (регистрируются последними: срабатывают, только если ни один шаг не подошёл) ───
+BUTTON_STEPS = (Onb.values, Onb.weights, Onb.interests, Onb.company, Onb.times, Onb.budget, Onb.aesthetics)
+
+
+@router.message(StateFilter(*BUTTON_STEPS), F.text, ~F.text.startswith("/"))
+async def text_on_button_step(message: Message) -> None:
+    """Текст на шаге с кнопками: короткая подсказка, состояние не меняем. Команды сюда не попадают."""
+    await message.answer(PRESS_BUTTON)
+
+
+@router.callback_query(F.data.startswith("ob:"))
+async def stale_onboarding_button(cb: CallbackQuery) -> None:
+    """Кнопка онбординга без подходящего состояния (например, после перезапуска бота): объясняем и снимаем «часики»."""
+    try:
+        await cb.message.answer(STALE_SCREEN)
+    except Exception:  # noqa: BLE001
+        log.info("не удалось ответить на устаревшую кнопку %s", cb.data)
+    await cb.answer()

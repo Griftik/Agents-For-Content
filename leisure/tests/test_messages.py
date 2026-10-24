@@ -4,9 +4,9 @@ from leisure.worker.messages import card_keyboard, card_text, digest_header, how
 
 def test_callbacks_roundtrip():
     eid = "4f2c8a10-1111-2222-3333-444455556666"
-    assert parse_cb(decision_cb("иду", eid)) == ("decision", "иду", eid)
-    assert parse_cb(reason_cb("не в это время", eid)) == ("reason", "не в это время", eid)
-    assert parse_cb(rating_cb(4, eid)) == ("rating", "4", eid)
+    assert parse_cb(decision_cb("иду", eid)) == ("decision", "иду", eid, None)
+    assert parse_cb(reason_cb("не в это время", eid)) == ("reason", "не в это время", eid, None)
+    assert parse_cb(rating_cb(4, eid)) == ("rating", "4", eid, None)
     assert parse_cb("x:y") is None and parse_cb("d:zz:1") is None
     assert all(len(cb.encode()) <= 64 for cb in (decision_cb("интересно", eid), reason_cb("не та компания", eid), rating_cb(5, eid)))
 
@@ -24,7 +24,7 @@ def test_card_text_and_keyboard():
     assert text.startswith("<b>Выставка &lt;Хлеб&gt;</b>\nСуббота, 24 окт, 11:00–22:00\nЗотов, м. Улица 1905 года\n525 ₽")
     assert "Почему тебе:</i> Эстетика · нетривиально" in text and "Но:</i> выше бюджета" in text and "Совпадение 83%" in text
     kb = card_keyboard(_item())
-    assert [b["text"] for b in kb[0]] == ["Иду", "Может быть", "Мимо"] and kb[1][0]["url"] == "https://x"
+    assert [b["text"] for b in kb[0]] == ["Иду", "Может быть", "Мимо", "Интересно"] and kb[1][0]["url"] == "https://x"
 
 
 def test_header_plan_feedback():

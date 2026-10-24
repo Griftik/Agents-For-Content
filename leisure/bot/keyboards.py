@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-from leisure.core.catalog import ALL_CATS, AREA_OPTIONS, COMPANY_OPTIONS, REASONS, SLOTS, VALUES
+from leisure.core.catalog import ALL_CATS, COMPANY_OPTIONS, REASONS, SLOTS, VALUES
 
 from .callbacks import REASON_CODES
 
@@ -11,6 +11,7 @@ Button = dict
 TOP_N = 5
 BUDGETS = [(0, "Без ограничения"), (1000, "до 1 000 ₽"), (2500, "до 2 500 ₽"), (5000, "до 5 000 ₽")]
 MARK = "● "
+REASON_CAPTION = "Почему мимо? Можно не отвечать"
 
 
 def _rows(buttons: list[Button], per_row: int) -> list[list[Button]]:
@@ -58,23 +59,20 @@ def aesthetics_keyboard() -> list[list[Button]]:
     return [[{"text": "Да, важна", "callback_data": "ob:a:1"}, {"text": "Не принципиально", "callback_data": "ob:a:0"}]]
 
 
-def areas_keyboard() -> list[list[Button]]:
-    labels = {"центр": "Центр", "любой": "Любой район", "свой округ": "Свой округ"}
-    return [[{"text": labels.get(a, a), "callback_data": f"ob:ar:{i}"} for i, a in enumerate(AREA_OPTIONS)]]
-
-
 def notes_keyboard() -> list[list[Button]]:
     return [[{"text": "Пропустить", "callback_data": "ob:skipnotes"}]]
 
 
-def consent_keyboard(policy_url: str) -> list[list[Button]]:
-    return [[{"text": "Политика обработки данных", "url": policy_url}],
-            [{"text": "Согласен, поехали", "callback_data": "ob:consent"}]]
+def consent_keyboard(policy_url: str | None) -> list[list[Button]]:
+    """policy_url=None — без URL-кнопки (WEB_BASE_URL=localhost): ссылка на политику тогда идёт текстом сообщения."""
+    rows = [[{"text": "Согласен, поехали", "callback_data": "ob:consent"}]]
+    return ([[{"text": "Политика обработки данных", "url": policy_url}]] + rows) if policy_url else rows
 
 
 def reasons_keyboard(event_id: str) -> list[list[Button]]:
     btns = [{"text": r, "callback_data": f"r:{REASON_CODES[r]}:{event_id}"} for r in REASONS]
-    return _rows(btns, 2) + [[{"text": "Без причины", "callback_data": f"r:0:{event_id}"}]]
+    caption = [{"text": REASON_CAPTION, "callback_data": "ob:noop"}]  # подпись, не кнопка действия
+    return [caption] + _rows(btns, 2) + [[{"text": "Без причины", "callback_data": f"r:0:{event_id}"}]]
 
 
 def mark_keyboard(rows: list[list[Button]], active_text: str | None) -> list[list[Button]]:

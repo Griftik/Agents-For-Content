@@ -161,6 +161,8 @@ class Decision(Base, TimestampMixin):
     reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     day: Mapped[date | None] = mapped_column(Date, nullable=True)
     rating: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)        # «План на сегодня» отправлен
+    feedback_asked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # «Как прошло?» отправлено
     # снимок события — обучение переживает удаление события
     event_slug: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     event_category: Mapped[str] = mapped_column(String(80), default="", nullable=False)

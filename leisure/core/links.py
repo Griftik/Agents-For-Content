@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from .timeutil import DAY_FULL, event_dates, event_times, fmt_date, start_hour, time_text, weekend_title
 
@@ -65,25 +65,61 @@ def outlook_url(ev: Mapping, day: str | None = None, city: str = DEFAULT_CITY) -
     return "https://outlook.live.com/calendar/0/deeplink/compose?" + urlencode(q)
 
 
-def share_text(ev: Mapping, day: str | None = None, city: str = DEFAULT_CITY, why: str | None = None) -> str:
-    """Текст для друга: название, дата и время, адрес, цена, «почему стоит»."""
+def is_local_url(url: str) -> bool:
+    """localhost / 127.0.0.1 / ::1 — такие адреса Telegram не принимает в URL-кнопках."""
+    host = (urlparse(url or "").hostname or "").lower()
+    return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.endswith(".localhost")
+
+
+def _share_parts(ev: Mapping, day: str | None, city: str, why: str | None) -> tuple[str, str, str, str, str, str]:
     d = day or (event_dates(ev)[0] if event_dates(ev) else "")
     t = time_text(ev)
     when = f"{fmt_date(d) if d else ''}{', ' + t if t else ''}".strip(", ").strip()
-    lines = [
-        ev.get("title") or "",
-        when,
-        event_location(ev, city),
-        f"Цена: {ev['price_text']}" if ev.get("price_text") else "",
-        why or ev.get("why_fit_hint") or ev.get("why_fit") or "",
-    ]
-    return "\n".join(x for x in lines if x)
+    price = f"Цена: {ev['price_text']}" if ev.get("price_text") else ""
+    return (ev.get("title") or "", when, ev.get("venue") or "", event_location(ev, city), price,
+            why or ev.get("why_fit_hint") or ev.get("why_fit") or "")
 
 
-def tg_share_url(ev: Mapping, day: str | None = None, url: str | None = None, **kw) -> str:
-    """t.me/share: ссылка на публичную страницу события (если передана), иначе на источник."""
-    q = {"url": url or ev.get("url") or "", "text": share_text(ev, day, **kw)}
-    return "https://t.me/share/url?" + urlencode(q)
+def share_text(ev: Mapping, day: str | None = None, city: str = DEFAULT_CITY, why: str | None = None) -> str:
+    """Текст для друга: название, дата и время, адрес, цена, «почему стоит»."""
+    title, when, _venue, location, price, hint = _share_parts(ev, day, city, why)
+    return "\n".join(x for x in (title, when, location, price, hint) if x)
+
+
+SHARE_URL_MAX = 1800  # длина всего URL кнопки «Другу»; Telegram на практике принимает до ~2048, держим запас
+SHARE_DESC_MAX = 200
+
+
+def _share_url(url: str, text: str) -> str:
+    return "https://t.me/share/url?" + urlencode({"url": url, "text": text})
+
+
+def tg_share_url(ev: Mapping, day: str | None = None, url: str | None = None, max_len: int = SHARE_URL_MAX,
+                 **kw) -> str:
+    """t.me/share: ссылка на публичную страницу события (если передана), иначе на источник.
+
+    Кириллица в URL занимает 6 символов на букву, поэтому текст собирается под лимит max_len: сначала название,
+    дата и время, площадка; затем, пока влезает, — полный адрес, цена, «почему стоит», описание.
+    """
+    link = url or ev.get("url") or ""
+    title, when, venue, location, price, hint = _share_parts(ev, day, kw.get("city", DEFAULT_CITY), kw.get("why"))
+    desc = " ".join((ev.get("description") or "").split())
+    if len(desc) > SHARE_DESC_MAX:
+        desc = desc[:SHARE_DESC_MAX].rstrip() + "…"
+
+    def fits(lines: list[str]) -> bool:
+        return len(_share_url(link, "\n".join(x for x in lines if x))) <= max_len
+
+    lines = [title, when, venue]
+    while not fits(lines) and len(title) > 1:  # название длиннее лимита — режем его
+        title = title[: max(1, int(len(title) * 0.8))].rstrip() + "…"
+        lines[0] = title
+    if location and location != venue and fits([title, when, location]):
+        lines[2] = location
+    for extra in (price, hint, desc):
+        if extra and fits(lines + [extra]):
+            lines.append(extra)
+    return _share_url(link, "\n".join(x for x in lines if x))
 
 
 def _ics_fold(line: str, limit: int = 75) -> str:

@@ -15,7 +15,9 @@ from aiogram.types import BotCommand
 
 from leisure import settings
 
-from . import commands, decisions, onboarding
+from leisure.api import services
+
+from . import commands, decisions, fallback, onboarding
 
 
 def build_dispatcher() -> Dispatcher:
@@ -23,11 +25,13 @@ def build_dispatcher() -> Dispatcher:
     dp.include_router(onboarding.router)
     dp.include_router(decisions.router)
     dp.include_router(commands.router)
+    dp.include_router(fallback.router)  # последним: любой неопознанный callback получает ответ
     return dp
 
 
 async def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    services.warn_local_web_url()
     bot = Bot(settings.bot_token(), default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     await bot.set_my_commands([
         BotCommand(command="digest", description="Подборка на выходные"),

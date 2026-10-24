@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import uuid
+import logging
+from collections.abc import Iterable
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -15,12 +17,18 @@ from leisure import settings
 from leisure.core.affinity import compute_affinity, describe_affinity, describe_affinity_text
 from leisure.core.catalog import DECISION_STATUSES, default_profile
 from leisure.core.config import scoring_config
-from leisure.core.links import gcal_url, ics_text, outlook_url, plan_text, tg_share_url
+from leisure.core.links import gcal_url, ics_text, is_local_url, outlook_url, plan_text, tg_share_url
 from leisure.core.recommend import Digest as CoreDigest, build_digest
 from leisure.core.scoring import ScoreResult, score_events
 from leisure.core.timeutil import (event_dates, event_times, is_free, is_horizon, slot_of, trim_past, weekend_days,
-                                   weekend_iso, weekend_title)
+                                   weekend_for, weekend_iso, weekend_title)
 from leisure.db.models import Decision, Digest, Event, Profile
+
+log = logging.getLogger("leisure.services")
+
+
+class ProfileMissing(LookupError):
+    """Профиля нет (не создан или удалён по /delete): решения и прочие данные без него не пишем."""
 
 
 # ─── время ───
@@ -31,9 +39,30 @@ def _zone(tz: str | None) -> ZoneInfo:
         return ZoneInfo(settings.DEFAULT_TZ)
 
 
+def utcnow() -> datetime:
+    """Текущий момент (UTC). Единая точка для живых путей бота и воркера — удобно подменять в тестах и симуляции."""
+    return datetime.now(timezone.utc)
+
+
 def local_today(p: Profile | None = None, now: datetime | None = None) -> date:
-    now = now or datetime.now(timezone.utc)
+    now = now or utcnow()
     return now.astimezone(_zone(p.tz if p else None)).date()
+
+
+def local_now(p: Profile | None = None, now: datetime | None = None) -> datetime:
+    """Момент в часовом поясе профиля (или города по умолчанию)."""
+    return (now or utcnow()).astimezone(_zone(p.tz if p else None))
+
+
+def web_links_enabled() -> bool:
+    """Можно ли ставить URL-кнопки на страницы веба: localhost Telegram отклоняет (BUTTON_URL_INVALID)."""
+    return not is_local_url(settings.WEB_BASE_URL)
+
+
+def warn_local_web_url() -> None:
+    if not web_links_enabled():
+        log.warning("WEB_BASE_URL=%s указывает на локальный адрес: бот не ставит URL-кнопки (политика, «Весь дайджест», "
+                    "«Другу»), а даёт ссылки текстом. Задай публичный адрес в WEB_BASE_URL.", settings.WEB_BASE_URL)
 
 
 def today_or(p: Profile | None, today: date | None) -> date:
@@ -45,10 +74,16 @@ def event_view(ev: dict) -> dict:
     return {**ev, "slot": slot_of(ev), "free": is_free(ev)}
 
 
-def upcoming_events(session: Session, city: str, today: date) -> list[dict]:
-    """Опубликованные события города с датами не раньше сегодня, в формате ядра."""
-    rows = session.scalars(select(Event).where(Event.status == "published", Event.city == city).order_by(Event.created_at)).all()
-    return trim_past([r.as_core() for r in rows], today.isoformat())
+def upcoming_events(session: Session, city: str, today: date, now: datetime | None = None,
+                    statuses: Iterable[str] = ("published",)) -> list[dict]:
+    """События города с датами не раньше сегодня, в формате ядра; по умолчанию только опубликованные.
+
+    now — местное время (дата + часы): сегодняшние даты событий, которые начались больше 30 минут назад, отбрасываются.
+    Без now времени суток не учитываем. statuses — какие статусы читать (сборщик читает ещё и черновики).
+    """
+    rows = session.scalars(select(Event).where(Event.status.in_(tuple(statuses)), Event.city == city)
+                           .order_by(Event.created_at)).all()
+    return trim_past([r.as_core() for r in rows], today.isoformat(), now)
 
 
 def get_event(session: Session, key: str) -> Event | None:
@@ -90,6 +125,16 @@ def get_or_create_profile(session: Session, user_id: int, name: str = "", userna
         session.commit()
         session.refresh(p)
     return p
+
+
+def set_active(session: Session, user_id: int, active: bool) -> bool:
+    """Включить/выключить рассылки (заблокировавшего бота выключаем, вернувшегося по /start включаем)."""
+    p = session.get(Profile, user_id)
+    if p is None or p.active == active:
+        return False
+    p.active = active
+    session.commit()
+    return True
 
 
 def update_profile(session: Session, p: Profile, data: dict) -> Profile:
@@ -158,23 +203,50 @@ def _default_day(ev: Event, today: date) -> date | None:
 
 def set_decision(session: Session, user_id: int, ev: Event, status: str, reason: str | None = None,
                  day: date | None = None, rating: int | None = None) -> Decision:
+    """Записать решение. Профиль не создаём: после /delete старая кнопка не должна воскрешать данные (ProfileMissing).
+
+    day — день с карточки; если передан, обновляет Decision.day и при повторном решении. Смена дня сбрасывает флаги
+    напоминания и запроса оценки (они относятся к конкретному дню).
+    """
     if status not in DECISION_STATUSES:
         raise ValueError(f"status должен быть одним из {DECISION_STATUSES}")
-    p = get_or_create_profile(session, user_id)
+    p = get_profile(session, user_id)
+    if p is None:
+        raise ProfileMissing(user_id)
     d = session.scalar(select(Decision).where(Decision.user_id == user_id, Decision.event_id == ev.id))
     if d is None:
         d = Decision(user_id=user_id, event_id=ev.id)
         session.add(d)
+    old_day = d.day
     d.status = status
     d.reason = reason if status in ("мимо", "пропуск") else None
     d.day = day or d.day or _default_day(ev, local_today(p))
+    if old_day is not None and d.day != old_day:
+        d.reminded_at = d.feedback_asked_at = None
     if rating is not None:
         d.rating = rating
     d.event_slug, d.event_category, d.event_tags = ev.slug, ev.category, list(ev.tags or [])
     session.commit()
     recompute_affinity(session, p)
+    refresh_digest_stats(session, p, ev)
     session.refresh(d)
     return d
+
+
+def refresh_digest_stats(session: Session, p: Profile, ev: Event, today: date | None = None) -> None:
+    """Дайджест этого уикенда, в котором есть событие: opened = True, decisions_count = число решений по его событиям."""
+    weekend_start = weekend_for(today_or(p, today))[0]
+    row = session.scalar(select(Digest).where(Digest.user_id == p.user_id, Digest.weekend_start == weekend_start,
+                                              Digest.sent_at.is_not(None)))
+    if row is None:
+        return
+    ids = {str(it.get("event_id")) for it in (row.items or [])}
+    if str(ev.id) not in ids:
+        return
+    decided = {str(d.event_id) for d in user_decisions(session, p.user_id) if d.event_id}
+    row.opened = True
+    row.decisions_count = len(ids & decided)
+    session.commit()
 
 
 def remove_decision(session: Session, user_id: int, ev: Event) -> bool:
@@ -186,6 +258,7 @@ def remove_decision(session: Session, user_id: int, ev: Event) -> bool:
     p = get_profile(session, user_id)
     if p:
         recompute_affinity(session, p)
+        refresh_digest_stats(session, p, ev)
     return True
 
 
@@ -206,10 +279,11 @@ def recently_shown_ids(session: Session, user_id: int, before_weekend: date, n: 
     return shown - reacted
 
 
-def core_digest(session: Session, p: Profile, today: date, weekend: list[str] | None = None
-                ) -> tuple[CoreDigest, list[dict], dict[str, ScoreResult]]:
+def core_digest(session: Session, p: Profile, today: date, weekend: list[str] | None = None,
+                now: datetime | None = None) -> tuple[CoreDigest, list[dict], dict[str, ScoreResult]]:
+    """now — момент сборки: сегодняшние события, начавшиеся больше 30 минут назад, в подборку не попадают."""
     weekend = weekend or weekend_iso(today)
-    events = upcoming_events(session, p.city, today)
+    events = upcoming_events(session, p.city, today, local_now(p, now).replace(tzinfo=None) if now else None)
     decs = [d.as_core() for d in user_decisions(session, p.user_id)]
     scores = score_events(events, p.as_core(), decs, aff=p.affinity or None)
     recent = recently_shown_ids(session, p.user_id, date.fromisoformat(weekend[0]))
@@ -231,8 +305,8 @@ def digest_view(p: Profile, dg: CoreDigest) -> dict:
     return {"user_id": p.user_id, "weekend": dg.weekend, "title": weekend_title(dg.weekend), "items": items, "horizon": horizon}
 
 
-def digest_preview(session: Session, p: Profile, today: date | None = None) -> dict:
-    dg, _, _ = core_digest(session, p, today_or(p, today))
+def digest_preview(session: Session, p: Profile, today: date | None = None, now: datetime | None = None) -> dict:
+    dg, _, _ = core_digest(session, p, today_or(p, today), now=now)
     return digest_view(p, dg)
 
 
@@ -247,6 +321,8 @@ def digest_row(session: Session, p: Profile, weekend_start: date) -> Digest:
 
 def save_digest(session: Session, p: Profile, dg: CoreDigest, sent: bool = False) -> Digest:
     row = digest_row(session, p, date.fromisoformat(dg.weekend[0]))
+    if row.sent_at is not None and not sent:
+        return row  # журнал «что показывали» не затираем пересборкой уже отправленной подборки
     row.items = dg.items(int(scoring_config()["why"]["max_total"]))
     if sent:
         row.sent_at = datetime.now(timezone.utc)
@@ -267,6 +343,51 @@ def scored_events(session: Session, p: Profile, today: date | None = None) -> li
 
 
 # ─── план ───
+def _mark_conflicts(items: list[dict], day: str) -> None:
+    """Сортирует события дня по началу и ставит conflict у пересекающихся «иду»."""
+    items.sort(key=lambda it: event_times(it["event"], day)[1])
+    going = [it for it in items if it["status"] == "иду"]
+    for a in going:
+        _, s1, e1 = event_times(a["event"], day)
+        for b in going:
+            if a is b:
+                continue
+            _, s2, e2 = event_times(b["event"], day)
+            if s1 < e2 and s2 < e1:
+                a["conflict"] = True
+
+
+def day_plan(decisions: Iterable[Decision], day: date) -> dict:
+    """План на один произвольный день (будни, события «на горизонте») по решениям «иду» с этим днём.
+
+    Формат как у plan(): {'weekend': [день], 'days': {день: [items]}}, годится для plan_today_text.
+    Решения без живого опубликованного события пропускаются.
+    """
+    iso = day.isoformat()
+    items = []
+    for d in decisions:
+        ev = d.event
+        if ev is None or ev.status != "published" or d.status != "иду":
+            continue
+        core = ev.as_core()
+        items.append({"event": event_view(core), "status": d.status, "day": iso, "links": links_for(core, iso)})
+    _mark_conflicts(items, iso)
+    return {"weekend": [iso], "days": {iso: items}}
+
+
+def decisions_to_remind(session: Session, user_id: int, day: date) -> list[Decision]:
+    """«Иду» на этот день, о которых ещё не напоминали."""
+    return session.scalars(select(Decision).where(Decision.user_id == user_id, Decision.status == "иду", Decision.day == day,
+                                                  Decision.reminded_at.is_(None)).order_by(Decision.id)).all()
+
+
+def decisions_to_ask(session: Session, user_id: int, day: date) -> list[Decision]:
+    """«Иду» на этот день без оценки, о которых ещё не спрашивали «Как прошло?»."""
+    return session.scalars(select(Decision).where(Decision.user_id == user_id, Decision.status == "иду", Decision.day == day,
+                                                  Decision.rating.is_(None), Decision.feedback_asked_at.is_(None))
+                           .order_by(Decision.id)).all()
+
+
 def plan(session: Session, p: Profile, today: date | None = None) -> dict:
     today = today_or(p, today)
     weekend = weekend_iso(today)
@@ -277,22 +398,14 @@ def plan(session: Session, p: Profile, today: date | None = None) -> dict:
     for d in decs:
         ev = events[str(d.event_id)]
         if is_horizon(ev, weekend):
-            horizon.append({"event": event_view(ev), "status": d.status, "day": event_dates(ev)[0], "links": links_for(ev, event_dates(ev)[0])})
+            hday = d.day.isoformat() if d.day and d.day.isoformat() in event_dates(ev) else event_dates(ev)[0]
+            horizon.append({"event": event_view(ev), "status": d.status, "day": hday, "links": links_for(ev, hday)})
             continue
         wd = weekend_days(ev, weekend)
         day = d.day.isoformat() if d.day and d.day.isoformat() in wd else wd[0]
         days[day].append({"event": event_view(ev), "status": d.status, "day": day, "links": links_for(ev, day)})
     for day, items in days.items():
-        items.sort(key=lambda it: event_times(it["event"], day)[1])
-        going = [it for it in items if it["status"] == "иду"]
-        for a in going:
-            _, s1, e1 = event_times(a["event"], day)
-            for b in going:
-                if a is b:
-                    continue
-                _, s2, e2 = event_times(b["event"], day)
-                if s1 < e2 and s2 < e1:
-                    a["conflict"] = True
+        _mark_conflicts(items, day)
     text = plan_text({d: [it["event"] for it in items if it["status"] == "иду"] for d, items in days.items()}, weekend,
                      [h["event"] for h in horizon if h["status"] == "иду"])
     return {"weekend": weekend, "title": weekend_title(weekend), "days": days, "horizon": horizon, "text": text}

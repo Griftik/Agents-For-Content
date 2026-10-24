@@ -18,7 +18,10 @@ def post_decision(body: DecisionIn, session: Session = Depends(get_session)) -> 
     ev = services.get_event(session, body.event)
     if ev is None:
         raise HTTPException(404, "событие не найдено")
-    d = services.set_decision(session, body.user_id, ev, body.status, body.reason, body.day, body.rating)
+    try:
+        d = services.set_decision(session, body.user_id, ev, body.status, body.reason, body.day, body.rating)
+    except services.ProfileMissing:
+        raise HTTPException(404, "профиль не найден — решения пишутся только в существующий профиль")
     return services.decision_view(d)
 
 

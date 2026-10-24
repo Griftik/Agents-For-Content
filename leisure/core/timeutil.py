@@ -136,11 +136,37 @@ def is_horizon(ev: Mapping, weekend: Sequence[str]) -> bool:
     return not weekend_days(ev, weekend)
 
 
-def trim_past(events: Iterable[Mapping], today_iso: str) -> list[dict]:
-    """Как в прототипе: прошедшие даты выкидываем, события без будущих дат — целиком."""
+STARTED_GRACE_MIN = 30  # событие, начавшееся не больше 30 минут назад, ещё показываем (можно успеть)
+
+
+def _start_minutes(ev: Mapping) -> int | None:
+    """Начало по start_time ('HH:MM[:SS]' или time) в минутах от полуночи; нет времени — None."""
+    st = ev.get("start_time")
+    if not st:
+        return None
+    if isinstance(st, str):
+        try:
+            h, m = st.split(":")[:2]
+            return int(h) * 60 + int(m)
+        except ValueError:
+            return None
+    return st.hour * 60 + st.minute
+
+
+def trim_past(events: Iterable[Mapping], today_iso: str, now: datetime | None = None) -> list[dict]:
+    """Как в прототипе: прошедшие даты выкидываем, события без будущих дат — целиком.
+
+    now — местное время (используются только дата и часы). Если сегодняшняя дата совпадает с датой now, то «сегодня»
+    у события, начавшегося по start_time больше STARTED_GRACE_MIN минут назад, тоже выкидывается. Без now — по дате.
+    """
+    now_min = now.hour * 60 + now.minute if now is not None and now.date().isoformat() == today_iso else None
     out: list[dict] = []
     for ev in events:
         ds = [d for d in event_dates(ev) if d >= today_iso]
+        if now_min is not None and today_iso in ds:
+            start = _start_minutes(ev)
+            if start is not None and now_min > start + STARTED_GRACE_MIN:
+                ds = [d for d in ds if d != today_iso]
         if not ds:
             continue
         e = dict(ev)

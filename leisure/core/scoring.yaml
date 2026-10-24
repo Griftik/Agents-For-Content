@@ -27,6 +27,11 @@ audience:
 budget:
   over_penalty: -12       # budget > 0 и price_from > budget
 
+kids:                     # Д4: params.kids или company «с детьми»; в профиле по умолчанию выключено
+  audience_bonus: 6       # событие с audience_kids
+  night_noisy_penalty: -8 # событие с тегом «ночь» или «шумно»
+  night_noisy_tags: ["ночь", "шумно"]
+
 confidence:
   check_penalty: -4       # confidence = «нужно проверить»
 

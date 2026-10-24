@@ -2,8 +2,9 @@
 from leisure.bot import keyboards as kb
 from leisure.bot.callbacks import parse_cb
 from leisure.bot.commands import profile_text
-from leisure.bot.main import build_dispatcher
 from leisure.core.catalog import ALL_CATS, VALUES
+
+from .conftest import fresh_dispatcher
 
 
 def test_values_keyboard_progress_and_next():
@@ -38,12 +39,13 @@ def test_mark_keyboard_moves_dot():
 def test_reasons_keyboard_roundtrip():
     rows = kb.reasons_keyboard("e1")
     cbs = [b["callback_data"] for r in rows for b in r]
-    assert parse_cb(cbs[0]) == ("reason", "не моё", "e1") and cbs[-1] == "r:0:e1"
+    assert rows[0][0]["text"] == kb.REASON_CAPTION and cbs[0] == "ob:noop"
+    assert parse_cb(cbs[1]) == ("reason", "не моё", "e1", None) and cbs[-1] == "r:0:e1"
 
 
 def test_dispatcher_builds():
-    dp = build_dispatcher()
-    assert {r.name for r in dp.sub_routers} == {"onboarding", "decisions", "commands"}
+    dp = fresh_dispatcher()
+    assert {r.name for r in dp.sub_routers} == {"onboarding", "decisions", "commands", "fallback"}
 
 
 def test_profile_text():

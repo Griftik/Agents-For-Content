@@ -32,7 +32,8 @@ def test_share_text_and_tg(by_slug):
     assert any(l.startswith("Цена: ") for l in lines) and lines[-1] == ev["why_fit_hint"]
     url = tg_share_url(ev, "2026-10-24", url="https://example.org/e/ongon")
     q = _q(url)
-    assert url.startswith("https://t.me/share/url?") and q["url"] == "https://example.org/e/ongon" and q["text"] == text
+    assert url.startswith("https://t.me/share/url?") and q["url"] == "https://example.org/e/ongon" and q["text"].split("\n")[:2] == lines[:2]
+    assert len(url) <= 1800
 
 
 def test_ics(by_slug):
@@ -58,3 +59,39 @@ def test_ics_lines_folded():
     assert all(len(line.encode("utf-8")) <= 75 for line in ics.split("\r\n"))
     unfolded = ics.replace("\r\n ", "")
     assert "SUMMARY:Очень длинное название события " in unfolded and "END:VCALENDAR" in unfolded
+
+
+def test_tg_share_url_fits_limit_for_all_seed_events(seed_events):
+    """Д15: URL кнопки «Другу» не длиннее 1 800 символов ни для одного события seed и любого его дня."""
+    from urllib.parse import unquote_plus
+
+    worst = 0
+    for ev in seed_events:
+        for day in (ev["dates"] or [None]):
+            url = tg_share_url(ev, day, url=f"https://leisure.example.org/e/{ev['slug']}", why=ev.get("why_fit_hint"))
+            worst = max(worst, len(url))
+            assert len(url) <= 1800, ev["slug"]
+            q = _q(url)
+            assert q["text"].split("\n")[0].startswith(ev["title"][:20]) and q["url"].endswith(ev["slug"])
+    assert worst > 0
+    assert unquote_plus("%D0%B0") == "а"
+
+
+def test_tg_share_url_truncates_huge_title_and_drops_optional():
+    ev = {"title": "Очень длинное название " * 80, "dates": ["2026-10-24"], "time_text": "19:00", "venue": "Зал",
+          "address": "ул. Длинная, 1", "price_text": "1 000 ₽", "description": "Описание " * 100}
+    url = tg_share_url(ev, "2026-10-24", url="https://x.org/e/a")
+    assert len(url) <= 1800 and _q(url)["text"].split("\n")[0].endswith("…")
+
+
+def test_tg_share_url_keeps_optional_when_short():
+    ev = {"title": "Концерт", "dates": ["2026-10-24"], "time_text": "19:00", "venue": "Зал", "address": "ул. А, 1",
+          "price_text": "500 ₽", "description": "Коротко о главном"}
+    lines = _q(tg_share_url(ev, "2026-10-24", url="https://x.org/e/a"))["text"].split("\n")
+    assert lines[0] == "Концерт" and lines[1] == "24 окт, 19:00" and "Цена: 500 ₽" in lines and lines[-1] == "Коротко о главном"
+
+
+def test_is_local_url():
+    from leisure.core.links import is_local_url
+    assert is_local_url("http://localhost:8000") and is_local_url("http://127.0.0.1/x") and is_local_url("http://[::1]:8000")
+    assert not is_local_url("https://leisure.example.org") and not is_local_url("")
