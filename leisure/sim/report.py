@@ -534,7 +534,7 @@ def build_defects(m: dict, d: dict) -> list[dict]:
             ["С WEB_BASE_URL=http://localhost:8000 кнопка «Политика обработки данных» (URL) в первом же сообщении, как правило, отклоняется Telegram "
              "(BUTTON_URL_INVALID: localhost не принимается; проверить на живом боте) — бот не пришлёт ни согласие, ни подборки. "
              "Симулятор подставил публичный домен; в проде переменная обязана быть задана."],
-            "leisure/settings.py:35, leisure/bot/onboarding.py:42,58", "Запустить бота без WEB_BASE_URL и отправить /start.", 1)
+            "leisure/settings.py (значение по умолчанию WEB_BASE_URL), leisure/bot/onboarding.py:42,58", "Запустить бота без WEB_BASE_URL и отправить /start.", 1)
     order = {"высокая": 0, "средняя": 1, "низкая": 2}
     out.sort(key=lambda x: (order[x["severity"]], int(x["id"][1:])))
     return out

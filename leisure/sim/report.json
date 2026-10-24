@@ -145,7 +145,7 @@
    "id": "Д18",
    "severity": "низкая",
    "title": "Значение WEB_BASE_URL по умолчанию (localhost) делает онбординг невозможным",
-   "where": "leisure/settings.py:35, leisure/bot/onboarding.py:42,58"
+   "where": "leisure/settings.py (значение по умолчанию WEB_BASE_URL), leisure/bot/onboarding.py:42,58"
   }
  ],
  "digests": {
@@ -731,7 +731,7 @@
   "button_url_long": 452
  },
  "volatile": {
-  "duration_s": 69.7,
+  "duration_s": 72.4,
   "job_runs": {
    "build": 6,
    "feedback": 30,
@@ -739,10 +739,10 @@
    "send": 36
   },
   "job_seconds": {
-   "build": 9.4,
-   "feedback": 2.85,
-   "plan": 7.97,
-   "send": 11.14
+   "build": 9.39,
+   "feedback": 3.01,
+   "plan": 8.12,
+   "send": 11.3
   }
  }
 }
