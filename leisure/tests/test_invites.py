@@ -4,7 +4,7 @@ import os
 from datetime import date
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from leisure import settings
 from leisure.api import invites as inv_service
@@ -397,8 +397,12 @@ def test_ref_link_sets_source_via_api_and_bot_start(client, db):
     ref = client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()
     assert ref["url"] == f"https://t.me/dosug_bot/app?startapp=ref_{ref['code']}" and "Попробуй: " in ref["share_text"]
     assert client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()["code"] == ref["code"]
+    # человек без согласия: /open профиль не создаёт, источник проставит PUT /api/profile с ref_code
     r = client.post(f"/api/invites/{ref['code']}/open", headers=H, json={"user_id": F1, "name": "Гость"})
     assert r.status_code == 200
+    db.expire_all()
+    assert db.get(Profile, F1) is None
+    client.put(f"/api/profile/{F1}", headers=H, json={"name": "Гость", "ref_code": ref["code"]})
     db.expire_all()
     p = db.get(Profile, F1)
     assert p.source == "ref" and p.referred_by == INVITER and p.can_write is False and p.consent_at is None
@@ -411,7 +415,7 @@ def test_ref_link_sets_source_via_api_and_bot_start(client, db):
     assert db.get(Profile, F2).source == "ref" and db.get(Profile, F2).referred_by == INVITER
     assert chat.last_text().startswith("Я подбираю события")
     chat.say(f"/start ref_{ref['code']}")                                                  # не накручивается
-    assert db.scalar(select(Invite).where(Invite.code == ref["code"])).opened == 2
+    assert db.scalar(select(Invite).where(Invite.code == ref["code"])).opened == 2          # F1 по PUT, F2 в боте
     # своя ссылка и чужой формат источник не меняют
     chat3 = Chat(INVITER)
     chat3.say(f"/start ref_{ref['code']}")
@@ -544,3 +548,99 @@ def test_catalog_gives_category_values_for_web(client):
     assert cat["category_values"] == CATEGORY_VALUES and set(cat["category_values"]) == set(ALL_CATS)
     assert all(v in VALUES for d in cat["category_values"].values() for v in d)
     assert cat["proposed_n"] == 8 and cat["proposed_top"] == 5
+
+
+# ── ТЗ-10: has_consent, открытие без согласия, score/why приглашения, offer_due ──
+def _anon_opens(db, code):
+    return db.scalar(select(func.count()).select_from(GrowthEvent).where(GrowthEvent.kind == "invite_open", GrowthEvent.invite_code == code))
+
+
+def test_profile_get_gives_has_consent_and_offer_due(client):
+    client.put(f"/api/profile/{F1}", headers=H, json={"name": "Гость"})
+    p = client.get(f"/api/profile/{F1}", headers=H).json()
+    assert p["has_consent"] is False and p["offer_due"] is None
+    assert client.put(f"/api/profile/{F1}", headers=H, json={"consent": True}).json()["has_consent"] is True
+    assert client.get(f"/api/profile/{F1}", headers=H).json()["has_consent"] is True
+    assert client.get(f"/api/profile/{INVITER}", headers=H).json()["has_consent"] is True
+
+
+def test_open_without_consent_creates_no_profile_and_counts_in_growth_events(client, db, event):
+    code = _create(client, event)["code"]
+    ref = client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()["code"]
+    inv = db.scalar(select(Invite).where(Invite.code == code))
+    # совсем новый человек
+    r = client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": F1, "name": "Борис"})
+    assert r.status_code == 200 and r.json()["status"] == "active" and r.json()["my_status"] is None and r.json()["event"] is not None
+    client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": F1})
+    db.expire_all()
+    assert db.get(Profile, F1) is None and db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1)) is None
+    assert _anon_opens(db, code) == 2 and inv.opened == 0
+    gevent = db.scalar(select(GrowthEvent).where(GrowthEvent.invite_code == code))
+    assert gevent.user_id is None                                       # персональных данных в журнале нет
+    # ref-ссылка: то же
+    assert client.post(f"/api/invites/{ref}/open", headers=H, json={"user_id": F2}).status_code == 200
+    db.expire_all()
+    assert db.get(Profile, F2) is None and _anon_opens(db, ref) == 1
+    # профиль есть, а согласия нет (создан PUT'ом): записи InviteAccept нет, профиль не меняется
+    client.put(f"/api/profile/{F3}", headers=H, json={"name": "Без согласия"})
+    client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": F3})
+    db.expire_all()
+    assert db.scalar(select(InviteAccept).where(InviteAccept.user_id == F3)) is None and _anon_opens(db, code) == 3
+    assert db.get(Profile, F3).source == "organic"
+    # принятие без согласия: 409 и по-прежнему ни профиля, ни записей
+    assert _accept(client, code, F1, consent=False).status_code == 409
+    db.expire_all()
+    assert db.get(Profile, F1) is None and db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1)) is None
+    # дал согласие: профиль и запись создаются, человек считается новым
+    assert _accept(client, code, F1).status_code == 200
+    db.expire_all()
+    acc = db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1))
+    assert db.get(Profile, F1).consent_at is not None and acc.was_new is True and acc.status == "going"
+    # человек с согласием: открытие учитывается как раньше (InviteAccept), журнал не растёт
+    p = db.get(Profile, F4) or services.get_or_create_profile(db, F4, "Дарья", "d", via_bot=False)
+    services.update_profile(db, p, {"consent": True})
+    client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": F4})
+    db.expire_all()
+    acc4 = db.scalar(select(InviteAccept).where(InviteAccept.user_id == F4))
+    assert acc4 is not None and acc4.status == "opened" and acc4.was_new is False and _anon_opens(db, code) == 3
+    # своё открытие не считается
+    client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": INVITER})
+    assert _anon_opens(db, code) == 3
+    assert client.get("/api/metrics/growth", headers=H).json()["counts"]["opened_without_consent"] >= 4
+
+
+def test_invite_gives_score_and_why_only_for_ready_profile(client, db, event):
+    code = _create(client, event)["code"]
+    url = f"/api/invites/{code}"
+    # не настроен, без профиля, без user_id: null
+    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True, "name": "Новичок"})
+    for params in ({}, {"user_id": F1}, {"user_id": F2}):
+        body = client.get(url, headers=H, params=params).json()
+        assert body["score"] is None and body["why"] is None
+    # готовый профиль: тот же расчёт, что в дайджесте для веба
+    client.put(f"/api/profile/{F2}", headers=H, json={"consent": True, "name": "Готовая", "onboarded": True,
+                                                       "values": {"Творчество": 5, "Красота/эстетика": 4}})
+    body = client.get(url, headers=H, params={"user_id": F2}).json()
+    assert isinstance(body["score"], int) and isinstance(body["why"], list)
+    alls = client.get(f"/api/digest/{F2}/all", headers=H, params={"today": DAY}).json()
+    mine = next(e for e in alls if e["slug"] == event.slug)
+    assert body["score"] == mine["score"] and body["why"] == mine["why"]
+    assert body["event"]["score"] == body["score"]
+    # у пригласившего (готовый профиль) тоже есть
+    assert isinstance(client.get(url, headers=H, params={"user_id": INVITER}).json()["score"], int)
+
+
+def test_accept_sets_offer_due_to_event_day_plus_one_once(client, db, event, sent):
+    code = _create(client, event)["code"]
+    assert _accept(client, code, F1, status="declined", consent=False).status_code == 200
+    assert client.get(f"/api/profile/{F1}", headers=H).json()["offer_due"] is None            # отказ срок не ставит
+    assert _accept(client, code, F1, status="maybe").status_code == 200
+    assert client.get(f"/api/profile/{F1}", headers=H).json()["offer_due"] == "2026-10-25"
+    other = _create(client, event, day="2026-10-25")["code"]
+    assert _accept(client, other, F1).status_code == 200
+    assert client.get(f"/api/profile/{F1}", headers=H).json()["offer_due"] == "2026-10-25"    # не сдвигается
+    assert _accept(client, other, F2).status_code == 200
+    assert client.get(f"/api/profile/{F2}", headers=H).json()["offer_due"] == "2026-10-26"
+    # PUT offer_seen работает как раньше, offer_due им не трогается
+    r = client.put(f"/api/profile/{F2}", headers=H, json={"offer_seen": 1}).json()
+    assert r["offer_seen"] == 1 and r["offer_due"] == "2026-10-26"

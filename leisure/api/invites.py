@@ -88,13 +88,16 @@ def status_of(session: Session, inv: Invite, today: date) -> str:
     return "gone" if inv.inviter_id is None else "active"
 
 
-def open_invite(session: Session, inv: Invite, user_id: int) -> tuple[InviteAccept, bool]:
-    """Учесть открытие приглашения человеком (профиль уже создан). Возвращает (запись, первое_ли_открытие)."""
+def open_invite(session: Session, inv: Invite, user_id: int, was_new: bool | None = None) -> tuple[InviteAccept, bool]:
+    """Учесть открытие приглашения человеком (профиль уже создан). Возвращает (запись, первое_ли_открытие). was_new — «профиля или
+    согласия не было на момент открытия»; не задан — вычисляется по текущему профилю."""
     acc = session.scalar(select(InviteAccept).where(InviteAccept.invite_id == inv.id, InviteAccept.user_id == user_id))
     if acc is not None:
         return acc, False
-    p = services.get_profile(session, user_id)
-    acc = InviteAccept(invite_id=inv.id, user_id=user_id, status="opened", was_new=p is None or p.consent_at is None)
+    if was_new is None:
+        p = services.get_profile(session, user_id)
+        was_new = p is None or p.consent_at is None
+    acc = InviteAccept(invite_id=inv.id, user_id=user_id, status="opened", was_new=was_new)
     session.add(acc)
     inv.opened += 1
     session.commit()
@@ -196,6 +199,7 @@ def growth_metrics(session: Session, since: datetime | None = None) -> dict:
     active = c(select(func.count(func.distinct(Decision.user_id))).where(Decision.updated_at >= since))
     rated = c(select(func.count()).select_from(Decision).where(Decision.rating.is_not(None), Decision.updated_at >= since))
     rated_good = c(select(func.count()).select_from(Decision).where(Decision.rating >= 4, Decision.updated_at >= since))
+    opened_anon = c(select(func.count()).select_from(GrowthEvent).where(GrowthEvent.kind == "invite_open", GrowthEvent.created_at >= since))
     ref_asks = c(select(func.count()).select_from(GrowthEvent).where(GrowthEvent.kind == "ref_ask", GrowthEvent.created_at >= since))
     # «Поделиться» в T-REF-ASK — URL-кнопка, бот нажатий не видит: считаем показы, после которых по ссылке пришёл человек
     ref_shares = c(select(func.count()).select_from(Invite).where(Invite.kind == "ref", Invite.opened > 0, Invite.created_at >= since))
@@ -218,7 +222,7 @@ def growth_metrics(session: Session, since: datetime | None = None) -> dict:
             "recommendation": m(ref_shares, ref_asks, "≥ 10 % (ссылку открыли / показов просьбы)"),
             "together_going": m(together, going, "наблюдаем"),
         },
-        "counts": {"going_decisions": going, "invites_created": invites_made, "opened": opened, "accepted": accepted,
+        "counts": {"going_decisions": going, "invites_created": invites_made, "opened": opened, "opened_without_consent": opened_anon, "accepted": accepted,
                    "new_profiles": new_total, "new_via_friends": new_friends, "ratings": rated, "ratings_4_5": rated_good,
                    "ref_asks": ref_asks, "ref_shares": ref_shares},
     }
@@ -265,7 +269,8 @@ def view(session: Session, inv: Invite, user_id: int | None = None) -> dict:
         day = inv.day or services.first_day(inv.event, today)
         iso = day.isoformat() if day else None
         from leisure.core.timeutil import weekend_iso
-        item = services.card_item(session, p, inv.event, iso, weekend_iso(day or today), scored=False)
+        ready = p is not None and p.onboarded_at is not None
+        item = services.card_item(session, p, inv.event, iso, weekend_iso(day or today), scored=ready)
     mine = None
     if user_id:
         acc = session.scalar(select(InviteAccept).where(InviteAccept.invite_id == inv.id, InviteAccept.user_id == user_id))
@@ -275,14 +280,28 @@ def view(session: Session, inv: Invite, user_id: int | None = None) -> dict:
             "inviter_name": display_name(inviter), "is_own": user_id is not None and user_id == inv.inviter_id,
             "status": ("gone" if inv.inviter_id is None else "active") if inv.kind == "ref" else status_of(session, inv, today),
             "accepted": inv.accepted,
-            "my_status": mine}
+            "my_status": mine,
+            "score": item["score"] if item and item["score"] is not None else None,
+            "why": item["why"] if item and item["score"] is not None else None}
 
 
-def web_open(session: Session, inv: Invite, user_id: int, name: str = "", username: str = "") -> InviteAccept:
-    """Человек открыл приглашение или ref-ссылку в Mini App: профиль-заготовка (без согласия), учёт открытия. Для ref-ссылки
-    новому человеку сразу ставится источник «ref» и пригласивший."""
+def log_open_without_consent(session: Session, inv: Invite) -> None:
+    """Открытие без профиля или согласия: профиль не создаём и персональных данных не храним, только строка в growth_events по коду."""
+    session.add(GrowthEvent(user_id=None, kind="invite_open", invite_code=inv.code))
+    session.commit()
+
+
+def web_open(session: Session, inv: Invite, user_id: int, name: str = "", username: str = "",
+             create: bool = False) -> InviteAccept | None:
+    """Человек открыл приглашение или ref-ссылку в Mini App. Есть профиль с согласием: учёт открытия (InviteAccept), для
+    ref-ссылки новому человеку ставится источник «ref» и пригласивший. Нет профиля или согласия: профиль НЕ создаётся, открытие
+    считается в growth_events по коду, возвращается None. create=True (только declined) создаёт профиль-заготовку без согласия."""
     if user_id == inv.inviter_id:
         raise OwnInvite()
+    p = services.get_profile(session, user_id)
+    if not create and (p is None or p.consent_at is None):
+        log_open_without_consent(session, inv)
+        return None
     p = services.get_or_create_profile(session, user_id, name, username, via_bot=False)
     acc, _ = open_invite(session, inv, user_id)
     if inv.kind == "ref":
@@ -310,7 +329,7 @@ def web_accept(session: Session, inv: Invite, user_id: int, status: str, name: s
     if inv.inviter_id == user_id:
         raise OwnInvite()
     if status == "declined":
-        acc = web_open(session, inv, user_id, name, username)
+        acc = web_open(session, inv, user_id, name, username, create=True)
         if acc.status in ("opened", "declined"):
             acc.status = "declined"
             session.commit()
@@ -319,15 +338,23 @@ def web_accept(session: Session, inv: Invite, user_id: int, status: str, name: s
     state = status_of(session, inv, services.local_today(services.get_profile(session, user_id)))
     if state not in ("active", "gone"):
         raise InviteUnavailable(state)
-    web_open(session, inv, user_id, name, username)
     p = services.get_profile(session, user_id)
-    if p.consent_at is None:
+    was_new = p is None or p.consent_at is None
+    if was_new:
         if not consent:
-            raise ConsentRequired()
+            raise ConsentRequired()              # профиль при этом не создаётся
+        p = services.get_or_create_profile(session, user_id, name, username, via_bot=False)
         services.update_profile(session, p, {"consent": True}, auto_onboarded=False)
+    open_invite(session, inv, user_id, was_new=was_new)
     adopt_new_profile(session, p, inv)
     first = session.scalar(select(InviteAccept.accepted_at).where(InviteAccept.invite_id == inv.id, InviteAccept.user_id == user_id)) is None
-    return accept_invite(session, inv, user_id, status), first
+    d = accept_invite(session, inv, user_id, status)
+    if p.offer_due is None:                      # повтор предложения онбординга: на следующий день после события (один раз)
+        day = inv.day or services.first_day(inv.event, services.local_today(p))
+        if day is not None:
+            p.offer_due = day + timedelta(days=1)
+            session.commit()
+    return d, first
 
 
 def apply_ref_code(session: Session, p: Profile, code: str) -> bool:

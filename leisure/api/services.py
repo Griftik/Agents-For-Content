@@ -192,7 +192,8 @@ def profile_view(p: Profile, decisions: list[Decision] | None = None) -> dict:
         "digest_day": p.digest_day, "digest_hour": p.digest_hour, "plan": p.plan, "affinity": aff,
         "learned": describe_affinity(aff, decs), "learned_text": describe_affinity_text(aff, decs),
         "onboarded": p.onboarded_at is not None, "show_name": p.show_name, "source": p.source, "can_write": p.can_write,
-        "offer_seen": p.offer_seen,
+        "offer_seen": p.offer_seen, "offer_due": p.offer_due.isoformat() if p.offer_due else None,
+        "has_consent": p.consent_at is not None,
         "affinity_manual_at": p.affinity_manual_at.isoformat() if p.affinity_manual_at else None,
     }
 
@@ -371,7 +372,10 @@ def card_item(session: Session, p: Profile | None, ev: Event, day: str | None, w
     """Элемент карточки для одного события (перерисовка при выборе дня, диплинк): тот же формат, что в digest_view.
     scored=False — без «совпадения» и причин (профиль ещё не настроен, оценивать нечем)."""
     core = ev.as_core()
-    r = score_events([core], p.as_core(), aff=p.affinity or None)[core["id"]] if scored and p is not None else None
+    r = None
+    if scored and p is not None:        # тот же расчёт, что в scored_events (дайджест для веба)
+        decs = [d.as_core() for d in user_decisions(session, p.user_id)]
+        r = score_events([core], p.as_core(), decs, aff=p.affinity or None)[core["id"]]
     dm = decision_map(session, p.user_id) if p is not None else {}
     slot = reco_slot(core)
     return _item(core, day, slot, r, False, int(scoring_config()["why"]["max_total"]), weekend, dm)

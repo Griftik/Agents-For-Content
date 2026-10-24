@@ -223,6 +223,8 @@ class ProfileOut(BaseModel):
     show_name: bool = True
     can_write: bool = True
     offer_seen: int = 0
+    offer_due: str | None = None      # YYYY-MM-DD: когда повторить предложение онбординга приглашённому (день события + 1) или null
+    has_consent: bool = False         # согласие на обработку данных дано: веб зовёт /open только при нём
     source: str = "organic"
     affinity_manual_at: str | None = None   # когда пользователь последний раз правил affinity вручную
 
@@ -313,6 +315,8 @@ class InviteOut(BaseModel):
     status: str                         # active | past | unpublished | gone
     accepted: int
     my_status: str | None = None        # для ?user_id=: opened | going | maybe | declined
+    score: int | None = None            # «Совпадение N %» под профиль спросившего (как в дайджесте); null, если профиль не настроен
+    why: list[WhyOut] | None = None     # «Почему тебе»; null вместе со score
 
 
 class InviteOpenIn(BaseModel):
