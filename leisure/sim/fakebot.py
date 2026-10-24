@@ -188,7 +188,7 @@ class FakeTelegram:
                     if u.scheme not in ("http", "https", "tg") or not host or host in ("localhost", "127.0.0.1") or " " in url:
                         self.violate("button_url_invalid", f"{b['text']}: {url[:80]}", chat_id, mid)
                         raise TelegramBadRequest(method=method, message="Bad Request: BUTTON_URL_INVALID")
-                    if len(url) > 2048:
+                    if len(url) > 2048 and mid is None:      # считаем только отправки, а не повторную проверку при правке клавиатуры
                         self.violate("button_url_long", f"{len(url)} символов у «{b['text']}»", chat_id, mid)
                 if cd is None and url is None:
                     raise TelegramBadRequest(method=method, message="Bad Request: BUTTON_TYPE_INVALID")

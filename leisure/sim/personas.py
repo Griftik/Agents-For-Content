@@ -110,6 +110,10 @@ ARCHETYPES: dict[str, dict] = {
         p_rate=0.5, rating_bias=0.1, churn_thr=0.22, blocks=0.15),
 }
 
+# Допущения модели поведения (не измерения): общий сдвиг вовлечённости и порога ухода.
+ENGAGEMENT_SCALE = 0.72
+CHURN_SHIFT = 0.12
+
 TZ_OVERRIDES = ["Europe/Kaliningrad", "Asia/Yekaterinburg", "Asia/Novosibirsk"]  # «переехавшие»: у остальных Москва
 
 
@@ -262,10 +266,10 @@ def make_persona(seed: int, idx: int, archetype: str, n_users: int) -> Persona:
         offset = rng.uniform(8.0, 24.0 + 24.0 + 17.0)       # вт 08:00 … чт 17:00 UTC
     else:
         offset = rng.uniform(24.0 * 3 + 8.0, 24.0 * 5 + 21.0)  # пт 08:00 … вс 21:00 UTC
-    eng = max(0.2, min(0.98, a["engagement"] + rng.uniform(-0.12, 0.12)))
+    eng = max(0.2, min(0.98, a["engagement"] * ENGAGEMENT_SCALE + rng.uniform(-0.12, 0.12)))
     lo = 1 if a["patience"] < 0.5 else 2
     view = (lo, lo + 2 + int(a["patience"] * 4))
-    p_cmd = {"plan": 0.25 + 0.3 * eng, "profile": 0.10, "digest": 0.08, "help": 0.05}
+    p_cmd = {"plan": 0.25 + 0.3 * eng, "profile": 0.10, "digest": 0.08, "help": 0.05, "start": 0.03}
     budget = _pick(rng, a["budget"])
     persona = Persona(
         idx=idx, user_id=FIRST_USER_ID + idx, name=NAMES[idx % len(NAMES)] + ("" if idx < len(NAMES) else str(idx // len(NAMES) + 1)),
@@ -279,7 +283,7 @@ def make_persona(seed: int, idx: int, archetype: str, n_users: int) -> Persona:
         p_open_scale=round(0.85 + 0.3 * rng.random(), 3), view_range=view, decisive=a["decisive"],
         w_go_maybe_interest=tuple(a["w"]), p_rate=a["p_rate"], p_attend=0.85, rating_bias=a["rating_bias"],
         double_tap=0.04 if a["patience"] < 0.6 else 0.02,
-        delay_profile=_pick(rng, ["evening", "evening", "next_day", "weekend"]), churn_thr=a["churn_thr"],
+        delay_profile=_pick(rng, ["evening", "evening", "next_day", "weekend"]), churn_thr=a["churn_thr"] + CHURN_SHIFT,
         blocks_on_churn=rng.random() < a["blocks"], p_cmd=p_cmd, delete_week=None, reset_week=None,
         reason_none_p=0.25, seed_key=f"{seed}:{idx}", taste_cats=taste, value_w=value_w)
     return persona
@@ -309,6 +313,9 @@ def generate(n_users: int = 50, seed: int = DEFAULT_SEED) -> list[Persona]:
         personas[i].delete_week = 3
     for i in tail[4:5]:
         personas[i].help_at_notes = True
+    # поздний онбординг: суббота днём/вечером и воскресенье — первая подборка приходит, когда часть событий уже началась
+    for i, off in zip(tail[5:9], (107.0, 113.0, 132.0, 137.0)):     # сб 11:00, сб 17:00, вс 12:00, вс 17:00 UTC
+        personas[i].onboard_offset_h = off
     return personas
 
 

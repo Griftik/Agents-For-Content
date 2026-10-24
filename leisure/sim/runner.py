@@ -46,6 +46,9 @@ def at_local(d: date, hour: int, tz: str = MSK, minute: int = 0) -> datetime:
     return datetime(d.year, d.month, d.day, hour, minute, tzinfo=ZoneInfo(tz)).astimezone(UTC)
 
 
+WEB_ORIGINAL: dict = {}
+
+
 class Clock:
     def __init__(self) -> None:
         self.now = START
@@ -165,6 +168,7 @@ def patched_product(world, clock: Clock):
     from leisure.worker import send as send_mod
 
     saved = (services.local_today, send_mod.send_messages, send_mod.SEND_INTERVAL, settings.WEB_BASE_URL, onboarding.POLICY_URL)
+    WEB_ORIGINAL.setdefault("url", settings.WEB_BASE_URL)
 
     def local_today(p=None, now=None):
         zone = ZoneInfo((p.tz if p else None) or settings.DEFAULT_TZ)
@@ -253,6 +257,7 @@ class Sim:
             self.push(at_local(mon, 22), PRIO_USER, "close", w)
         if self.weeks >= 3:
             self.push(at_local(FRI0 + timedelta(days=21 - 2), 12), PRIO_USER, "fsm_restart")
+        self.push(at_local(FRI0 + timedelta(days=7), 13), PRIO_USER, "not_ready")
 
     # ── разбор того, что пришло пользователям ──
     def collect(self, origin: str) -> None:
@@ -292,6 +297,7 @@ class Sim:
                         ps.last_digest = rec
                         if origin in ("first", "weekly", "reset"):
                             ps.digest_cycles.add(rec.cycle)
+                    self._inspect_digest(ps, rec, origin)
                     self.digest_recs.append(rec)
                     if ps is not None and ps.status == "active":
                         self.push(self.clock.now + timedelta(hours=self._delay(ps, origin)), PRIO_USER, "react_digest", (ps, rec))
@@ -304,7 +310,9 @@ class Sim:
                         ms[j].tag = "plan_item"
                         titles.append(ms[j].text.split("\n")[0])
                         j += 1
-                    self.plan_pushes.append({"t": self.clock.now.isoformat(), "u": uid, "cycle": cycle_of(self.clock.now), "titles": titles})
+                    self.plan_pushes.append({"t": self.clock.now.isoformat(), "u": uid, "cycle": cycle_of(self.clock.now), "titles": titles,
+                                             "messy_lines": sum(1 for ln in m.text.splitlines() if ln.startswith("• ") and ";" in ln),
+                                             "lines": sum(1 for ln in m.text.splitlines() if ln.startswith("• "))})
                     i = j
                     continue
                 if m.text.startswith("Как прошло?"):
@@ -314,7 +322,8 @@ class Sim:
                         ms[j].tag = "feedback"
                         fb.append(ms[j])
                         j += 1
-                    self.feedback_sent.append({"t": self.clock.now.isoformat(), "u": uid, "n": len(fb), "cycle": cycle_of(self.clock.now)})
+                    self.feedback_sent.append({"t": self.clock.now.isoformat(), "u": uid, "n": len(fb), "cycle": cycle_of(self.clock.now),
+                                               "titles": [x.text.split("\n")[1] if "\n" in x.text else "" for x in fb]})
                     if ps is not None and ps.status == "active":
                         h = ps.rng.uniform(0.5, 30)
                         self.push(self.clock.now + timedelta(hours=h), PRIO_USER, "react_feedback", (ps, fb))
@@ -324,6 +333,24 @@ class Sim:
                     m.tag = "empty_notice"
                     self.empty_notices.append({"t": self.clock.now.isoformat(), "u": uid, "origin": origin, "text": m.text[:120]})
                 i += 1
+
+    def _inspect_digest(self, ps, rec, origin: str) -> None:
+        """Проверки доставленной подборки глазами человека: события уже начались? решение видно на повторной карточке?"""
+        local = self.clock.now.astimezone(ZoneInfo(MSK))
+        for card in rec.cards:
+            ev = self.events.get(card.event_id) or {}
+            start = ev.get("start_time")
+            if origin != "weekly" and card.day == local.date().isoformat() and start and start < local.strftime("%H:%M"):
+                rec.already_started += 1
+                self.f.add("card_already_started", f"«{card.title[:40]}» начинается в {start}, а карточка пришла в {local.strftime('%H:%M')} "
+                           f"того же дня ({origin})", rec.uid, self.clock.now)
+            if ";" in card.time_text or card.time_text.count(" — ") >= 2:
+                rec.messy_time += 1
+            prev = ps.decisions.get(card.event_id) if ps is not None else None
+            if origin in ("manual", "reset") and prev and prev.get("status") and not any(b.startswith("● ") for b in card.buttons):
+                rec.resent_no_status += 1
+                self.f.add("resent_card_no_status", f"«{card.title[:40]}» уже отмечена как «{prev['status']}», но пришла без отметки ● ({origin})",
+                           rec.uid, self.clock.now)
 
     @staticmethod
     def _delay(ps, origin: str) -> float:
@@ -406,6 +433,8 @@ class Sim:
             await self.driver.run_cmd(ps, "/profile")
         if ps.rng.random() < ps.p.p_cmd["help"]:
             await self.driver.run_cmd(ps, "/help")
+        if ps.rng.random() < ps.p.p_cmd["start"]:
+            await self.driver.run_cmd(ps, "/start")
 
     async def on_reset(self, ps) -> None:
         if ps.status != "active":
@@ -446,6 +475,7 @@ class Sim:
         for ps in self.states:
             if ps.status != "active":
                 continue
+            ps.E *= 0.96                                       # усталость: интерес к рассылке сам по себе угасает
             if w not in ps.digest_cycles and w > 0:
                 ps.E *= 0.85
             if w >= 1 and ps.E < ps.p.churn_thr and ps.rng.random() < 0.5:
@@ -454,6 +484,17 @@ class Sim:
                 if ps.p.blocks_on_churn:
                     self.world.blocked.add(ps.p.user_id)
                     self.f.add("user_blocked_bot", f"перестал пользоваться (E={ps.E:.2f}) и заблокировал бота", ps.p.user_id, self.clock.now)
+
+    async def on_not_ready(self, _=None) -> None:
+        """Брошенный онбординг: человек возвращается и пишет команды, не пройдя настройку — что ему отвечают."""
+        res = []
+        ab = [ps for ps in self.states if ps.status == "abandoned"][:3]
+        for ps in ab:
+            for cmd in ("/digest", "/plan", "/profile"):
+                replies = await self.driver.run_cmd(ps, cmd)
+                res.append({"u": ps.p.user_id, "cmd": cmd, "reply": (replies[0].text[:80] if replies else None)})
+        self.scenarios["not_ready"] = res
+        self.collect("other")
 
     async def on_fsm_restart(self, _=None) -> None:
         """Брошенный онбординг: человек возвращается к старому экрану. Сначала при живом FSM, затем после перезапуска бота."""
@@ -524,7 +565,7 @@ def db_facts(sim: Sim) -> dict:
                                      "checked": sum(len(ps.decisions) for ps in sim.states if ps.status != "deleted")}
         # 2. день решения в БД против дня на карточке
         from collections import defaultdict
-        dd = {"checked": 0, "mismatch": 0, "examples": []}
+        dd = {"checked": 0, "mismatch": 0, "earlier": 0, "later": 0, "redecided": 0, "examples": []}
         by_wd: dict = defaultdict(int)
         for ps in sim.states:
             for eid, d in ps.decisions.items():
@@ -534,7 +575,15 @@ def db_facts(sim: Sim) -> dict:
                 dd["checked"] += 1
                 if row.day.isoformat() != d["card_day"]:
                     dd["mismatch"] += 1
+                    dd["earlier" if row.day.isoformat() < d["card_day"] else "later"] += 1
+                    dd["redecided"] += int(bool(d.get("redecided")))
                     ev = sim.events.get(eid, {})
+                    story = dd.setdefault("story", None)
+                    if story is None and ev_title_in_plan(sim, ps.p.user_id, eid, row.day):
+                        wd_names = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+                        cd = date.fromisoformat(d["card_day"])
+                        dd["story"] = (f"u{ps.p.user_id}: карточка «{(sim.events.get(eid, {}).get('title') or '')[:46]}» обещала {wd_names[cd.weekday()]} {cd.strftime('%d.%m')}; "
+                                       f"напоминание «План на сегодня» пришло на {wd_names[row.day.weekday()]} {row.day.strftime('%d.%m')}")
                     if len(dd["examples"]) < 4:
                         dd["examples"].append(f"«{(ev.get('title') or '')[:46]}»: на карточке {d['card_day']}, в БД Decision.day={row.day.isoformat()}, "
                                               f"даты события {ev.get('dates')[:4] if ev.get('dates') else '—'}")
@@ -597,9 +646,12 @@ def db_facts(sim: Sim) -> dict:
         titles = {e["id"]: e["title"] for e in sim.events.values()}
         reminded: dict = defaultdict(set)
         for pp in sim.plan_pushes:
-            reminded[pp["u"]].update(pp["titles"])
-        plan_take = {t["event_id"]: t for t in sim.driver.taps if t.get("kind") == "decision" and t["status"] == "иду"}
-        rem = {"Пт": [0, 0], "Сб": [0, 0], "Вс": [0, 0], "прочее": [0, 0]}
+            reminded[(pp["u"], pp["cycle"])].update(pp["titles"])
+        asked: dict = defaultdict(set)
+        for fb in sim.feedback_sent:
+            asked[(fb["u"], fb["cycle"])].update(fb["titles"])
+        plan_take = {(t["u"], t["event_id"]): t for t in sim.driver.taps if t.get("kind") == "decision" and t["status"] == "иду"}
+        rem = {"Пт": [0, 0, 0], "Сб": [0, 0, 0], "Вс": [0, 0, 0], "Пн–Чт": [0, 0, 0]}
         late = 0
         sat_plan_time: dict = defaultdict(list)
         for j in sim.jobs:
@@ -609,16 +661,24 @@ def db_facts(sim: Sim) -> dict:
             if d.status != "иду" or d.day is None or d.day > FRI0 + timedelta(days=7 * sim.weeks + 2):
                 continue
             wd = d.day.weekday()
-            key = {4: "Пт", 5: "Сб", 6: "Вс"}.get(wd, "прочее")
-            got = titles.get(str(d.event_id)) in reminded.get(d.user_id, set())
+            key = {4: "Пт", 5: "Сб", 6: "Вс"}.get(wd, "Пн–Чт")
+            ttl = titles.get(str(d.event_id))
+            cyc = (d.day - FRI0).days // 7
+            if key == "Пн–Чт":      # верхняя оценка: любое напоминание или вопрос с этим названием в любую неделю
+                got = any(ttl in v for (u, _), v in reminded.items() if u == d.user_id)
+                ask = any(ttl in v for (u, _), v in asked.items() if u == d.user_id)
+            else:
+                got = ttl in reminded.get((d.user_id, cyc), set())
+                ask = ttl in asked.get((d.user_id, cyc), set())
             rem[key][0] += 1
             rem[key][1] += int(got)
+            rem[key][2] += int(ask)
             if key == "Сб" and not got:
-                tt = plan_take.get(str(d.event_id))
+                tt = plan_take.get((d.user_id, str(d.event_id)))
                 cyc = (d.day - FRI0).days // 7
                 if tt and sat_plan_time.get(cyc) and tt["t"] > min(sat_plan_time[cyc]):
                     late += 1
-        out["plan_reminders"] = {k: {"going": v[0], "reminded": v[1]} for k, v in rem.items()}
+        out["plan_reminders"] = {k: {"going": v[0], "reminded": v[1], "asked_rating": v[2]} for k, v in rem.items()}
         out["plan_reminders"]["saturday_missed_decided_after_plan_job"] = late
         # 6. заблокировавшие бота: сколько попыток отправки, что с профилем
         blocked = []
@@ -628,6 +688,12 @@ def db_facts(sim: Sim) -> dict:
         out["blocked"] = blocked
         out["profiles_active_after_block"] = sum(1 for b in blocked if b["profile_active"])
     return out
+
+
+def ev_title_in_plan(sim: Sim, uid: int, event_id: str, day: date) -> bool:
+    title = (sim.events.get(event_id) or {}).get("title")
+    cyc = (day - FRI0).days // 7
+    return any(pp["u"] == uid and pp["cycle"] == cyc and title in pp["titles"] for pp in sim.plan_pushes)
 
 
 def sensitivity(sim: Sim) -> dict:
@@ -697,19 +763,31 @@ def build_results(sim: Sim, args: dict, db_url: str, facts: dict, sens: dict, lo
             "completed": bool(ps.onb.get("completed")), "onboarding_taps": ps.onb.get("taps_total"),
             "steps_taps": ps.onb.get("steps"), "interest_edits": ps.onb.get("interest_edits"), "redo": ps.onb.get("redo", 0),
             "misclick": ps.onb.get("misclick"), "screens_back": ps.onb.get("screens"),
-            "interest_buttons": ps.onb.get("interest_buttons"), "interest_rows": ps.onb.get("interest_rows"),
+            "prefill": ps.onb.get("prefill"), "interest_buttons": ps.onb.get("interest_buttons"), "interest_rows": ps.onb.get("interest_rows"),
             "weight_prompts": ps.onb.get("weight_prompts"), "first_go_taps": ps.first_go_taps, "first_go_cycle": ps.first_go_cycle,
             "active_cycles": sorted(ps.active_cycles), "digest_cycles": sorted(ps.digest_cycles), "churn_cycle": ps.churn_cycle,
             "decisions": len(ps.decisions), "blocked": p.user_id in world.blocked, "E": round(ps.E, 3),
         })
     digests = []
     for r in sim.digest_recs:
-        digests.append({"u": r.uid, "week": r.week, "origin": r.origin, "cycle": r.cycle, "t": r.t, "header": r.header,
-                        "cards": len(r.cards), "slot_cards": sum(1 for c in r.cards if c.in_weekend),
+        wk = [(FRI0 + timedelta(days=7 * (r.week or 0) + i)).isoformat() for i in range(3)]
+        multi = sum(1 for c in r.cards if c.in_weekend and sum(1 for d in (sim.events.get(c.event_id, {}).get("dates") or []) if d in wk) >= 2)
+        digests.append({"multi_day_cards": multi, "u": r.uid, "week": r.week, "origin": r.origin, "cycle": r.cycle, "t": r.t, "header": r.header,
+                        "cards": len(r.cards), "already_started": r.already_started, "messy_time": r.messy_time, "resent_no_status": r.resent_no_status, "slot_cards": sum(1 for c in r.cards if c.in_weekend),
                         "horizon_cards": sum(1 for c in r.cards if not c.in_weekend), "opened": r.opened,
                         "decisions": r.decisions, "go": r.go, "events": [sim.events.get(c.event_id, {}).get("slug", "?") for c in r.cards],
                         "event_ids": [c.event_id for c in r.cards], "days": [c.day for c in r.cards],
                         "has_interest_button": any("Интересно" in b for c in r.cards for b in c.buttons)})
+    screens: list[str] = []
+    ref = next((ps for ps in sim.states if ps.onb.get("completed") and not ps.onb.get("redo") and not ps.onb.get("misclick")), None)
+    if ref is not None:
+        for c in world.calls:
+            if c.get("chat_id") == ref.p.user_id and c["method"] in ("SendMessage", "EditMessageText") and c.get("ok") and c.get("text"):
+                head = c["text"].split("\n")[0][:90]
+                if not screens or screens[-1] != head:
+                    screens.append(head)
+                if "Профиль сохранён" in c["text"]:
+                    break
     jobs = [{k: v for k, v in j.items() if k != "seconds"} for j in sim.jobs]
     job_secs = Counter()
     job_runs = Counter()
@@ -719,10 +797,10 @@ def build_results(sim: Sim, args: dict, db_url: str, facts: dict, sens: dict, lo
     return {
         "meta": {**args, "db_name": re.sub(r".*/", "", db_url.split("?")[0]), "events_seeded": seed_created,
                  "sim_start": START.isoformat(), "sim_end": sim.clock.now.isoformat(), "updates_fed": sim.driver.updates,
-                 "world_calls": len(world.calls), "archetypes": dict(Counter(ps.p.archetype for ps in sim.states))},
+                 "world_calls": len(world.calls), "web_base_url_original": WEB_ORIGINAL.get("url", ""), "archetypes": dict(Counter(ps.p.archetype for ps in sim.states))},
         "volatile": {"duration_s": round(duration, 1), "job_seconds": {k: round(v, 2) for k, v in job_secs.items()},
                      "job_runs": dict(job_runs)},
-        "personas": pers, "digests": digests, "decisions": sim.driver.taps, "commands": sim.driver.commands, "jobs": jobs,
+        "onboarding_screens": screens, "personas": pers, "digests": digests, "decisions": sim.driver.taps, "commands": sim.driver.commands, "jobs": jobs,
         "plan_pushes": sim.plan_pushes, "feedback_sent": sim.feedback_sent, "empty_notices": sim.empty_notices,
         "findings": sim.f.to_dict(), "violations": viol, "db": facts, "sensitivity": sens, "scenarios": sim.scenarios,
         "log_errors": logs, "handler_errors": sim.driver.handler_errors,
@@ -798,9 +876,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--keep-db", action="store_true", help="не удалять базу симуляции после прогона")
     ap.add_argument("--no-log", action="store_true", help="не писать журнал вызовов out/sim_log.jsonl")
     args = ap.parse_args(argv)
+    WEB_ORIGINAL["url"] = os.environ.get("WEB_BASE_URL") or "http://localhost:8000 (значение по умолчанию settings.py)"
     os.environ.setdefault("WEB_BASE_URL", DEFAULT_WEB)
     out = Path(args.out_dir)
-    log_path = None if args.no_log else SIM_DIR / "out" / "sim_log.jsonl"
+    log_path = None if args.no_log else out / "out" / "sim_log.jsonl"
     try:
         results = run_simulation(args.users, args.weeks, args.seed, args.db_url, args.keep_db, out, log_path)
     except SystemExit:
@@ -810,8 +889,8 @@ def main(argv: list[str] | None = None) -> int:
         raise
     from . import report
 
-    (SIM_DIR / "out").mkdir(exist_ok=True)
-    (SIM_DIR / "out" / "run_data.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+    (out / "out").mkdir(parents=True, exist_ok=True)
+    (out / "out" / "run_data.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
     metrics = report.write_reports(results, out)
     print(report.console_summary(metrics, results))
     return 0

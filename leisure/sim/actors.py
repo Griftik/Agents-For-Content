@@ -30,6 +30,12 @@ DAY_RE = re.compile(r"^(?:(Пятница|Суббота|Воскресенье)
 ERROR_TOAST = "Что-то пошло не так, попробуй ещё раз."
 
 
+def cb_short(data: str) -> str:
+    """callback_data без случайного uuid события — чтобы в отчёте не было нестабильных строк."""
+    parts = data.split(":")
+    return f"{parts[0]}:{parts[1]}:…" if len(parts) == 3 and len(parts[2]) > 12 else data
+
+
 class Findings:
     """Счётчики и первые примеры наблюдений. Пример — одна строка с временем, пользователем и фактом из лога."""
 
@@ -77,6 +83,9 @@ class DigestRec:
     opened: bool = False
     decisions: int = 0
     go: int = 0
+    already_started: int = 0     # карточки событий, которые к моменту отправки уже начались
+    messy_time: int = 0          # карточки, где вместо времени дня — сырой текст источника с несколькими датами
+    resent_no_status: int = 0    # карточки с уже принятым решением, пришедшие без отметки ●
 
 
 @dataclass
@@ -167,7 +176,7 @@ class Driver:
         if "callback_data" not in btn:
             raise ValueError(f"кнопка без callback_data: {btn}")
         upd, cb_id = self.world.callback_update(self.bot, p.user_id, p.name, p.username, st.mid, btn["callback_data"])
-        res = await self._feed(ps, upd, cb_id, f"нажатие «{btn['text']}» ({btn['callback_data'][:12]}…) {why}".strip())
+        res = await self._feed(ps, upd, cb_id, f"нажатие «{btn['text']}» ({cb_short(btn['callback_data'])}) {why}".strip())
         return res
 
     def screen(self, ps: PState) -> Stored | None:
@@ -328,6 +337,11 @@ class Driver:
                 if m and m.group(1) in ALL_CATS:
                     out[m.group(1)] = LEVEL_OF_LABEL.get(m.group(2), -1)
             return out
+
+        if "prefill" not in ps.onb:       # что бот предзаполнил до правок человека
+            pre = levels()
+            ps.onb["prefill"] = {"counts": dict(Counter(pre.values())), "match": sum(1 for c, v in pre.items() if v == p.interest_targets[c]),
+                                 "total": len(pre)}
 
         taps_left = p.max_interest_taps if not (p.abandon_step == "interests") else min(3, p.max_interest_taps)
         order = ([c for c in ALL_CATS if p.interest_targets[c] == 3] + [c for c in ALL_CATS if p.interest_targets[c] == 0]
@@ -510,12 +524,15 @@ class Driver:
             await self._act_on_card(ps, rec, card, ev, action)
         if fits:
             s = sum(fits) / len(fits)
-            ps.E = max(0.0, min(1.0, 0.65 * ps.E + 0.35 * (0.25 + 0.85 * s)))
+            coverage = min(1.0, len(rec.cards) / 5.0)       # меньше пяти карточек — подборка кажется скудной
+            ps.E = max(0.0, min(1.0, 0.7 * ps.E + 0.3 * (0.1 + 0.95 * s * coverage)))
 
     def _set_decision(self, ps: PState, rec: DigestRec, card: CardRec, status: str, res: dict, reason: str | None = None) -> None:
         d = ps.decisions.get(card.event_id)
         if d is None or d.get("status") != status:
-            d = {"status": status, "reason": reason, "week": rec.week, "card_day": card.day, "cycle": self.cycle_of(self.clock.now)}
+            redecided = d is not None and d.get("week") != rec.week
+            d = {"status": status, "reason": reason, "week": rec.week, "card_day": card.day, "cycle": self.cycle_of(self.clock.now),
+                 "redecided": bool(redecided or (d or {}).get("redecided"))}
             ps.decisions[card.event_id] = d
         else:
             d["reason"] = reason or d.get("reason")
@@ -559,6 +576,7 @@ class Driver:
             if r2["toast"] == ERROR_TOAST:
                 self.f.add("double_tap_error", f"двойной тап на «{label}» → тост «{r2['toast']}»; в логе: «message is not modified»",
                            p.user_id, self.clock.now)
+        reason_chosen = False
         if action == "skip":
             st = self.world.get(p.user_id, card.mid)
             avail = [b["text"] for b in st.buttons() if str(b.get("callback_data", "")).startswith("r:")]
@@ -573,6 +591,7 @@ class Driver:
                 want = reason if reason else "Без причины"
                 b2 = self.find(st, lambda t: t == want)
                 r3 = await self.tap(ps, st, b2, f"причина {want}")
+                reason_chosen = True
                 if r3["exc"] is None and r3["toast"] != ERROR_TOAST:
                     self._set_decision(ps, rec, card, "мимо", r3, reason=reason or "")
                     self.taps.append({"t": self.clock.now.isoformat(), "u": p.user_id, "kind": "reason", "reason": reason or "",
@@ -582,7 +601,7 @@ class Driver:
         lost = [x for x in links_before if x not in links_after]
         if lost:
             is_last = card.mid == rec.cards[-1].mid
-            self.f.add("links_lost_after_click", f"после «{label}»{' и выбора причины' if action == 'skip' else ''} из карточки пропали "
+            self.f.add("links_lost_after_click", f"после «{label}»{' и выбора причины' if reason_chosen else ''} из карточки пропали "
                        f"{lost}{' (последняя карточка — вместе с «Весь дайджест»)' if is_last and 'Весь дайджест' in lost else ''}",
                        p.user_id, self.clock.now)
 
@@ -604,7 +623,7 @@ class Driver:
             if rng.random() > p.p_attend:     # не дошёл — не оценивает
                 continue
             f = p.fit(ev)
-            rating = int(max(1, min(5, round(1 + 4 * f + p.rating_bias + rng.gauss(0.6, 0.8)))))
+            rating = int(max(1, min(5, round(1 + 4 * f + p.rating_bias + rng.gauss(0.05, 0.9)))))
             btn = self.find(st, lambda t, r=rating: t == "★" * r)
             if btn is None:
                 self.f.add("missing_button", f"оценка: кнопки {'★' * rating} нет", p.user_id, self.clock.now)
@@ -624,8 +643,11 @@ class Driver:
         before = len(self.world.chats[p.user_id])
         res = await self.say(ps, cmd)
         replies = [m for m in self.world.chats[p.user_id][before:] if not m.from_user]
+        lines = [ln for m in replies[:1] for ln in m.text.splitlines()]
         self.commands.append({"t": self.clock.now.isoformat(), "u": p.user_id, "cmd": cmd, "handled": res["handled"],
-                              "replies": [m.text[:160] for m in replies], "n": len(replies), "cycle": self.cycle_of(self.clock.now)})
+                              "replies": [m.text[:160] for m in replies], "n": len(replies), "cycle": self.cycle_of(self.clock.now),
+                              "lines": len(lines), "max_line": max((len(x) for x in lines), default=0),
+                              "first_pre": bool(replies) and replies[0].html.startswith("<pre>")})
         if not replies:
             self.f.add("command_silent", f"{cmd} без ответа бота (handled={res['handled']})", p.user_id, self.clock.now)
         return replies
