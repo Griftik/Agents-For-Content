@@ -1,7 +1,6 @@
 import "server-only";
-import { apiBase, apiKey, botUsername, miniAppShortName } from "./config";
+import { apiBase, apiKey } from "./config";
 import type { Catalog, Decision, Digest, EventT, InviteAcceptStatus, InviteAccepted, InviteCreated, InviteView, Plan, Profile, ProfilePatch, ScoredEvent } from "./api-types";
-import { toInviteAccepted, toInviteCreated, toInviteView } from "./invite-api";
 import { MockError, mockCall, mockEnabled } from "./mock";
 
 export class ApiError extends Error {
@@ -62,34 +61,17 @@ export const api = {
   digest: (uid: number, today?: string) => call<Digest>(`/api/digest/${uid}/preview${q({ today })}`),
   digestAll: (uid: number, today?: string) => call<ScoredEvent[]>(`/api/digest/${uid}/all${q({ today })}`),
   plan: (uid: number, today?: string) => call<Plan>(`/api/plan/${uid}${q({ today })}`),
-  /** GET /api/invites/{code}; user_id (необязательно) нужен только чтобы автор узнал своё приглашение. */
-  invite: async (code: string, uid?: number): Promise<InviteView> =>
-    toInviteView(await call<unknown>(`/api/invites/${encodeURIComponent(code)}${q({ user_id: uid ? String(uid) : undefined })}`)),
+  /** GET /api/invites/{code}; user_id (необязательно) нужен, чтобы автор узнал своё приглашение (is_own) и my_status. */
+  invite: (code: string, uid?: number) => call<InviteView>(`/api/invites/${encodeURIComponent(code)}${q({ user_id: uid ? String(uid) : undefined })}`),
   /** POST /api/invites: код и ссылка для события и дня (повторный вызов возвращает то же приглашение). */
-  createInvite: async (uid: number, ev: EventT, day: string | null): Promise<InviteCreated> =>
-    toInviteCreated(
-      await call<unknown>("/api/invites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // user_id — сессия Mini App (§6); event_slug по контракту, event — имя поля в текущей схеме бэкенда.
-        body: JSON.stringify({ user_id: uid, event_slug: ev.slug, event: ev.slug, day: day ?? undefined }),
-      }),
-      { event: ev, day, bot: botUsername(), app: miniAppShortName() },
-    ),
-  /** POST /api/invites/{code}/accept; consent=true при первом касании. */
-  acceptInvite: async (
-    code: string,
-    body: { user_id: number; status: InviteAcceptStatus; consent: boolean; name?: string; username?: string },
-    profileState: "new" | "onboarded",
-  ): Promise<InviteAccepted> =>
-    toInviteAccepted(
-      await call<unknown>(`/api/invites/${encodeURIComponent(code)}/accept`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-      profileState,
-    ),
+  createInvite: (uid: number, slug: string, day: string | null) =>
+    call<InviteCreated>("/api/invites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: uid, event_slug: slug, day: day ?? undefined }) }),
+  /** POST /api/invites/{code}/accept; consent=true при первом касании. name и username берутся из Telegram. */
+  acceptInvite: (code: string, body: { user_id: number; status: InviteAcceptStatus; consent: boolean; name?: string; username?: string }) =>
+    call<InviteAccepted>(`/api/invites/${encodeURIComponent(code)}/accept`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  /** POST /api/invites/{code}/open: первый вход по ссылке; для ref-кода ставит source=ref и referred_by новому человеку. */
+  openInvite: (code: string, body: { user_id: number; name?: string; username?: string }) =>
+    call<InviteView>(`/api/invites/${encodeURIComponent(code)}/open`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   ics: async (slug: string, day?: string) => {
     const res = await fetch(`${apiBase()}/api/events/${encodeURIComponent(slug)}/ics${q({ day })}`, {
       cache: "no-store",

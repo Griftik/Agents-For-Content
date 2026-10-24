@@ -1,18 +1,4 @@
-import type { EventT } from "./api-types";
-import { dateShort, timeRange, wdFull } from "./format";
-
-/** Текст приглашения от первого лица (T-INVITE-SHARE). Основной источник — поле share_text из API; здесь запасной сбор и мок. */
-
-const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
-const firstSentence = (s: string) => (/^.*?[.!?](?=\s|$)/s.exec(s.trim())?.[0] ?? s).trim();
-
-export function buildShareText(ev: Pick<EventT, "title" | "venue" | "why_fit_hint" | "start_time" | "end_time">, day: string | null, link: string): string {
-  const title = ev.title.length > 60 ? `${ev.title.slice(0, 59)}…` : ev.title;
-  const when = [day ? `${wdFull(day).toLowerCase()}, ${dateShort(day)}` : "", timeRange(ev as EventT), clip(ev.venue || "", 40)].filter(Boolean).join(", ");
-  const hint = ev.why_fit_hint ? clip(firstSentence(ev.why_fit_hint), 70) : "";
-  const head = `Иду на «${title}»${when ? `: ${when}` : ""}.${hint ? ` ${hint}` : ""}`;
-  return `${head}\nПойдёшь со мной? ${link}`;
-}
+/** Текст приглашения (T-INVITE-SHARE) собирает API (поле share_text); здесь только работа с ним на клиенте. */
 
 /** Делит текст и ссылку: если ссылка уже в тексте, из текста она убирается (иначе в чате будет дважды). */
 export function splitShare(shareText: string, url: string): { text: string; url: string } {

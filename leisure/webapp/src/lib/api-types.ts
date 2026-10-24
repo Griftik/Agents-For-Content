@@ -68,6 +68,10 @@ export type Profile = {
   /** Показывать имя друзьям в приглашениях (по умолчанию true). */
   show_name?: boolean;
   source?: string;
+  /** Бот может писать человеку (профиль из Mini App — false до requestWriteAccess или /start). */
+  can_write?: boolean;
+  /** Предложение своей подборки приглашённому: 0 не показывали, 1 «Потом», 2 повтор показан. */
+  offer_seen?: number;
 };
 export type Catalog = {
   values: string[];
@@ -89,26 +93,32 @@ export type ProfilePatch = Partial<Pick<Profile, "notes" | "values" | "interests
   name?: string;
   username?: string;
   show_name?: boolean;
+  can_write?: boolean;
   consent?: boolean;
   onboarded?: boolean;
   /** Код рекомендации `ref_<код>` из start_param: передаётся при первом касании (имя поля согласуется с бэкендом). */
   ref_code?: string;
 };
 
-// ─── Приглашения (leisure/docs/GROWTH.md, раздел 6) ───
+// ─── Приглашения (leisure/docs/GROWTH.md, раздел 6; зеркало InviteOut / InviteCreatedOut / InviteAcceptOut из api/schemas.py) ───
 export type InviteStatus = "active" | "past" | "unpublished" | "gone";
-/** POST /api/invites */
-export type InviteCreated = { code: string; url: string; web_url: string; share_text: string };
-/** GET /api/invites/{code} */
+/** POST /api/invites. url = null, пока в API не заданы бот и MINIAPP_SHORT_NAME: тогда share_text содержит web_url. */
+export type InviteCreated = { code: string; kind: string; url: string | null; web_url: string; share_text: string };
+/** GET /api/invites/{code}. event — карточка как в дайджесте; null, если событие удалено (status = gone). */
 export type InviteView = {
-  event: EventT | null;
+  code: string;
+  kind: string;
+  event: DigestItem | null;
   day: string | null;
+  /** Слаг события есть и у снятого с публикации: страница покажет «событие убрали». */
+  event_slug: string | null;
   inviter_name: string | null;
+  /** Приглашение создал тот, кто спрашивает (?user_id=): «Это твоё приглашение». */
+  is_own: boolean;
   status: InviteStatus;
   accepted: number;
-  /** Не из §6: бэкенд отдаёт, если передан user_id; тогда автор видит «Это твоё приглашение». */
-  inviter_is_me?: boolean;
+  my_status: string | null;
 };
-export type InviteAcceptStatus = "going" | "maybe";
-/** POST /api/invites/{code}/accept */
-export type InviteAccepted = { decision: Decision; together_with: string | null; profile_state: "new" | "onboarded" };
+export type InviteAcceptStatus = "going" | "maybe" | "declined";
+/** POST /api/invites/{code}/accept. Для declined решения нет. */
+export type InviteAccepted = { decision: Decision | null; together_with: string | null; profile_state: "new" | "onboarded" };

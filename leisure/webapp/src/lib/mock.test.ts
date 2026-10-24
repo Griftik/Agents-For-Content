@@ -18,8 +18,10 @@ describe("мок-режим MOCK_INVITES", () => {
   });
 
   it("GET приглашения: имя, скрытое имя и статусы", () => {
-    const ok = mockCall("/api/invites/MOCKOK01") as { inviter_name: string; status: string; event: { slug: string } };
-    expect(ok).toMatchObject({ inviter_name: "Алина", status: "active", event: { slug: "karmannyj-ongon" } });
+    const ok = mockCall("/api/invites/MOCKOK01") as { inviter_name: string; status: string; event_slug: string; event: { event: { slug: string } } };
+    expect(ok).toMatchObject({ inviter_name: "Алина", status: "active", event_slug: "karmannyj-ongon", event: { event: { slug: "karmannyj-ongon" } } });
+    expect((mockCall("/api/invites/MOCKGONE") as { status: string; event: null }).event).toBeNull();
+    expect((mockCall("/api/invites/MOCKOK01?user_id=9001") as { is_own: boolean }).is_own).toBe(true);
     expect((mockCall("/api/invites/MOCKANON") as { inviter_name: null }).inviter_name).toBeNull();
     expect((mockCall("/api/invites/MOCKPAST") as { status: string }).status).toBe("past");
     expect((mockCall("/api/invites/MOCKUNPB") as { status: string }).status).toBe("unpublished");
@@ -39,6 +41,11 @@ describe("мок-режим MOCK_INVITES", () => {
     // в план попало событие со ссылками календарей и подписью «вдвоём»
     const plan = mockCall("/api/plan/5001") as { days: Record<string, unknown[]> };
     expect(Object.values(plan.days).flat()).toHaveLength(1);
+  });
+
+  it("«Другие выходные под меня»: declined без согласия и без решения", () => {
+    const r = mockCall("/api/invites/MOCKOK01/accept", { method: "POST", body: JSON.stringify({ user_id: 5003, status: "declined", consent: false }) }) as { decision: null };
+    expect(r.decision).toBeNull();
   });
 
   it("прошедшее и снятое событие отвечают 410", () => {

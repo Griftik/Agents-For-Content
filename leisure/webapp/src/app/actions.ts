@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
-import type { InviteAcceptStatus, Profile } from "@/lib/api-types";
+import type { InviteAcceptStatus } from "@/lib/api-types";
 import { OFFER_COOKIE, REF_COOKIE } from "@/lib/session-consts";
 import { clearCookie, readRef, readWho, setOffer } from "@/lib/cookies";
 import { CODE_RE } from "@/lib/start-param";
@@ -115,13 +115,14 @@ export async function createInviteAction(slug: string, day: string | null): Prom
   if (!uid) return { ok: false, error: "Открой приложение из Telegram, и кнопка заработает." };
   if (!SLUG_RE.test(slug) || (day && !DAY_RE.test(day))) return { ok: false, error: "Не получилось создать приглашение." };
   try {
-    const ev = await api.event(slug);
-    const inv = await api.createInvite(uid, ev, day);
-    if (!inv.code || !inv.url) return { ok: false, error: "Не получилось создать приглашение, попробуй ещё раз." };
-    return { ok: true, code: inv.code, url: inv.url, shareText: inv.share_text };
+    const inv = await api.createInvite(uid, slug, day);
+    // url = null, пока в API не заданы бот и MINIAPP_SHORT_NAME: тогда share_text уже содержит web_url, делимся им.
+    const url = inv.url ?? inv.web_url;
+    if (!inv.code || !url) return { ok: false, error: "Не получилось создать приглашение, попробуй ещё раз." };
+    return { ok: true, code: inv.code, url, shareText: inv.share_text };
   } catch (e) {
     if (!(e instanceof ApiError)) throw e;
-    return { ok: false, error: e.status === 404 ? "Сначала познакомимся: профиль появится после онбординга." : "Не получилось создать приглашение, попробуй ещё раз." };
+    return { ok: false, error: e.status === 404 ? "Сначала познакомимся: профиль появится после онбординга." : e.status === 410 ? "Это событие снято с публикации." : "Не получилось создать приглашение, попробуй ещё раз." };
   }
 }
 
@@ -144,20 +145,9 @@ export async function acceptInviteAction(_prev: AcceptState, formData: FormData)
   if (str(formData, "needs_consent") === "1" && !consent) return { phase: "error", error: "consent", message: "consent" };
 
   const who = await readWho();
-  let prof: Profile | null = null;
-  try {
-    prof = await api.profile(uid);
-  } catch (e) {
-    if (!(e instanceof ApiError)) throw e;
-    if (e.status !== 404) return { phase: "error", error: "down", message: String(e.status) };
-  }
   let accepted;
   try {
-    accepted = await api.acceptInvite(
-      code,
-      { user_id: uid, status, consent, name: who.name || undefined, username: who.username || undefined },
-      prof?.onboarded ? "onboarded" : "new",
-    );
+    accepted = await api.acceptInvite(code, { user_id: uid, status, consent, name: who.name || undefined, username: who.username || undefined });
   } catch (e) {
     if (!(e instanceof ApiError)) throw e;
     if (e.status === 409) return { phase: "error", error: "consent", message: "consent" };
@@ -182,6 +172,39 @@ export async function acceptInviteAction(_prev: AcceptState, formData: FormData)
   revalidatePath("/digest");
   revalidatePath("/plan");
   return { phase: "done", status, togetherWith: accepted.together_with, profileState: accepted.profile_state, links };
+}
+
+/** «Другие выходные под меня»: приглашение помечается declined (пригласивший не уведомляется), дальше «Дайджест» или онбординг. */
+export async function declineInviteAction(formData: FormData): Promise<void> {
+  const uid = await getUserId();
+  const code = str(formData, "code");
+  if (!uid) redirect("/digest");
+  let hasProfile = false;
+  try {
+    hasProfile = !!(await api.profile(uid));
+  } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+  }
+  if (CODE_RE.test(code)) {
+    const who = await readWho();
+    try {
+      await api.acceptInvite(code, { user_id: uid, status: "declined", consent: false, name: who.name || undefined, username: who.username || undefined });
+    } catch (e) {
+      if (!(e instanceof ApiError)) throw e; // отметка не обязательна: переход важнее
+    }
+  }
+  redirect(hasProfile ? "/digest" : "/profile?onboarding=welcome");
+}
+
+/** Диалог Telegram «разрешить писать» принят: бот может писать (PUT can_write). */
+export async function markWriteAccessAction(): Promise<void> {
+  const uid = await getUserId();
+  if (!uid) return;
+  try {
+    await api.saveProfile(uid, { can_write: true });
+  } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+  }
 }
 
 /** «Потом» на предложении подборки: запоминаем день события, после него предложение покажется ещё раз. */
@@ -218,6 +241,10 @@ export async function startOnboardingAction(formData: FormData): Promise<void> {
   const who = await readWho();
   const ref = await readRef();
   try {
+    // Код рекомендации учитывает POST /api/invites/{код}/open (source=ref, referred_by); ошибка кода не должна мешать онбордингу.
+    if (ref) await api.openInvite(ref, { user_id: uid, name: who.name || undefined, username: who.username || undefined }).catch((e) => {
+      if (!(e instanceof ApiError)) throw e;
+    });
     await api.saveProfile(uid, { consent: consent || undefined, name: who.name || undefined, username: who.username || undefined, ref_code: ref ?? undefined });
   } catch (e) {
     if (!(e instanceof ApiError)) throw e;

@@ -10,7 +10,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ code: string }
   if (!CODE_RE.test(code)) return NextResponse.json({ ok: false, error: "bad_code" }, { status: 400 });
   try {
     const inv = await api.invite(code);
-    return NextResponse.json({ ok: true, slug: inv.event?.slug ?? null, status: inv.status }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, slug: inv.event_slug ?? inv.event?.event.slug ?? null, status: inv.status }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     if (e instanceof ApiError && e.status === 404) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
     return NextResponse.json({ ok: false, error: "unavailable" }, { status: 502 });

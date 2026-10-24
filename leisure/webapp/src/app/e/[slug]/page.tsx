@@ -80,21 +80,23 @@ export default async function EventPage({ params, searchParams }: Props) {
     if (!ev) return <InviteStatus kind="bad" hasProfile={!!view.profile} />;
   }
   if (invite) {
-    if (invite.event && invite.event.slug !== slug) redirect(inviteHref(invite.event.slug, code!));
-    if (invite.status === "past") return <InviteStatus kind="past" hasProfile={!!view.profile} title={invite.event?.title} />;
-    if (invite.status === "unpublished") return <InviteStatus kind="unpublished" hasProfile={!!view.profile} title={invite.event?.title} />;
-    if (!invite.event) return <InviteStatus kind="bad" hasProfile={!!view.profile} />;
-    if (invite.inviter_is_me) {
+    const ev = invite.event?.event ?? null;
+    const evSlug = invite.event_slug ?? ev?.slug ?? null;
+    if (evSlug && evSlug !== slug) redirect(inviteHref(evSlug, code!));
+    if (invite.status === "past") return <InviteStatus kind="past" hasProfile={!!view.profile} title={ev?.title} />;
+    // gone: событие удалено — для друга то же, что «убрали из афиши»
+    if (invite.status === "unpublished" || invite.status === "gone") return <InviteStatus kind="unpublished" hasProfile={!!view.profile} title={ev?.title} />;
+    if (!ev) return <InviteStatus kind="bad" hasProfile={!!view.profile} />;
+    if (invite.is_own) {
       return (
         <div className="wrap">
           <main id="main" className="public">
             <p className="notice" role="status">Это твоё приглашение. Чтобы позвать друга, нажми «Позвать друга» на карточке события.</p>
-            <PublicEvent ev={invite.event} />
+            <PublicEvent ev={ev} />
           </main>
         </div>
       );
     }
-    const ev = invite.event;
     const day = invite.day ?? ev.dates[0] ?? "";
     const prior = view.decisions.find((d) => d.event_slug === ev.slug);
     return (
@@ -106,7 +108,6 @@ export default async function EventPage({ params, searchParams }: Props) {
         dayText={day ? `${wdFull(day).toLowerCase()}, ${dateShort(day)}` : ""}
         timeText={timeRange(ev)}
         inviterName={invite.inviter_name}
-        gone={invite.status === "gone"}
         authed={uid != null}
         hasProfile={!!view.profile}
         prior={prior && PRIOR[prior.status] ? `${PRIOR[prior.status]}${prior.day ? `, ${wdFull(prior.day).toLowerCase()}` : ""}` : null}

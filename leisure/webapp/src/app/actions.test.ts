@@ -82,6 +82,17 @@ describe("acceptInviteAction", () => {
   });
 });
 
+describe("«Другие выходные под меня»", () => {
+  it("помечает declined и ведёт в дайджест (есть профиль) или в онбординг (нет)", async () => {
+    const { declineInviteAction } = await actions();
+    login(1001);
+    await expect(declineInviteAction(form({ code: "MOCKOK01" }))).rejects.toThrow("REDIRECT:/digest");
+    jar.clear();
+    login(5009);
+    await expect(declineInviteAction(form({ code: "MOCKOK01" }))).rejects.toThrow("REDIRECT:/profile?onboarding=welcome");
+  });
+});
+
 describe("«Позвать друга»", () => {
   it("создаёт приглашение: код, ссылка startapp и текст", async () => {
     login(1001);
@@ -105,8 +116,8 @@ describe("«Позвать друга»", () => {
     const r = await createInviteAction("karmannyj-ongon", "2026-10-24");
     if (!r.ok) throw new Error("не создано");
     const { api } = await import("@/lib/api");
-    expect((await api.invite(r.code, 1001)).inviter_is_me).toBe(true);
-    expect((await api.invite(r.code, 4242)).inviter_is_me).toBe(false);
+    expect((await api.invite(r.code, 1001)).is_own).toBe(true);
+    expect((await api.invite(r.code, 4242)).is_own).toBe(false);
   });
 });
 

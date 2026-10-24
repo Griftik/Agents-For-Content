@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useEffect, useRef, useState, type ReactNode } from "react";
-import { acceptInviteAction, postponeOfferAction, type AcceptState } from "@/app/actions";
+import { acceptInviteAction, declineInviteAction, markWriteAccessAction, postponeOfferAction, type AcceptState } from "@/app/actions";
 import type { InviteAcceptStatus } from "@/lib/api-types";
 import { inTelegram, requestWriteAccess } from "@/lib/tg-client";
 
@@ -14,8 +14,6 @@ export type InviteFlowProps = {
   dayText: string;
   timeText: string;
   inviterName: string | null;
-  /** Пригласивший удалил профиль (gone): шапка «Тебя зовут на событие», кнопки без слова «вместе». */
-  gone: boolean;
   authed: boolean;
   hasProfile: boolean;
   /** Прежний ответ друга: «иду, суббота». */
@@ -80,7 +78,7 @@ export function InviteFlow(p: InviteFlowProps) {
   if (state.phase === "done") return <Done {...p} state={state} />;
 
   const choose = (s: InviteAcceptStatus) => setWanted(s);
-  const names = p.gone ? { going: "Иду", title: "Тебя зовут на событие" } : { going: "Иду вместе", title: `${p.inviterName ?? "Друг"} зовёт тебя` };
+  const names = { going: "Иду вместе", title: `${p.inviterName ?? "Друг"} зовёт тебя` };
   const authFail = state.phase === "error" && state.error === "no-session" && !p.authed;
 
   return (
@@ -119,7 +117,10 @@ export function InviteFlow(p: InviteFlowProps) {
             <div className="row actions">
               <button type="button" className="btn primary" onClick={() => choose("going")} aria-busy={pending || undefined}>{names.going}</button>
               <button type="button" className="btn" style={{ minHeight: 48 }} onClick={() => choose("maybe")}>Может быть</button>
-              <a className="btn link" style={{ minHeight: 48 }} href={p.hasProfile ? "/digest" : "/profile?onboarding=welcome"}>Другие выходные под меня</a>
+              <form action={declineInviteAction} style={{ display: "contents" }}>
+                <input type="hidden" name="code" value={p.code} />
+                <button type="submit" className="btn link" style={{ minHeight: 48 }}>Другие выходные под меня</button>
+              </form>
             </div>
             <p role="status" aria-live="polite" className="muted" style={{ fontSize: 13.5 }}>
               {wanted && !p.authed ? "Входим через Telegram…" : pending ? "Записываю…" : ""}
@@ -153,18 +154,20 @@ function Done(p: InviteFlowProps & { state: Extract<AcceptState, { phase: "done"
 
   const day = p.dayText;
   const lead = going
-    ? p.gone || !who ? (p.gone ? "План на этот день придёт в Telegram." : "Друг увидит, что ты идёшь. План на этот день придёт в Telegram.") : `${who} увидит, что ты идёшь. План на этот день придёт в Telegram.`
-    : p.gone || !who ? "Передумать можно в плане." : `${who} об этом не узнает. Передумать можно в плане.`;
+    ? `${who ?? "Друг"} увидит, что ты идёшь. План на этот день придёт в Telegram.`
+    : `${who ?? "Друг"} об этом не узнает. Передумать можно в плане.`;
 
   async function ask() {
-    setWrite((await requestWriteAccess()) ? "granted" : "refused");
+    const granted = await requestWriteAccess();
+    setWrite(granted ? "granted" : "refused");
+    if (granted) void markWriteAccessAction();
   }
 
   return (
     <div className="wrap">
       <main id="main" className="public done">
         <section className="stack" aria-labelledby="done-h">
-          <h1 id="done-h">{going ? (p.gone ? "Ты идёшь" : "Вы идёте вместе") : "Записано в «может быть»"}</h1>
+          <h1 id="done-h">{going ? "Вы идёте вместе" : "Записано в «может быть»"}</h1>
           <p>«{p.title}», {day}{going && p.timeText ? `, ${p.timeText}` : ""}.</p>
           <p className="muted">{lead}</p>
         </section>
