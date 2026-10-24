@@ -479,9 +479,7 @@ class Sim:
         # перезапуск процесса бота: роутеры — синглтоны модулей, поэтому «теряем» именно то, что теряется при рестарте, — MemoryStorage
         from aiogram.fsm.storage.memory import MemoryStorage
 
-        fresh = MemoryStorage()
-        self.dp.storage = fresh
-        self.dp.fsm.storage = fresh
+        self.dp.fsm.storage = MemoryStorage()
         for ps in cand[2:4]:
             await stale(ps, "after")
         self.scenarios["fsm_restart"] = rec
