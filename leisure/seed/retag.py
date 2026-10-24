@@ -42,7 +42,9 @@ RULES: tuple[Rule, ...] = (
     Rule("cat-matches", "категория «Волейбол: матчи»", ("болеть", "азарт"), category="Волейбол: матчи"),
     Rule("cat-volley", "категория «Волейбол»", ("соревнование",), category="Волейбол"),
     Rule("kw-calm", "баня, медитация, ретрит", ("покой",), pattern=r"\bбан[яеию]\b|медитац|\bретрит"),
-    Rule("kw-quiet", "тишина (кроме названия работы «громкая тишина»)", ("тишина",), pattern=r"тишин", exclude=r"громкая тишина"),
+    Rule("kw-quiet", "тишина как обстановка (не название песни «Тишина», не «громкая тишина» и не пауза группы «будет тишина»)",
+         ("тишина",), pattern=r"в (полной )?тишине|тихий (вечер|зал|концерт)|тихая музыка|тишина и покой",
+         exclude=r"громкая тишина|«тишина»|потом будет тишина"),
     Rule("kw-quiet2", "«тихое, уютное», спокойный вечер, неспешный, умиротворение", ("тишина",),
          pattern=r"тихое, уютное|спокойный (субботний )?вечер|неспешн|умиротвор"),
     Rule("kw-cozy", "уютный", ("комфорт",), pattern=r"\bуютн"),
@@ -54,7 +56,20 @@ RULES: tuple[Rule, ...] = (
     Rule("kw-contest", "турнир, соревнование", ("соревнование",), pattern=r"турнир|соревнован"),
     Rule("kw-meaning", "философия, духовное, смысл", ("смысл",), pattern=r"философ|\bсмысл"),
     Rule("kw-spiritual", "духовные гимны, буддийское", ("духовно",), pattern=r"духовн|буддийск"),
-    Rule("kw-volunteer", "волонтёрство, благотворительность", ("волонтёрство",), pattern=r"волонт|благотвор"),
+    Rule("kw-volunteer", "волонтёрство, добровольцы, субботник, экоакция, сбор вещей", ("волонтёрство", "забота"),
+         pattern=r"волонт|добровол|субботник|экоакци|эко-акци|помогите проводить уборк|сбор (вещей|одежды|гуманитарн)"),
+    Rule("kw-charity", "благотворительность, «в поддержку фонда», приют, хоспис", ("забота",),
+         pattern=r"благотвор|в поддержку фонда|в пользу фонда|сбор средств|\bприют\b|хоспис|подопечн|нуждающ"),
+    Rule("kw-care", "помощь животным, дома престарелых, одиноким пожилым", ("забота",),
+         pattern=r"помощь животным|дом(а|е|ов)? престарел|одинок\w+ пожил|пожилым людям"),
+    Rule("kw-body-calm", "йога, пилатес, цигун, дыхательные практики, звуковые ванны", ("покой", "тело"),
+         pattern=r"\bйог|пилатес|цигун|дыхательн\w+ практик|звуков\w+ ванн|хатха|аштанг|кундалини"),
+    Rule("kw-spa", "термы, хаммам, парение, сауна, банный день", ("покой",),
+         pattern=r"\bтерм[аы]\b|хаммам|парени|\bсауна|банн(ый|ая|ое|ые) (день|ритуал|вечер)|спа-(день|программа)"),
+    Rule("kw-reading", "читальный зал, чтения вслух (без «читка»: читка сценария с музыкой не тишина)", ("тишина",),
+         pattern=r"читальн|чтени[яе] вслух|библиотечн\w+ вечер"),
+    Rule("kw-walk", "неспешная прогулка, лесные тропы, ботанический сад, дендрарий", ("покой", "природа"),
+         pattern=r"неспешн\w+ прогулк|тих\w+ прогулк|лесны\w+ тропы|ботаническ\w+ сад|дендрарий"),
     Rule("kw-nostalgia", "ретро (кроме «ретроспективы»), 80-х, 90-х, пластинки", ("ностальгия",),
          pattern=r"\bретро(?!спектив)|\b80-х|\b90-х|пластинк"),
     Rule("kw-ritual", "ритуалы, обряды, традиционное", ("ритуал",), pattern=r"ритуал|\bобряд|традиционн|буддийск"),
@@ -101,6 +116,17 @@ def retag_event(ev: dict) -> tuple[dict, list[tuple[str, list[str]]]]:
     return {**ev, "tags": tags}, fired
 
 
+# Теги прототипа, которые правила тоже умеют ставить: в исходной разметке они были, поэтому в «до» их не снимаем.
+PROTOTYPE_TAGS = frozenset({"тело", "природа"})
+
+
+def baseline(events: list[dict]) -> list[dict]:
+    """Исходная разметка: событие без тегов, которые умеют ставить правила (кроме тегов прототипа). Нужна, чтобы отчёт «было → стало»
+    не терял смысл после первого прогона (файл seed уже размечен, повторный запуск ничего не меняет)."""
+    added = {t for r in RULES for t in r.tags} - PROTOTYPE_TAGS
+    return [{**e, "tags": [t for t in e.get("tags") or [] if t not in added]} for e in events]
+
+
 def coverage(events: list[dict]) -> dict[str, int]:
     """Сколько событий сильно задевают каждую ценность (вес тега не ниже 0.6) — замер из аудита, раздел 1."""
     out = {v: 0 for v in VALUES}
@@ -131,7 +157,7 @@ def render_report(before: list[dict], after: list[dict], info: dict) -> str:
     cb, ca = coverage(before), coverage(after)
     L = ["# Доразметка seed (seed/retag.py)", "",
          "Детерминированные правила по категории и ключевым словам в названии, описании и «почему подойдёт»; без модели. "
-         "Теги только добавляются. Основание — `docs/VALUES-AUDIT.md`, разделы 3–4. Файл `RETAG.md` пересоздаётся командой "
+         "Теги только добавляются. «Было» — исходная разметка (без тегов, которые умеют ставить правила). Основание — `docs/VALUES-AUDIT.md`, разделы 3–4. Файл `RETAG.md` пересоздаётся командой "
          "`python -m leisure.seed.retag`; повторный запуск на уже размеченном seed ничего не меняет.", "",
          f"Событий в seed: {len(after)}. Получили хотя бы один новый тег: **{info['tagged']}**. "
          f"Добавлено тегов: {sum(info['added'].values())} ({', '.join(f'{t} {n}' for t, n in info['added'].most_common())}).", "",
@@ -146,6 +172,23 @@ def render_report(before: list[dict], after: list[dict], info: dict) -> str:
         L += ["", "Это не недоработка правил, а отсутствие таких событий в seed: ни в названиях, ни в описаниях нет слов про "
               "заботу, помощь, волонтёрство или благотворительность, и ставить тег «на всякий случай» значило бы врать подборке. "
               "Закрывается новыми источниками (волонтёрские и благотворительные события) или ручной разметкой куратора."]
+    care = [e for e in after if any(v == "Забота" and k >= STRONG for t in e.get("tags") or [] for v, k in VALUE_MAP.get(t, ()))]
+    calm = [e for e in after if any(v == "Покой" and k >= STRONG for t in e.get("tags") or [] for v, k in VALUE_MAP.get(t, ()))]
+    motive = ("kw-volunteer", "kw-charity", "kw-care", "kw-body-calm", "kw-spa", "kw-reading", "kw-walk", "kw-calm", "kw-quiet", "kw-quiet2")
+    fired = ", ".join(f"`{r}` {len(info['fired'].get(r, []))}" for r in motive)
+    L += ["", "## Забота и Покой после правил", "",
+          f"Событий на текущем seed: «Забота» {len(care)} (было {cb['Забота']}), «Покой» {len(calm)} (было {cb['Покой']}). "
+          f"Срабатывания правил мотивов на seed: {fired}. Правила нацелены на карточки новых источников (фонды, субботники, йога, "
+          "библиотеки, ботанический сад); пока таких событий в seed нет, «Забота» остаётся без событий."]
+    fx = HERE.parent / "tests" / "fixtures" / "motive_fragments.json"
+    if fx.exists():
+        cards = json.loads(fx.read_text(encoding="utf-8"))["cards"]
+        ok = 0
+        for c in cards:
+            tags = set(retag_event({"title": c["title"], "description": c["text"], "category": "Нетривиальное", "tags": []})[0]["tags"])
+            ok += set(c.get("want", [])) <= tags and not (set(c.get("want_not", [])) & tags)
+        L += ["", f"На живых карточках `tests/fixtures/motive_fragments.json`: {ok} из {len(cards)} получают нужные теги и не получают лишних "
+                  "(название песни «Тишина» и «потом будет тишина» тег `тишина` не ставят)."]
     L += ["", "## Правила и их срабатывания (для выборочной проверки куратором)", ""]
     for rule in RULES:
         evs = info["fired"].get(rule.id, [])
@@ -171,8 +214,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seed", type=Path, default=SEED)
     ap.add_argument("--report", type=Path, default=REPORT)
     args = ap.parse_args(argv)
-    before = json.loads(args.seed.read_text(encoding="utf-8"))
-    after, info = retag(before)
+    current = json.loads(args.seed.read_text(encoding="utf-8"))
+    after, _ = retag(current)
+    before = baseline(current)
+    _, info = retag(before)
     text = json.dumps(after, ensure_ascii=False, indent=1) + "\n"
     if args.check:
         same = text == args.seed.read_text(encoding="utf-8")
@@ -180,7 +225,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if same else 1
     args.seed.write_text(text, encoding="utf-8")
     args.report.write_text(render_report(before, after, info), encoding="utf-8")
-    print(f"размечено событий: {info['tagged']}; добавлено тегов: {sum(info['added'].values())}; отчёт: {args.report}")
+    changed = sum(a["tags"] != c["tags"] for a, c in zip(after, current))
+    print(f"размечено событий (от исходной разметки): {info['tagged']}; изменено сейчас в файле: {changed}; отчёт: {args.report}")
     return 0
 
 

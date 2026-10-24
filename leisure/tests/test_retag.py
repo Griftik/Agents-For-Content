@@ -46,11 +46,11 @@ def test_all_tags_known_and_nothing_removed(seed_raw):
     ({"category": "Вечеринки"}, ["веселье"]),
     ({"category": "Волейбол: матчи"}, ["болеть", "азарт"]),
     ({"category": "Волейбол"}, ["соревнование"]),
-    ({"title": "Русская баня и тишина"}, ["покой", "тишина"]),
+    ({"title": "Русская баня"}, ["покой"]),                  # голое слово «тишина» тег не ставит (название песни, пауза группы)
     ({"description": "Вечер вдвоём, романтичный"}, ["романтика"]),
     ({"title": "Стендап и квиз"}, ["веселье", "игра"]),
     ({"description": "Лекция о философии"}, ["смысл"]),
-    ({"description": "Волонтёрский день"}, ["волонтёрство"]),
+    ({"description": "Волонтёрский день"}, ["волонтёрство", "забота"]),
     ({"description": "Диско 90-х, ретро"}, ["ностальгия"]),
     ({"description": "Ритуалы и обряды"}, ["ритуал"]),
 ])
@@ -90,3 +90,40 @@ def test_prototype_parity_fixture_untouched():
     new = set(re.findall(r"[а-яё]+", "веселье игра юмор вкус комфорт азарт болеть соревнование покой тишина романтика смысл духовно "
                                    "приключение статус волонтёрство ностальгия"))
     assert not {t for e in fx for t in e["tags"]} & new
+
+
+@pytest.mark.parametrize("over,expected", [
+    ({"description": "Мюзикл в поддержку фонда «Не напрасно»"}, ["забота"]),
+    ({"description": "Помогите проводить уборки, не скучные субботники"}, ["волонтёрство", "забота"]),
+    ({"description": "Добровольцы собирают вещи"}, ["волонтёрство", "забота"]),
+    ({"description": "Благотворительный вечер, сбор средств"}, ["забота"]),
+    ({"description": "Помощь животным из приюта"}, ["забота"]),
+    ({"title": "Йога среди искусства"}, ["покой", "тело"]),
+    ({"description": "Хаммам и банный день"}, ["покой"]),
+    ({"description": "Читальный зал и чтения вслух"}, ["тишина"]),
+    ({"description": "Лесные тропы и ботанический сад"}, ["покой", "природа"]),
+    ({"description": "Неспешная прогулка по ботаническому саду"}, ["тишина", "покой", "природа"]),   # «неспешн» ловит ещё kw-quiet2
+    ({"description": "Тихий вечер в зале, музыка в тишине"}, ["тишина"]),
+])
+def test_motive_rules_care_and_calm(over, expected):
+    assert _tags(**over) == ["музыка"] + expected
+
+
+def test_quiet_rule_ignores_song_title_and_band_break():
+    assert _tags(description="композиции «Тишина», «Березы»") == ["музыка"]
+    assert _tags(description="потом будет тишина, студия и новые песни") == ["музыка"]
+    assert _tags(description="громкая тишина касания") == ["музыка"]
+
+
+def test_report_has_no_stale_proposals_and_states_care_and_calm_coverage():
+    report = (ROOT / "seed" / "RETAG.md").read_text(encoding="utf-8")
+    assert "Предложения по правилам" not in report and "## Забота и Покой после правил" in report
+    cov = coverage(json.loads((ROOT / "seed" / "events_2026-10-23.json").read_text(encoding="utf-8")))
+    assert f"«Забота» {cov['Забота']} (было 0), «Покой» {cov['Покой']} (было 0)" in report
+
+
+def test_baseline_strips_rule_tags_but_keeps_prototype_ones(seed_raw):
+    base = retag.baseline(seed_raw)
+    assert retag.retag(base)[0] == seed_raw                              # правила восстанавливают файл из исходной разметки
+    assert sum(len(e["tags"]) for e in base) < sum(len(e["tags"]) for e in seed_raw)
+    assert all(("тело" in e["tags"]) == ("тело" in b["tags"]) for e, b in zip(seed_raw, base))

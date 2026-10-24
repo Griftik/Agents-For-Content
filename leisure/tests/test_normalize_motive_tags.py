@@ -2,9 +2,8 @@
 
 Две части:
 1. Нормализатор: промпт отдаёт модели все четыре тега и правила, когда их ставить (проверка без LLM, по тексту промпта).
-2. Доразметка seed/retag.py (read-only): что правила ставят сейчас. Сегодняшнее поведение зафиксировано обычными тестами, желаемое по
-   предложениям из seed/RETAG.md («Предложения по правилам для заботы и покоя») помечено xfail: когда бэкенд внесёт правила, тесты
-   начнут проходить, а xfail станет XPASS (strict=False не роняет прогон).
+2. Доразметка seed/retag.py (read-only): теги заботы, волонтёрства, покоя и тишины на тех же фрагментах (правила kw-volunteer, kw-charity,
+   kw-body-calm, kw-walk, kw-quiet и др.).
 """
 from __future__ import annotations
 
@@ -55,7 +54,7 @@ def test_retag_sets_volunteering_on_the_word_volunteer_and_calm_on_retreat():
     assert "покой" in tags_of(BY_ID["yogajournal-retreat"])             # «РЕТРИТ»
 
 
-# ─── retag: сегодняшние пробелы, желаемое поведение (см. RETAG.md, предложения) ───
+# ─── retag: фрагменты, которые раньше не размечались ───
 
 @pytest.mark.parametrize("card_id, tag", [
     ("cleangames-lead", "волонтёрство"),             # «уборки», «субботникам»
@@ -63,26 +62,24 @@ def test_retag_sets_volunteering_on_the_word_volunteer_and_calm_on_retreat():
     ("afisha-yoga", "покой"),
     ("gbsad-excursion", "природа"),                  # ботанический сад, лесные тропы
 ])
-@pytest.mark.xfail(strict=False, reason="правило не внесено в seed/retag.py: предложение в seed/RETAG.md")
 def test_retag_should_tag_this_fragment(card_id, tag):
     assert tag in tags_of(BY_ID[card_id])
 
 
 @pytest.mark.parametrize("card_id", ["takiedela-charity-musical", "cleangames-lead"])
-@pytest.mark.xfail(strict=False, reason="тега «забота» нет ни в одном правиле retag.py: предложение в seed/RETAG.md")
 def test_retag_should_set_care_tag_on_charity_and_cleanup(card_id):
     assert "забота" in tags_of(BY_ID[card_id])
 
 
 @pytest.mark.parametrize("card_id", ["mosbilet-song-title-silence", "16tons-band-break"])
-@pytest.mark.xfail(strict=False, reason="kw-quiet срабатывает на «Тишина» как название песни и на «будет тишина» (пауза группы): предложение в seed/RETAG.md")
 def test_retag_should_not_tag_silence_from_a_song_title_or_a_band_break(card_id):
     assert "тишина" not in tags_of(BY_ID[card_id])
 
 
-def test_today_s_gaps_are_real_so_the_xfails_are_honest():
-    """Фиксируем сегодняшнее поведение: если оно изменится, xfail выше надо пересмотреть (убрать метку)."""
-    assert "забота" not in tags_of(BY_ID["takiedela-charity-musical"])   # «в поддержку фонда» никто не ловит
-    assert "забота" not in tags_of(BY_ID["cleangames-lead"])
-    assert "покой" not in tags_of(BY_ID["afisha-yoga"])
-    assert "тишина" in tags_of(BY_ID["mosbilet-song-title-silence"])        # ложное срабатывание
+def test_each_fragment_gets_exactly_what_it_wants():
+    """Все 9 карточек: нужные теги стоят, лишних (want_not) нет."""
+    for card in FRAGMENTS:
+        tags = tags_of(card)
+        assert set(card.get("want", [])) <= tags, card["id"]
+        assert not set(card.get("want_not", [])) & tags, card["id"]
+    assert "забота" in tags_of(BY_ID["takiedela-charity-musical"]) and "тишина" not in tags_of(BY_ID["mosbilet-song-title-silence"])
