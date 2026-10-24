@@ -1,6 +1,8 @@
 """Зависимости FastAPI: сессия БД и проверка ключа API."""
 from __future__ import annotations
 
+import secrets
+
 from fastapi import Header, HTTPException, status
 
 from leisure import settings
@@ -8,6 +10,11 @@ from leisure.db.session import get_session  # noqa: F401  (реэкспорт д
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
-    """Если API_KEY задан — требуем заголовок X-API-Key. Авторизация пользователей через Telegram initData — этап веба."""
-    if settings.API_KEY and x_api_key != settings.API_KEY:
+    """Закрытые маршруты требуют X-API-Key. Без настроенного ключа — отказ (fail closed), кроме явного
+    режима разработки LEISURE_DEV_OPEN_API=1. Авторизация пользователей через Telegram initData — этап веба."""
+    if not settings.API_KEY:
+        if settings.DEV_OPEN_API:
+            return
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "API_KEY не настроен — закрытые маршруты недоступны")
+    if not x_api_key or not secrets.compare_digest(x_api_key.encode(), settings.API_KEY.encode()):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "нужен заголовок X-API-Key")

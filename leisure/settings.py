@@ -47,8 +47,10 @@ WEB_BASE_URL = _opt("WEB_BASE_URL", "http://localhost:8000")  # публичны
 ADMIN_USER = _opt("ADMIN_USER", "admin")
 ADMIN_PASSWORD = _opt("ADMIN_PASSWORD", "")  # пустой пароль = админка выключена
 SECRET_KEY = _opt("SECRET_KEY", DEV_SECRET)  # с DEV_SECRET админка не поднимается
-# Общий ключ для бота/воркера/веба к API (заголовок X-API-Key). Пустой = API открыт (только для разработки).
+# Общий ключ для бота/воркера/веба к API (заголовок X-API-Key). Без него закрытые маршруты отвечают 401,
+# если явно не включён режим разработки LEISURE_DEV_OPEN_API=1.
 API_KEY = _opt("API_KEY", "")
+DEV_OPEN_API = _opt("LEISURE_DEV_OPEN_API", "0") == "1"
 
 
 # ─── Секреты (лениво) ───

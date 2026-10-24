@@ -96,6 +96,12 @@ def _ics_fold(line: str, limit: int = 75) -> str:
     return "\r\n ".join(out)
 
 
+def _clean_url(u: str) -> str:
+    """Только http(s)-ссылка без пробелов и управляющих символов — иначе пусто."""
+    u = "".join(ch for ch in str(u) if ch.isprintable() and not ch.isspace())
+    return u if u.startswith(("http://", "https://")) else ""
+
+
 def _ics_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
 
@@ -117,8 +123,9 @@ def ics_text(ev: Mapping, day: str | None = None, tz: str = DEFAULT_TZ, city: st
         f"LOCATION:{_ics_escape(event_location(ev, city))}",
         f"DESCRIPTION:{_ics_escape(event_desc(ev))}",
     ]
-    if ev.get("url"):
-        lines.append(f"URL:{ev['url']}")
+    url = _clean_url(ev.get("url") or "")
+    if url:
+        lines.append(f"URL:{url}")
     lines += ["END:VEVENT", "END:VCALENDAR"]
     return "\r\n".join(_ics_fold(ln) for ln in lines) + "\r\n"
 

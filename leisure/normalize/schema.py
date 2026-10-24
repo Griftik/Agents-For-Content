@@ -110,6 +110,24 @@ class EventIn(BaseModel):
     def _dates(cls, v: list[date]) -> list[date]:
         return sorted(set(v))
 
+    @field_validator("url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        v = (v or "").strip()
+        if v and (not v.startswith(("http://", "https://")) or any(not ch.isprintable() or ch.isspace() for ch in v)):
+            raise ValueError("url: только http(s)-ссылка без пробелов")
+        return v[:2000]
+
+    @field_validator("sources")
+    @classmethod
+    def _sources(cls, v: list[str]) -> list[str]:
+        out = []
+        for u in v:
+            u = (u or "").strip()
+            if u and u.startswith(("http://", "https://")) and all(ch.isprintable() and not ch.isspace() for ch in u):
+                out.append(u[:2000])
+        return out
+
     @model_validator(mode="after")
     def _derive_times(self) -> "EventIn":
         """start_time/end_time выводятся из time_text, если не заданы явно."""

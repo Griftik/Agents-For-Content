@@ -27,4 +27,7 @@ def health() -> dict:
 
 mount_admin(app)
 if not settings.API_KEY:
-    logging.getLogger("leisure.api").warning("API_KEY не задан — маршруты профиля/решений/дайджеста открыты (только для разработки)")
+    if settings.DEV_OPEN_API:
+        logging.getLogger("leisure.api").warning("LEISURE_DEV_OPEN_API=1: маршруты профиля/решений/дайджеста открыты без ключа")
+    else:
+        logging.getLogger("leisure.api").error("API_KEY не задан — закрытые маршруты отвечают 503, задай API_KEY в .env")
