@@ -52,7 +52,21 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  # bot:  — появится на шаге «Бот и рассылка» (недели 3–4): python -m leisure.bot.main
+  bot:
+    build:
+      context: ..
+      dockerfile: leisure/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://leisure:${POSTGRES_PASSWORD:-leisure}@db:5432/leisure
+      REDIS_URL: redis://redis:6379/0
+    command: python -m leisure.bot.main
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
 
 volumes:
   pgdata:
