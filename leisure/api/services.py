@@ -20,7 +20,7 @@ from leisure.core.config import scoring_config
 from leisure.core.links import gcal_url, ics_text, is_local_url, outlook_url, plan_text, tg_share_url
 from leisure.core.recommend import Digest as CoreDigest, build_digest
 from leisure.core.scoring import ScoreResult, score_events
-from leisure.core.timeutil import (event_dates, event_times, is_free, is_horizon, slot_of, trim_past, weekend_days,
+from leisure.core.timeutil import (event_dates, event_times, is_free, is_horizon, reco_slot, slot_of, trim_past, weekend_days,
                                    weekend_for, weekend_iso, weekend_title)
 from leisure.db.models import Decision, Digest, Event, Profile
 
@@ -137,8 +137,10 @@ def set_active(session: Session, user_id: int, active: bool) -> bool:
     return True
 
 
-def update_profile(session: Session, p: Profile, data: dict) -> Profile:
-    """data — словарь из ProfileIn.model_dump(exclude_none=True); словари сливаются, остальное заменяется."""
+def update_profile(session: Session, p: Profile, data: dict, auto_onboarded: bool = True) -> Profile:
+    """data — словарь из ProfileIn.model_dump(exclude_none=True); словари сливаются, остальное заменяется.
+
+    auto_onboarded=False: запись черновика (шаги онбординга бота) не помечает профиль готовым — только явный onboarded."""
     for k in ("name", "username", "city", "notes", "tz", "digest_day", "digest_hour"):
         if data.get(k) is not None:
             setattr(p, k, data[k])
@@ -148,11 +150,13 @@ def update_profile(session: Session, p: Profile, data: dict) -> Profile:
         p.interests = {**(p.interests or {}), **{k: int(v) for k, v in data["interests"].items()}}
     if data.get("params") is not None:
         p.params = {**(p.params or {}), **{k: v for k, v in data["params"].items() if v is not None}}
+    if data.get("affinity") and (data["affinity"].get("tag") or data["affinity"].get("cat")):
+        set_manual_affinity(session, p, data["affinity"])
     if data.get("consent") and p.consent_at is None:
         p.consent_at = datetime.now(timezone.utc)
     # Онбординг идёт по шагам (ценности → интересы → параметры): считаем завершённым по явному флагу
     # или по шагу «интересы» — с него профиль уже можно скорить.
-    if p.onboarded_at is None and (data.get("onboarded") or data.get("interests") is not None):
+    if p.onboarded_at is None and (data.get("onboarded") or (auto_onboarded and data.get("interests") is not None)):
         p.onboarded_at = datetime.now(timezone.utc)
     session.commit()
     session.refresh(p)
@@ -178,6 +182,7 @@ def profile_view(p: Profile, decisions: list[Decision] | None = None) -> dict:
         "digest_day": p.digest_day, "digest_hour": p.digest_hour, "plan": p.plan, "affinity": aff,
         "learned": describe_affinity(aff, decs), "learned_text": describe_affinity_text(aff, decs),
         "onboarded": p.onboarded_at is not None,
+        "affinity_manual_at": p.affinity_manual_at.isoformat() if p.affinity_manual_at else None,
     }
 
 
@@ -186,9 +191,39 @@ def user_decisions(session: Session, user_id: int) -> list[Decision]:
     return session.scalars(select(Decision).where(Decision.user_id == user_id)).all()
 
 
+def merge_affinity(computed: dict, manual: dict | None) -> dict:
+    """Вычисленное по решениям + ручная правка (прибавка по ключам). Без правки результат равен computed."""
+    out = {"tag": dict(computed.get("tag") or {}), "cat": dict(computed.get("cat") or {}), "n": computed.get("n", 0)}
+    for kind in ("tag", "cat"):
+        for k, delta in ((manual or {}).get(kind) or {}).items():
+            out[kind][k] = out[kind].get(k, 0.0) + float(delta)
+    return out
+
+
 def recompute_affinity(session: Session, p: Profile) -> dict:
+    """Пересчёт обучения по решениям; ручная правка пользователя (affinity_manual) складывается с вычисленным, а не затирается."""
     decs = [d.as_core() for d in user_decisions(session, p.user_id)]
-    p.affinity = compute_affinity(decs, scoring_config())
+    p.affinity = merge_affinity(compute_affinity(decs, scoring_config()), p.affinity_manual)
+    session.commit()
+    return p.affinity
+
+
+def set_manual_affinity(session: Session, p: Profile, edit: dict) -> dict:
+    """Ручная правка «Что я узнал о тебе»: edit = {'tag': {тег: вес}, 'cat': {категория: вес}} — желаемые итоговые веса
+    по указанным ключам. Хранится разницей с вычисленным по решениям, поэтому дальнейшие решения добавляются поверх."""
+    decs = [d.as_core() for d in user_decisions(session, p.user_id)]
+    computed = compute_affinity(decs, scoring_config())
+    manual = {"tag": dict((p.affinity_manual or {}).get("tag") or {}), "cat": dict((p.affinity_manual or {}).get("cat") or {})}
+    for kind in ("tag", "cat"):
+        for k, target in (edit.get(kind) or {}).items():
+            delta = float(target) - float(computed[kind].get(k, 0.0))
+            if abs(delta) < 1e-9:
+                manual[kind].pop(k, None)
+            else:
+                manual[kind][k] = delta
+    p.affinity_manual = manual
+    p.affinity_manual_at = datetime.now(timezone.utc)
+    p.affinity = merge_affinity(computed, manual)
     session.commit()
     return p.affinity
 
@@ -291,23 +326,47 @@ def core_digest(session: Session, p: Profile, today: date, weekend: list[str] | 
     return dg, events, scores
 
 
-def _item(ev: dict, day: str | None, slot: str, r: ScoreResult | None, chosen: bool, why_limit: int) -> dict:
+def decision_map(session: Session, user_id: int) -> dict[str, dict]:
+    """Текущие решения пользователя по id события: {event_id: decision_view}."""
+    return {str(d.event_id): decision_view(d) for d in user_decisions(session, user_id) if d.event_id}
+
+
+def _item(ev: dict, day: str | None, slot: str, r: ScoreResult | None, chosen: bool, why_limit: int,
+          weekend: list[str] | None = None, decisions: dict[str, dict] | None = None) -> dict:
     why = r.why_dicts(why_limit) if r else []
     hint = ev.get("why_fit_hint") or None
     return {"event": event_view(ev), "day": day, "slot": slot, "score": r.score if r else None, "why": why,
-            "chosen": chosen, "links": links_for(ev, day, hint)}
+            "chosen": chosen, "links": links_for(ev, day, hint), "days": weekend_days(ev, weekend or []),
+            "decision": (decisions or {}).get(str(ev.get("id")))}
 
 
-def digest_view(p: Profile, dg: CoreDigest) -> dict:
+def digest_view(p: Profile, dg: CoreDigest, decisions: dict[str, dict] | None = None) -> dict:
+    """Дайджест для API и бота. decisions — {event_id: decision_view}: каждый элемент несёт текущее решение или None."""
     limit = int(scoring_config()["why"]["max_total"])
-    items = [_item(s.event, s.day, s.slot, s.result, s.chosen, limit) for s in dg.slots if s.event]
-    horizon = [_item(ev, event_dates(ev)[0] if event_dates(ev) else None, "горизонт", r, False, limit) for ev, r in dg.horizon]
+    items = [_item(s.event, s.day, s.slot, s.result, s.chosen, limit, dg.weekend, decisions) for s in dg.slots if s.event]
+    horizon = [_item(ev, event_dates(ev)[0] if event_dates(ev) else None, "горизонт", r, False, limit, dg.weekend, decisions)
+               for ev, r in dg.horizon]
     return {"user_id": p.user_id, "weekend": dg.weekend, "title": weekend_title(dg.weekend), "items": items, "horizon": horizon}
+
+
+def first_day(ev: Event, today: date) -> date | None:
+    """Первый день события не раньше сегодня (для карточки по диплинку), иначе последний известный."""
+    return _default_day(ev, today)
+
+
+def card_item(session: Session, p: Profile, ev: Event, day: str | None, weekend: list[str], scored: bool = True) -> dict:
+    """Элемент карточки для одного события (перерисовка при выборе дня, диплинк): тот же формат, что в digest_view.
+    scored=False — без «совпадения» и причин (профиль ещё не настроен, оценивать нечем)."""
+    core = ev.as_core()
+    r = score_events([core], p.as_core(), aff=p.affinity or None)[core["id"]] if scored else None
+    dm = decision_map(session, p.user_id)
+    slot = reco_slot(core)
+    return _item(core, day, slot, r, False, int(scoring_config()["why"]["max_total"]), weekend, dm)
 
 
 def digest_preview(session: Session, p: Profile, today: date | None = None, now: datetime | None = None) -> dict:
     dg, _, _ = core_digest(session, p, today_or(p, today), now=now)
-    return digest_view(p, dg)
+    return digest_view(p, dg, decision_map(session, p.user_id))
 
 
 def digest_row(session: Session, p: Profile, weekend_start: date) -> Digest:
@@ -337,7 +396,10 @@ def scored_events(session: Session, p: Profile, today: date | None = None) -> li
     decs = [d.as_core() for d in user_decisions(session, p.user_id)]
     scores = score_events(events, p.as_core(), decs, aff=p.affinity or None)
     limit = int(scoring_config()["why"]["max_total"])
-    out = [{**event_view(ev), "score": scores[ev["id"]].score, "why": scores[ev["id"]].why_dicts(limit)} for ev in events]
+    dm = decision_map(session, p.user_id)
+    out = [{**event_view(ev), "score": scores[ev["id"]].score, "why": scores[ev["id"]].why_dicts(limit),
+            "links": links_for(ev, (event_dates(ev) or [None])[0], ev.get("why_fit_hint") or None), "decision": dm.get(ev["id"])}
+           for ev in events]
     out.sort(key=lambda e: -e["score"])
     return out
 
@@ -355,6 +417,7 @@ def _mark_conflicts(items: list[dict], day: str) -> None:
             _, s2, e2 = event_times(b["event"], day)
             if s1 < e2 and s2 < e1:
                 a["conflict"] = True
+                a.setdefault("conflict_with", b["event"]["title"])
 
 
 def day_plan(decisions: Iterable[Decision], day: date) -> dict:

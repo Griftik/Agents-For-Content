@@ -13,18 +13,15 @@ from sqlalchemy import select, text
 
 from leisure.api import services
 from leisure.bot import decisions as bot_decisions
-from leisure.bot.onboarding import Onb, markup
-from leisure.core.timeutil import weekend_for
+from leisure.bot.onboarding import Onb
+from leisure.core.timeutil import weekend_for, weekend_iso
 from leisure.db.models import Decision, Digest, Event, Profile
 from leisure.db.session import engine, session_factory
-from leisure.sim import fakebot
 from leisure.worker import schedules
-from leisure.worker.messages import card_keyboard, digest_footer_keyboard
+from leisure.worker import messages as msg
 from leisure.worker.send import SendResult
 
-from .conftest import fresh_dispatcher
-
-UID = 999_100_001
+from .chat import UID, Chat
 
 
 def _db_ok() -> bool:
@@ -66,53 +63,17 @@ def _decision(db, uid, ev) -> Decision | None:
     return db.scalar(select(Decision).where(Decision.user_id == uid, Decision.event_id == ev.id))
 
 
-class Chat:
-    """Диспетчер бота + поддельный Telegram + одна карточка в чате."""
-
-    def __init__(self, uid=UID):
-        self.uid, self.world = uid, fakebot.FakeTelegram()
-        self.bot = fakebot.make_bot(self.world)
-        self.dp = fresh_dispatcher()
-
-    def run(self, coro):
-        return asyncio.run(coro)
-
-    async def _send(self, text, rows):
-        return await self.bot.send_message(self.uid, text, reply_markup=markup(rows) if rows else None)
-
-    def send(self, text="card", rows=None):
-        return self.run(self._send(text, rows)).message_id
-
-    async def _feed(self, upd):
-        await self.dp.feed_update(self.bot, upd)
-
-    def press(self, mid, data) -> str:
-        upd, cb_id = self.world.callback_update(self.bot, self.uid, "Тест", "tester", mid, data)
-        self.run(self._feed(upd))
-        return self.world.callbacks[cb_id]["toast"]
-
-    def say(self, text):
-        self.run(self._feed(self.world.message_update(self.bot, self.uid, "Тест", "tester", text)))
-
-    def rows(self, mid):
-        return [[b["text"] for b in r] for r in self.world.get(self.uid, mid).rows]
-
-    def cbs(self, mid, text_):
-        return next(b["callback_data"] for r in self.world.get(self.uid, mid).rows for b in r if b["text"].endswith(text_))
-
-    def last_text(self):
-        return self.world.last_bot_message(self.uid).text
-
-    def state(self):
-        return self.run(self.dp.fsm.get_context(self.bot, self.uid, self.uid).get_state())
-
-    def set_state(self, st):
-        self.run(self.dp.fsm.get_context(self.bot, self.uid, self.uid).set_state(st))
+def _same_weekend_event(db) -> Event:
+    """Событие, идущее и в субботу, и в воскресенье одного уикенда (на карточке появляется ряд выбора дня)."""
+    return db.scalars(select(Event).where(Event.status == "published", text("dates @> ARRAY['2026-10-24','2026-10-25']::date[]"))
+                      .order_by(Event.slug).limit(2)).all()[0]
 
 
-def _item(ev: Event, day: str) -> dict:
-    return {"event": {"id": str(ev.id), "title": ev.title, "url": "https://example.org/e"}, "day": day,
-            "links": {"tg": "https://t.me/share/url?x", "page": "https://leisure.example.org/e/x"}}
+def _send_card(db, user, ev: Event, day: str) -> tuple[Chat, int]:
+    weekend = weekend_iso(date.fromisoformat(day))
+    item = services.card_item(db, user, ev, day, weekend)
+    chat = Chat()
+    return chat, chat.send(msg.card_text(item, weekend, plain_links=False), msg.card_keyboard(item, url_buttons=True))
 
 
 @pytest.fixture
@@ -120,20 +81,39 @@ def card(db, user):
     """Карточка события с несколькими датами, показанная на последний день."""
     ev = _event(db, multi=True)
     day = sorted(ev.dates)[-1]
-    chat = Chat()
-    rows = card_keyboard(_item(ev, day.isoformat()), url_buttons=True) + digest_footer_keyboard("https://leisure.example.org/digest", True)
-    return chat, chat.send("карточка", rows), ev, day
+    chat, mid = _send_card(db, user, ev, day.isoformat())
+    return chat, mid, ev, day
+
+
+def _marked(chat, mid) -> list[str]:
+    """Отмеченные кнопки решений (день — отдельный ряд, его отметку не считаем)."""
+    return [b for r in chat.rows(mid) for b in r if b.startswith("● ") and b[2:] in ("Иду", "Может быть", "Интересно", "Мимо")]
 
 
 # ── Д1, Д5 ──
 def test_press_saves_card_day_and_interesting(db, card):
     chat, mid, ev, day = card
-    assert chat.press(mid, chat.cbs(mid, "Иду")) == "В плане ✓ Напомню утром в день события."
+    assert chat.press(mid, chat.cbs(mid, "Иду")) == f"В плане: {msg.day_phrase(day.isoformat())}. Напомню утром."
     assert _decision(db, UID, ev).day == day                                    # день с карточки, а не первая дата
-    assert chat.rows(mid)[0][0] == "● Иду"
-    assert chat.press(mid, chat.cbs(mid, "Интересно")) == "Запомнил: буду искать похожее."
+    assert _marked(chat, mid) == ["● Иду"]
+    assert chat.press(mid, chat.cbs(mid, "Интересно")) == "Запомнил. Буду показывать похожее."
     d = _decision(db, UID, ev)
-    assert d.status == "интересно" and d.day == day and chat.rows(mid)[0][3] == "● Интересно"
+    assert d.status == "интересно" and d.day == day and _marked(chat, mid) == ["● Интересно"]
+
+
+def test_day_row_changes_card_and_moves_decision(db, user):
+    ev = _same_weekend_event(db)
+    chat, mid = _send_card(db, user, ev, "2026-10-24")
+    assert "● Сб" in chat.rows(mid)[0] and "Вс" in chat.rows(mid)[0]
+    assert chat.press(mid, f"y:2:{ev.id}") == "Показываю воскресенье, 25 окт."          # решения нет — только показ
+    assert "Воскресенье, 25 окт" in chat.world.get(UID, mid).text and "● Вс" in chat.rows(mid)[0]
+    assert _decision(db, UID, ev) is None
+    chat.press(mid, chat.cbs(mid, "Иду"))
+    assert _decision(db, UID, ev).day == date(2026, 10, 25)                           # день из выбранного, а не первый
+    assert chat.press(mid, f"y:1:{ev.id}") == "Перенёс в план на суббота, 24 окт."
+    assert _decision(db, UID, ev).day == date(2026, 10, 24) and "Прежний ответ: иду, суббота" in chat.world.get(UID, mid).text
+    assert _marked(chat, mid) == ["● Иду"] and "● Сб" in chat.rows(mid)[0]
+    assert chat.press(mid, f"y:1:{ev.id}") == ""                                       # повторный тап — тихо
 
 
 def test_repeated_decision_updates_day_and_resets_flags(db, user):
@@ -162,16 +142,29 @@ def test_all_five_decision_codes_are_handled(db, card):
     assert set(CODES_STATUS.values()) == set(bot_decisions.TOASTS) == set(bot_decisions.STATUS_TITLE)
     chat, mid, ev, day = card
     for code, status in CODES_STATUS.items():
+        if status == "пропуск":      # «Убрать из плана» живёт на карточках плана, а не подборки
+            mid = chat.send("карточка плана", [[{"text": "Убрать из плана", "callback_data": f"d:p:{ev.id}"}]])
         toast = chat.press(mid, f"d:{code}:{ev.id}:{day}")
-        assert toast == bot_decisions.TOASTS[status] and _decision(db, UID, ev).status == status
-    assert bot_decisions.TOASTS["пропуск"] == "Понял, пропускаю."
+        assert toast == bot_decisions.toast_for(status, day) and _decision(db, UID, ev).status == status
+    assert bot_decisions.TOASTS["пропуск"] == "Убрал из плана."
+
+
+def test_remove_from_plan_and_rating(db, user):
+    ev = _event(db)
+    services.set_decision(db, UID, ev, "иду", day=date(2026, 10, 24))
+    chat = Chat()
+    mid = chat.send("Как прошло?", msg.rating_keyboard(str(ev.id)))
+    assert chat.press(mid, f"s:4:{ev.id}") == "Оценка 4 из 5." and _decision(db, UID, ev).rating == 4
+    assert "● 4 ★" in chat.rows(mid)[0] and chat.press(mid, f"s:5:{ev.id}") == "Оценка изменена: 5 из 5."
+    assert chat.press(mid, f"d:p:{ev.id}") == "Убрал из плана." and _decision(db, UID, ev).status == "пропуск"
+    assert chat.rows(mid) == [["1 ★", "2 ★", "3 ★", "4 ★", "● 5 ★"]]               # кнопка «Не получилось пойти» снята
 
 
 # ── Д3 ──
 def test_deleted_profile_is_not_recreated(db, card):
     chat, mid, ev, _ = card
     services.delete_profile(db, UID)
-    assert chat.press(mid, chat.cbs(mid, "Иду")) == "Профиль удалён. Чтобы начать заново — /start"
+    assert chat.press(mid, chat.cbs(mid, "Иду")) == "Профиля больше нет. Чтобы начать заново, нажми /start."
     assert db.get(Profile, UID) is None and _decision(db, UID, ev) is None
     with pytest.raises(services.ProfileMissing):
         services.set_decision(db, UID, ev, "иду")
@@ -179,16 +172,20 @@ def test_deleted_profile_is_not_recreated(db, card):
 
 
 # ── Д6, Юзабилити 6 ──
-def test_miss_then_reason_keeps_links_and_footer(db, card):
+def test_miss_then_reason_keeps_links(db, card):
     chat, mid, ev, _ = card
     toast = chat.press(mid, chat.cbs(mid, "Мимо"))
-    assert "Причину можно не указывать" in toast and _decision(db, UID, ev).status == "мимо"
+    assert toast == "Понял, больше не покажу. Причину можно выбрать ниже, это необязательно."
+    assert _decision(db, UID, ev).status == "мимо"
     rows = chat.rows(mid)
-    assert rows[0][2] == "● Мимо" and rows[1] == ["Почему мимо? Можно не отвечать"] and rows[-2:] == [["Подробнее", "Другу"], ["Весь дайджест"]]
-    chat.press(mid, chat.cbs(mid, "дорого"))
-    assert chat.rows(mid) == [["Иду", "Может быть", "● Мимо", "Интересно"], ["Подробнее", "Другу"], ["Весь дайджест"]]
-    assert _decision(db, UID, ev).reason == "дорого"
-    assert chat.press(mid, "ob:noop") == ""                                        # подпись — не кнопка действия
+    assert ["Иду", "Может быть"] in rows and ["Интересно", "● Мимо"] in rows and rows[-1] == ["Подробнее", "Другу"]
+    assert ["Почему мимо? Можно не отвечать"] in rows and ["Не моё", "Дорого", "Далеко", "Ещё…"] in rows
+    chat.press(mid, f"r:m:{ev.id}")                                                    # «Ещё…» — остальные причины
+    assert ["Уже был", "Не то время"] in chat.rows(mid) and ["Не моё", "Дорого", "Далеко", "Ещё…"] not in chat.rows(mid)
+    assert chat.press(mid, chat.cbs(mid, "Не то время")) == "Учту."
+    assert chat.rows(mid)[-1] == ["Подробнее", "Другу"] and not any("Почему" in b for r in chat.rows(mid) for b in r)
+    assert _decision(db, UID, ev).reason == "не в это время"
+    assert chat.press(mid, "ob:noop") == ""                                            # подпись — не кнопка действия
 
 
 # ── Д7 ──
@@ -198,7 +195,7 @@ def test_double_tap_is_not_an_error(db, card, caplog):
         for status in ("Иду", "Мимо"):
             data = chat.cbs(mid, status)
             first, second = chat.press(mid, data), chat.press(mid, data)
-            assert first == second and "не так" not in second
+            assert first and second == ""                                              # повторное нажатие — без текста
     assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
     assert not chat.world.violations
 
@@ -212,7 +209,7 @@ def test_other_bad_request_still_reports_error(db, card, monkeypatch, caplog):
 
     monkeypatch.setattr("aiogram.types.Message.edit_reply_markup", boom)
     with caplog.at_level(logging.ERROR):
-        assert chat.press(mid, chat.cbs(mid, "Иду")) == "Что-то пошло не так, попробуй ещё раз."
+        assert chat.press(mid, chat.cbs(mid, "Иду")) == "Не удалось сохранить ответ. Нажми ещё раз."
     assert [r for r in caplog.records if r.levelno >= logging.ERROR]
 
 
@@ -323,7 +320,7 @@ def test_empty_digest_sends_one_message_once(db, user, monkeypatch):
     services.update_profile(db, user, {"interests": {c: 0 for c in user.interests}})
     sent = _patch_send(monkeypatch, lambda m: SendResult(len(m), [], []))
     assert schedules.job_send_digests(THU) == 1
-    assert len(sent[0]) == 1 and sent[0][0][1].startswith("На эти выходные под твой профиль ничего не нашлось")
+    assert len(sent[0]) == 1 and "На эти выходные под твой профиль ничего не нашлось" in sent[0][0][1]
     assert schedules.job_send_digests(THU) == 0                                       # дважды не шлём
 
 
@@ -331,7 +328,8 @@ def test_digest_command_with_empty_profile_sends_hint(db, user):
     services.update_profile(db, user, {"interests": {c: 0 for c in user.interests}})
     chat = Chat()
     chat.say("/digest")
-    assert chat.last_text().startswith("На эти выходные под твой профиль ничего не нашлось. Можно расширить интересы: /profile")
+    assert "На эти выходные под твой профиль ничего не нашлось" in chat.last_text()
+    assert chat.world.last_bot_message(UID).buttons()[-1]["text"] == "Мои интересы"
 
 
 # ── Д2: напоминания и «Как прошло?» ──
@@ -390,27 +388,40 @@ def test_workers_do_not_depend_on_digest_flags(db, user, monkeypatch):
     assert schedules.job_plan_today(msk("2026-10-24T09:05")) == 1
 
 
-# ── Д12, Д13: онбординг ──
-def test_stale_onboarding_button_gets_reply(user):
+# ── Д12, Д13: устаревшие экраны и текст ──
+def test_stale_or_unknown_onboarding_button_gets_reply(user):
     chat = Chat()
-    mid = chat.send("старый экран", [[{"text": "утро", "callback_data": "ob:t:0"}]])
-    assert chat.press(mid, "ob:t:0") == ""                                              # индикатор снят
-    assert chat.last_text() == "Этот экран устарел. Начни заново: /start"
+    mid = chat.send("старый экран", [[{"text": "что-то", "callback_data": "ob:zzz"}]])
+    assert chat.press(mid, "ob:zzz") == "Этот экран устарел. Открой актуальный: /start."          # индикатор снят
     assert chat.state() is None
+
+
+def test_onboarding_button_without_profile_says_profile_is_gone(db, user):
+    chat = Chat()
+    mid = chat.send("экран", [[{"text": "утро", "callback_data": "ob:t:0"}]])
+    services.delete_profile(db, UID)
+    assert chat.press(mid, "ob:t:0") == "Профиля больше нет. Чтобы начать заново, нажми /start."
+    assert db.get(Profile, UID) is None                                                           # профиль не воскрешён
 
 
 def test_unknown_callback_is_answered(user):
     chat = Chat()
     mid = chat.send("x", [[{"text": "?", "callback_data": "zz:42"}]])
-    assert chat.press(mid, "zz:42") == ""
+    assert chat.press(mid, "zz:42") == "Этот экран устарел. Открой актуальный: /start."
     assert chat.world.callbacks["cb1"]["answered"]
 
 
-def test_text_on_button_step_gets_hint_and_keeps_state(user):
+def test_free_text_gets_a_reply(db, user):
     chat = Chat()
-    chat.set_state(Onb.values)
     chat.say("а что тут нужно сделать?")
-    assert chat.last_text() == "Здесь нужно нажать кнопку выше" and chat.state() == Onb.values.state
+    assert chat.last_text().startswith("Я понимаю кнопки и команды")
+    p = db.get(Profile, UID)
+    p.onboarded_at = None
+    db.commit()
+    chat.say("привет")
+    assert chat.last_text().startswith("Здесь нужно нажать кнопку под сообщением")
+    chat.say("/нет_такой")
+    assert chat.last_text() == "Такой команды нет. Список: /help."
 
 
 def test_command_on_notes_step_is_a_command_not_a_note(db, user):
@@ -419,17 +430,9 @@ def test_command_on_notes_step_is_a_command_not_a_note(db, user):
     before = db.get(Profile, UID).notes
     chat.say("/help")
     assert "/digest — подборка" in chat.last_text()                                     # ответила команда
-    assert chat.state() == Onb.notes.state                                               # онбординг не завершён
+    assert chat.state() == Onb.notes.state                                               # ожидание заметки не сбито
     db.expire_all()
     assert db.get(Profile, UID).notes == before
-
-
-def test_onboarding_has_no_areas_screen_and_goes_to_notes(user):
-    chat = Chat()
-    chat.set_state(Onb.aesthetics)
-    mid = chat.send("эстетика", [[{"text": "Да, важна", "callback_data": "ob:a:1"}]])
-    chat.press(mid, "ob:a:1")
-    assert chat.state() == Onb.notes.state and "Шаг 4 из 5" in chat.world.get(UID, mid).text
 
 
 # ── Д18 ──

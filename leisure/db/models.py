@@ -129,6 +129,8 @@ class Profile(Base, TimestampMixin):
     digest_hour: Mapped[int] = mapped_column(SmallInteger, default=19, nullable=False)
     plan: Mapped[str] = mapped_column(_enum(PLANS, "profile_plan"), default="free", nullable=False)
     affinity: Mapped[dict] = mapped_column(JSONType, default=lambda: {"tag": {}, "cat": {}, "n": 0}, nullable=False)
+    affinity_manual: Mapped[dict] = mapped_column(JSONType, default=lambda: {"tag": {}, "cat": {}}, nullable=False)  # ручная правка: прибавка к вычисленному
+    affinity_manual_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

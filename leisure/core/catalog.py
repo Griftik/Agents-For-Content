@@ -176,17 +176,61 @@ def values_average(tags: list[str] | tuple[str, ...], values: Mapping[str, float
     return vsum / vn if vn else empty
 
 
-def interests_from_values(values: Mapping[str, float], cats: list[str] | None = None) -> dict[str, int]:
-    """Предзаполнение интересов 0–3 из ценностей для онбординга (п. 3.1, шаг 3).
+def category_measure(cat: str, values: Mapping[str, float]) -> float:
+    """Мера m = 0.7 × средневзвешенный вес ценностей по типичным тегам категории + 0.3 × максимальный вес."""
+    tags = CATEGORY_TAGS.get(cat, [])
+    avg = values_average(tags, values)
+    top = max((float(values.get(v, 0) or 0) * k for t in tags for v, k in VALUE_MAP.get(t, ())), default=avg)
+    return 0.7 * avg + 0.3 * top
 
-    Мера m = 0.7 × средневзвешенный вес ценностей по типичным тегам категории + 0.3 × максимальный вес.
+
+def interests_from_values(values: Mapping[str, float], cats: list[str] | None = None) -> dict[str, int]:
+    """Предзаполнение интересов 0–3 из ценностей (прежний вариант онбординга, шаг 3).
+
     Ничего не выключает (0 ставит только сам пользователь): m ≥ 4 → 3, m ≥ 2.75 → 2, иначе 1.
     """
-    out: dict[str, int] = {}
-    for c in cats or ALL_CATS:
-        tags = CATEGORY_TAGS.get(c, [])
-        avg = values_average(tags, values)
-        top = max((float(values.get(v, 0) or 0) * k for t in tags for v, k in VALUE_MAP.get(t, ())), default=avg)
-        m = 0.7 * avg + 0.3 * top
-        out[c] = 3 if m >= 4 else 2 if m >= 2.75 else 1
-    return out
+    return {c: 3 if (m := category_measure(c, values)) >= 4 else 2 if m >= 2.75 else 1 for c in cats or ALL_CATS}
+
+
+# ─── Онбординг v2 (web/FLOW-ONBOARDING.md): шесть предложенных направлений ───
+PROPOSED_N = 6          # сколько направлений предлагаем на экране интересов
+PROPOSED_TOP = 2        # из них «в первую очередь» (3); остальные предложенные — 2; прочие — 1 («иногда»)
+CAT_LABEL_MAX = 17      # длиннее — короткая подпись на кнопке
+CAT_SHORT: dict[str, str] = {
+    "Современное искусство": "Совр. искусство",
+    "Предприниматели и клубы": "Бизнес-клубы",
+    "Управление и стратегия": "Стратегия",
+    "Конференции и форумы": "Конференции",
+    "Образование для управленцев": "Для управленцев",
+}
+
+
+def cat_label(cat: str) -> str:
+    """Подпись направления на кнопке: полное имя, если влезает в ряд из двух, иначе короткая."""
+    return cat if len(cat) <= CAT_LABEL_MAX else CAT_SHORT.get(cat, cat)
+
+
+def rank_categories(values: Mapping[str, float], cats: list[str] | None = None) -> list[str]:
+    """Направления по убыванию меры m; при равенстве — в порядке ALL_CATS."""
+    cats = cats or ALL_CATS
+    return sorted(cats, key=lambda c: (-category_measure(c, values), cats.index(c)))
+
+
+def proposed_categories(values: Mapping[str, float]) -> list[str]:
+    return rank_categories(values)[:PROPOSED_N]
+
+
+def propose_interests(values: Mapping[str, float]) -> dict[str, int]:
+    """Интересы для онбординга v2: два лучших направления — 3, следующие четыре — 2, остальные — 1. Ноль ставит только человек."""
+    ranked = rank_categories(values)
+    return {c: 3 if i < PROPOSED_TOP else 2 if i < PROPOSED_N else 1 for i, c in enumerate(ranked)}
+
+
+def default_aesthetics(top_values: list[str]) -> bool:
+    """Эстетика обязательна, если «Красота/эстетика» среди пяти главных ценностей."""
+    return "Красота/эстетика" in top_values
+
+
+def weights_from_top(top: list[str]) -> dict[str, int]:
+    """Веса 0–5 из пяти главных: выбранные = 5, остальные = 2 (нейтрально)."""
+    return {v: 5 if v in top else 2 for v in VALUES}

@@ -40,6 +40,45 @@ def time_tokens(t: str | None) -> list[tuple[float, str, int, int]]:
     return out
 
 
+_DATE_RE = re.compile(r"(?<!\d)(\d{1,2})\.(\d{2})(?![\d:])")
+_DATES_RE = re.compile(r"\(?\s*\d{1,2}\.\d{2}(?:\s*(?:,|и)\s*\d{1,2}\.\d{2})*\s*\)?")
+_WEEKDAY_RE = re.compile(r"(?<![а-яё])(пн|вт|ср|чт|пт|сб|вс)(?![а-яё])")
+
+
+def _segment_dates(seg: str) -> set[str]:
+    return {f"{int(d):02d}.{m}" for d, m in _DATE_RE.findall(seg) if 1 <= int(m) <= 12 and 1 <= int(d) <= 31}
+
+
+def time_for_day(ev: Mapping, day: str) -> str:
+    """Время события в выбранный день из `time_text`: «17:00 и 20:00». Пусто, если разобрать нельзя.
+
+    Понимает расписание по датам («23.10 — 20:00; 24.10 и 25.10 — 17:00 и 20:00», «20:00 (23.10) / 19:00 (24.10)»).
+    Без дат — весь текст, если в нём есть время. Расписание по дням недели («сб 21:00; вс 11:30») не разбираем.
+    """
+    text = time_text(ev).strip()
+    if not time_tokens(text):
+        return ""
+    segs = [x.strip() for x in re.split(r";| / ", text) if x.strip()]
+    dated = [(s, _segment_dates(s)) for s in segs]
+    if any(ds for _, ds in dated):
+        d = date.fromisoformat(str(day)[:10])
+        key = f"{d.day:02d}.{d.month:02d}"
+        parts = []
+        for seg, ds in dated:
+            if key not in ds:
+                continue
+            if "также" in seg:
+                return ""
+            clean = _DATES_RE.sub("", seg).strip()
+            clean = re.sub(r"^[\s–—-]+|[\s–—-]+$", "", clean).strip()
+            if clean and time_tokens(clean):
+                parts.append(clean)
+        return " и ".join(parts)
+    if _WEEKDAY_RE.search(text):
+        return ""
+    return text
+
+
 def start_hour(t: str | None) -> float | None:
     tk = time_tokens(t)
     return tk[0][0] if tk else None

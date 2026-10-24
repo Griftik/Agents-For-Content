@@ -26,8 +26,8 @@ from leisure.api import services
 from leisure.core.timeutil import weekend_for, weekend_iso
 from leisure.db.models import Profile
 from leisure.db.session import session_factory
-from leisure.worker.messages import (EMPTY_DIGEST, card_keyboard, card_text, digest_footer_keyboard, digest_header,
-                                     how_was_it_text, plan_item_keyboard, plan_today_text, rating_keyboard)
+from leisure.worker.messages import (card_keyboard, card_text, digest_head_keyboard, digest_head_text, how_was_it_text,
+                                     plan_item_keyboard, plan_today_text, rating_keyboard)
 from leisure.worker.send import SendResult, send_sync
 
 log = logging.getLogger("leisure.worker")
@@ -89,22 +89,21 @@ def job_build_digests(now_utc: datetime | None = None) -> int:
     return n
 
 
-def digest_messages(p: Profile, view: dict) -> list[tuple[int, str, list | None]]:
-    """Заголовок + карточки; пустая подборка — одно сообщение EMPTY_DIGEST. При WEB_BASE_URL=localhost URL-кнопок нет,
-    «Весь дайджест» и ссылки уходят текстом."""
+def digest_messages(p: Profile, view: dict, first: bool = False) -> list[tuple[int, str, list | None]]:
+    """Заголовок с кнопками («Весь дайджест», «Мой план», у первой подборки «Уточнить под себя») + карточки.
+
+    Пустая подборка — один заголовок с текстом T-DIGEST-EMPTY. При WEB_BASE_URL=localhost URL-кнопок нет:
+    «Весь дайджест» и ссылки карточек уходят текстом."""
     items = (view["items"] + view["horizon"])[: MAX_MESSAGES_PER_DIGEST - 1]
-    if not items:
-        return [(p.user_id, EMPTY_DIGEST, None)]
+    n_main = min(len(view["items"]), len(items))
     web_ok = services.web_links_enabled()
-    msgs = [(p.user_id, digest_header(view["title"], len(items), p.name), None)]
+    web = f"{settings.WEB_BASE_URL.rstrip('/')}/digest"
+    head = digest_head_text(view["title"], n_main, len(items) - n_main, p.name, first)
+    if not web_ok:
+        head += f"\nВесь дайджест: {escape(web)}"
+    msgs = [(p.user_id, head, digest_head_keyboard(web, first=first, empty=not items, url_buttons=web_ok))]
     for it in items:
         msgs.append((p.user_id, card_text(it, view["weekend"], plain_links=not web_ok), card_keyboard(it, url_buttons=web_ok)))
-    web = f"{settings.WEB_BASE_URL.rstrip('/')}/digest"
-    uid, text, rows = msgs[-1]
-    if web_ok:
-        msgs[-1] = (uid, text, (rows or []) + digest_footer_keyboard(web, True))
-    else:
-        msgs[-1] = (uid, text + f"\nВесь дайджест: {escape(web)}", rows)
     return msgs
 
 
@@ -127,7 +126,7 @@ def job_send_digests(now_utc: datetime | None = None) -> int:
             if row.sent_at is not None:
                 return False
             dg, _, _ = services.core_digest(s, p, local.date(), weekend, now=now_utc)
-            view = services.digest_view(p, dg)
+            view = services.digest_view(p, dg, services.decision_map(s, p.user_id))
             if not dg.items():
                 log.info("пользователю %s нечего отправить на %s: шлю сообщение о пустой подборке", p.user_id, weekend[0])
             msgs = digest_messages(p, view)
@@ -191,7 +190,8 @@ def job_how_was_it(now_utc: datetime | None = None) -> int:
                     if d.event is not None]
             if not decs:
                 return False
-            msgs = [(p.user_id, how_was_it_text(d.event.as_core()), rating_keyboard(str(d.event_id))) for d in decs]
+            msgs = [(p.user_id, how_was_it_text(d.event.as_core(), d.day.isoformat() if d.day else None), rating_keyboard(str(d.event_id)))
+                    for d in decs]
             res = send_sync(msgs)
             _handle_blocked(s, res)
             for i, d in enumerate(decs):

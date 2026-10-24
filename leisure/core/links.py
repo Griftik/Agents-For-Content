@@ -216,3 +216,14 @@ def plan_text(by_day: Mapping[str, Sequence[Mapping]], weekend: Sequence[str],
                 line += f" · {ev['url']}"
             lines.append(line)
     return "\n".join(lines)
+
+
+def plan_share_url(text: str, url: str, max_len: int = SHARE_URL_MAX) -> str:
+    """t.me/share с текстом плана; текст режется по строкам, чтобы URL кнопки не вышел за max_len."""
+    lines = text.split("\n")
+    while len(lines) > 1 and len(_share_url(url, "\n".join(lines))) > max_len:
+        lines.pop()
+    out = "\n".join(lines)
+    while len(out) > 1 and len(_share_url(url, out)) > max_len:
+        out = out[: int(len(out) * 0.9)].rstrip()
+    return _share_url(url, out)

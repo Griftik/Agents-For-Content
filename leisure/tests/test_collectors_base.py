@@ -138,3 +138,84 @@ def test_real_registry_roundtrip_with_kudago_robots_refusal(monkeypatch):
     monkeypatch.setattr(kudago.httpx, "Client", lambda *a, **kw: real(transport=transport))
     result = collect_all("Москва", FROM, TO, names=["kudago"])
     assert result.events == [] and "robots.txt запрещает /public-api" in result.failed[0].error
+
+
+# ─── рубильник COLLECTORS_DISABLED ───
+
+def counting_collectors():
+    calls: list[str] = []
+
+    @register
+    class One(Collector):
+        name = "one"
+
+        def collect(self, city, date_from, date_to):
+            calls.append("one")
+            return [raw("one", 1)]
+
+    @register
+    class Two(Collector):
+        name = "two"
+
+        def collect(self, city, date_from, date_to):
+            calls.append("two")
+            return [raw("two", 1)]
+
+    return calls
+
+
+def test_disabled_source_is_not_called(registry, monkeypatch):
+    calls = counting_collectors()
+    monkeypatch.setenv("COLLECTORS_DISABLED", "one")
+    result = collect_all("Москва", FROM, TO)
+    assert calls == ["two"] and [r.source for r in result.sources] == ["two"]
+    assert [e.source for e in result.events] == ["two"]
+
+
+def test_flag_ignores_case_and_spaces_and_takes_several(registry, monkeypatch):
+    calls = counting_collectors()
+    monkeypatch.setenv("COLLECTORS_DISABLED", "  ONE ,Two,, ")
+    result = collect_all("Москва", FROM, TO)
+    assert calls == [] and result.events == [] and result.sources == []
+
+
+def test_explicitly_requested_disabled_source_is_reported_in_summary(registry, monkeypatch):
+    calls = counting_collectors()
+    monkeypatch.setenv("COLLECTORS_DISABLED", "one")
+    result = collect_all("Москва", FROM, TO, names=["one", "two"])
+    assert calls == ["two"]
+    by = {r.source: r for r in result.sources}
+    assert by["one"].ok is False and by["one"].error == "источник отключён (COLLECTORS_DISABLED)" and by["one"].count == 0
+    assert by["two"].ok is True
+    assert [r.source for r in result.failed] == ["one"]
+
+
+@pytest.mark.parametrize("value", [None, "", "   ", ","])
+def test_empty_flag_changes_nothing(registry, monkeypatch, value):
+    calls = counting_collectors()
+    if value is None:
+        monkeypatch.delenv("COLLECTORS_DISABLED", raising=False)
+    else:
+        monkeypatch.setenv("COLLECTORS_DISABLED", value)
+    result = collect_all("Москва", FROM, TO)
+    assert calls == ["one", "two"] and all(r.ok for r in result.sources)
+
+
+def test_unknown_name_in_flag_warns_once_and_does_not_fail(registry, monkeypatch, caplog):
+    calls = counting_collectors()
+    monkeypatch.setattr(base, "_warned_unknown", set())
+    monkeypatch.setenv("COLLECTORS_DISABLED", "nope,one")
+    with caplog.at_level(logging.WARNING, logger=base.log.name):
+        first = collect_all("Москва", FROM, TO)
+        collect_all("Москва", FROM, TO)
+    warnings = [r for r in caplog.records if "неизвестный источник «nope»" in r.getMessage()]
+    assert len(warnings) == 1
+    assert calls == ["two", "two"] and [r.source for r in first.sources] == ["two"]
+
+
+def test_flag_is_read_at_each_collect_not_at_import(registry, monkeypatch):
+    calls = counting_collectors()
+    monkeypatch.setenv("COLLECTORS_DISABLED", "one,two")
+    assert collect_all("Москва", FROM, TO).sources == []
+    monkeypatch.setenv("COLLECTORS_DISABLED", "")
+    assert len(collect_all("Москва", FROM, TO).sources) == 2 and calls == ["one", "two"]

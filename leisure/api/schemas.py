@@ -1,12 +1,16 @@
 """Схемы ответов и запросов API."""
 from __future__ import annotations
 
+import math
 from datetime import date
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from leisure.core.catalog import AREA_OPTIONS, COMPANY_OPTIONS, DECISION_STATUSES, REASONS, SLOTS, VALUES
+from leisure.core.catalog import (ALL_CATS, AREA_OPTIONS, COMPANY_OPTIONS, DECISION_STATUSES, KNOWN_TAGS, REASONS, SLOTS,
+                                  VALUES)
+
+AFFINITY_MAX = 100.0
 
 
 class WhyOut(BaseModel):
@@ -57,9 +61,20 @@ class EventOut(BaseModel):
     free: bool
 
 
+class DecisionOut(BaseModel):
+    event_id: str | None
+    event_slug: str
+    status: str
+    reason: str | None
+    day: str | None
+    rating: int | None
+
+
 class ScoredEventOut(EventOut):
     score: int
     why: list[WhyOut]
+    links: LinksOut
+    decision: DecisionOut | None = None   # текущее решение пользователя по событию или null
 
 
 class ParamsIn(BaseModel):
@@ -74,6 +89,7 @@ class ParamsIn(BaseModel):
     company: str | None = None
     times: list[str] | None = Field(default=None, max_length=4)
     areas: list[str] | None = Field(default=None, max_length=12)
+    interests_basis: list[str] | None = Field(default=None, max_length=5)   # служебное: пятёрка, от которой посчитаны интересы
 
     @field_validator("company")
     @classmethod
@@ -97,6 +113,38 @@ class ParamsIn(BaseModel):
         return v
 
 
+class AffinityIn(BaseModel):
+    """Ручная правка «Что я узнал о тебе»: желаемые веса по указанным тегам и категориям (остальные не трогаем).
+    Формат совпадает с `affinity` из GET профиля, поэтому его можно вернуть как есть (поле `n` игнорируется)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tag: dict[str, float] = {}
+    cat: dict[str, float] = {}
+    n: int | None = None
+
+    @field_validator("tag")
+    @classmethod
+    def _tags(cls, v):
+        if bad := [k for k in v if k not in KNOWN_TAGS]:
+            raise ValueError(f"affinity.tag: неизвестные теги {bad}")
+        return cls._weights(v, "tag")
+
+    @field_validator("cat")
+    @classmethod
+    def _cats(cls, v):
+        if bad := [k for k in v if k not in ALL_CATS]:
+            raise ValueError(f"affinity.cat: неизвестные категории {bad}")
+        return cls._weights(v, "cat")
+
+    @staticmethod
+    def _weights(v: dict[str, float], name: str) -> dict[str, float]:
+        for k, w in v.items():
+            if not math.isfinite(w) or abs(w) > AFFINITY_MAX:
+                raise ValueError(f"affinity.{name}: вес {k} должен быть числом от -{AFFINITY_MAX} до {AFFINITY_MAX}")
+        return v
+
+
 class ProfileIn(BaseModel):
     """Частичное обновление: передаются только меняемые поля."""
 
@@ -107,6 +155,7 @@ class ProfileIn(BaseModel):
     interests: dict[str, int] | None = None
     params: ParamsIn | None = None
     notes: str | None = Field(default=None, max_length=2000)
+    affinity: AffinityIn | None = None    # ручная правка «Что я узнал о тебе»; пересчёт по решениям её не затирает
     tz: str | None = Field(default=None, max_length=64)
     digest_day: int | None = Field(default=None, ge=1, le=7)
     digest_hour: int | None = Field(default=None, ge=0, le=23)
@@ -166,6 +215,7 @@ class ProfileOut(BaseModel):
     learned: dict
     learned_text: str
     onboarded: bool
+    affinity_manual_at: str | None = None   # когда пользователь последний раз правил affinity вручную
 
 
 class DecisionIn(BaseModel):
@@ -191,15 +241,6 @@ class DecisionIn(BaseModel):
         return v
 
 
-class DecisionOut(BaseModel):
-    event_id: str | None
-    event_slug: str
-    status: str
-    reason: str | None
-    day: str | None
-    rating: int | None
-
-
 class DigestItemOut(BaseModel):
     event: EventOut
     day: str | None
@@ -208,6 +249,8 @@ class DigestItemOut(BaseModel):
     why: list[WhyOut]
     chosen: bool = False
     links: LinksOut
+    days: list[str] = []                  # дни уикенда, на которые есть событие
+    decision: DecisionOut | None = None   # текущее решение пользователя по событию или null
 
 
 class DigestOut(BaseModel):

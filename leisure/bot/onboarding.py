@@ -1,22 +1,30 @@
-"""Онбординг (п. 3.1 спеки): согласие → 5 главных ценностей → важно/не очень → интересы → параметры → заметка → первая подборка."""
+"""Онбординг v2 (web/FLOW-ONBOARDING.md): согласие → «Шаг 1 из 2» ценности → «Шаг 2 из 2» интересы → подборка; параметры и заметка —
+в необязательном меню «Уточнить под себя». Тексты — texts.py (web/COPY.md).
+
+Состояние — в профиле (черновик): каждое нажатие сразу пишет values / interests / params, поэтому перезапуск бота не ломает экран, а
+любой callback `ob:*` обрабатывается без FSM. В памяти (FSM) остаются только подсказки: режим (start / reset / profile), флаг «менялось
+влияющее на подборку» и ожидание текста заметки; если они потеряны, бот работает по данным профиля.
+"""
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from dataclasses import dataclass, field
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandStart, StateFilter
+from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from leisure import settings
 from leisure.api import services
-from leisure.core.catalog import ALL_CATS, COMPANY_OPTIONS, SLOTS, VALUES, interests_from_values
+from leisure.core.catalog import (ALL_CATS, COMPANY_OPTIONS, SLOTS, VALUES, default_aesthetics, default_profile,
+                                  propose_interests, proposed_categories, weights_from_top)
 from leisure.worker.schedules import digest_messages
 from leisure.worker.send import send_with_bot
 
 from . import keyboards as kb
+from . import texts
 from .db import run_db
 
 log = logging.getLogger("leisure.bot.onboarding")
@@ -24,13 +32,7 @@ router = Router(name="onboarding")
 
 
 class Onb(StatesGroup):
-    values = State()
-    weights = State()
-    interests = State()
-    company = State()
-    times = State()
-    budget = State()
-    aesthetics = State()
+    """Единственное состояние в памяти — «жду текст заметки»."""
     notes = State()
 
 
@@ -39,9 +41,10 @@ def markup(rows) -> InlineKeyboardMarkup:
 
 
 POLICY_URL = f"{settings.WEB_BASE_URL.rstrip('/')}/policy"
-STALE_SCREEN = "Этот экран устарел. Начни заново: /start"
-PRESS_BUTTON = "Здесь нужно нажать кнопку выше"
-PROFILE_GONE = "Профиль удалён. Чтобы начать заново — /start"
+HELLO = texts.HELLO
+STALE_SCREEN = texts.STALE
+PRESS_BUTTON = texts.TEXT_ONB
+PROFILE_GONE = texts.STALE_NO_PROFILE
 
 
 def hello_message() -> tuple[str, list]:
@@ -49,23 +52,314 @@ def hello_message() -> tuple[str, list]:
     if services.web_links_enabled():
         return HELLO, kb.consent_keyboard(POLICY_URL)
     return f"{HELLO}\n\nПолитика обработки данных: {POLICY_URL}", kb.consent_keyboard(None)
-HELLO = ("Привет! Я подбираю события на выходные под твои ценности, а не под рубрики афиши: 5–7 карточек "
-         "в четверг вечером, с объяснением, почему именно тебе.\n\n"
-         "Чтобы начать, мне нужны твой Telegram id, имя и ответы на несколько вопросов — три минуты. "
-         "Данные хранятся в России и нужны только для подборки.")
+
+
+# ─── черновик профиля ───
+def top_values(p) -> list[str]:
+    return [v for v in VALUES if int((p.values or {}).get(v, 0) or 0) == 5]
+
+
+def _set_values(session, p, top: list[str]):
+    return services.update_profile(session, p, {"values": weights_from_top(top)}, auto_onboarded=False)
+
+
+def _levels(p) -> dict[str, int]:
+    return {c: int((p.interests or {}).get(c, 2)) for c in ALL_CATS}
+
+
+def shown_categories(p) -> list[str]:
+    """Предложенные по ценностям шесть направлений + добавленные вручную (уровень 2–3), в этом порядке."""
+    proposed = proposed_categories(p.values or {})
+    lv = _levels(p)
+    return proposed + [c for c in ALL_CATS if c not in proposed and lv[c] >= 2]
+
+
+def _back_target(p) -> str:
+    return "ob:go:p" if p.onboarded_at is not None else "ob:go:hi"
+
+
+@dataclass
+class Out:
+    """Что сделать с нажатием: правка экрана (или новое сообщение), тост, обновление подсказок в памяти, подборка."""
+    text: str | None = None
+    rows: list | None = None
+    toast: str | None = None
+    new_message: bool = False
+    mode: str | None = None
+    dirty: bool | None = None
+    wait_note: bool | None = None
+    digest: str | None = None            # 'first' | 'regular'
+    extra: dict = field(default_factory=dict)
+
+
+def screen_values(p) -> Out:
+    return Out(texts.values_text(top_values(p)), kb.values_pick_keyboard(top_values(p), _back_target(p)))
+
+
+def screen_interests(p, mode: str, changed: bool = False) -> Out:
+    shown = shown_categories(p)
+    save = "Сохранить" if mode == "profile" else "Показать подборку →"
+    back = "ob:go:p" if mode == "profile" else "ob:go:v"
+    return Out(texts.interests_text(len(ALL_CATS) - len(shown), changed),
+               kb.interests_main_keyboard(shown, _levels(p), len(ALL_CATS) - len(shown), save, back))
+
+
+def screen_all(p, mode: str, brush: int = 2) -> Out:
+    save = "Сохранить" if mode == "profile" else "Показать подборку →"
+    return Out(texts.all_text(_levels(p)), kb.interests_all_keyboard(_levels(p), brush, save))
+
+
+def screen_menu(p, dirty: bool) -> Out:
+    return Out(texts.SETUP_TEXT, kb.setup_menu_keyboard(p.params or {}, bool(p.notes), dirty))
+
+
+def screen_profile(session, p) -> Out:
+    v = services.profile_view(p, services.user_decisions(session, p.user_id))
+    return Out(texts.profile_text(v), kb.profile_keyboard())
+
+
+def _mode(p, hint: str | None) -> str:
+    if p.onboarded_at is None:
+        return "start"
+    return hint if hint in ("reset", "profile") else "profile"
+
+
+def _write_params(session, p, **params):
+    return services.update_profile(session, p, {"params": params}, auto_onboarded=False)
+
+
+# ─── действия: синхронная часть, работает с БД ───
+def act(session, uid: int, parts: list[str], mode_hint: str | None, dirty: bool, src_text: str = "") -> Out | None:
+    """Результат нажатия `ob:<parts>`; None — профиля нет (STALE_NO_PROFILE)."""
+    p = services.get_profile(session, uid)
+    if p is None:
+        return None
+    cmd = parts[0]
+    mode = _mode(p, mode_hint)
+    arg = parts[1:]
+
+    if cmd == "consent":
+        if p.onboarded_at is not None:
+            return Out(texts.START_AGAIN, [])
+        d = default_profile()
+        services.update_profile(session, p, {"consent": True, "values": weights_from_top([]),
+                                             "params": d["params"]}, auto_onboarded=False)
+        p = services.get_profile(session, uid)
+        out = screen_values(p)
+        out.mode = "start"
+        return out
+
+    if cmd == "go":
+        return _go(session, p, arg[0], mode, dirty, src_text)
+
+    if cmd == "v":
+        v = VALUES[int(arg[0])]
+        top = top_values(p)
+        if v in top:
+            top.remove(v)
+        elif len(top) >= kb.TOP_N:
+            return Out(toast=texts.VALUES_FULL)
+        else:
+            top.append(v)
+        p = _set_values(session, p, top)
+        return screen_values(p)
+
+    if cmd == "ct":
+        c = ALL_CATS[int(arg[0])]
+        lv = _levels(p)
+        lv[c] = 0 if lv[c] > 0 else 2
+        p = services.update_profile(session, p, {"interests": lv}, auto_onboarded=False)
+        return screen_interests(p, mode)
+
+    if cmd == "br":
+        return screen_all(p, mode, int(arg[0]))
+
+    if cmd == "cs":
+        c, lvl = ALL_CATS[int(arg[0])], int(arg[1])
+        p = services.update_profile(session, p, {"interests": {c: lvl}}, auto_onboarded=False)
+        return screen_all(p, mode, lvl)
+
+    if cmd == "show":
+        return _show(session, p, mode)
+
+    if cmd in ("b", "a", "t", "c"):
+        return _setting(session, p, cmd, arg[0])
+
+    if cmd == "redo":
+        return Out(toast=texts.TOAST_BUILD, dirty=False, digest="regular")
+
+    if cmd == "done":
+        return Out(texts.SETUP_DONE, [], dirty=False)
+
+    if cmd == "noop":
+        return Out()
+    return Out(toast=texts.STALE)
+
+
+def _go(session, p, where: str, mode: str, dirty: bool, src_text: str) -> Out:
+    if where == "hi" and p.onboarded_at is None:
+        text, rows = hello_message()
+        return Out(text, rows)
+    if where == "v":
+        return screen_values(p)
+    if where == "p":
+        return screen_profile(session, p)
+    if where == "i":
+        top = top_values(p)
+        if len(top) != kb.TOP_N:
+            out = screen_values(p)
+            out.toast = "Нужно выбрать ровно пять."
+            return out
+        params = p.params or {}
+        changed = False
+        if params.get("interests_basis") != sorted(top):
+            changed = params.get("interests_basis") is not None
+            upd = {"interests_basis": sorted(top)}
+            if p.onboarded_at is None:
+                upd["aesthetics"] = default_aesthetics(top)       # умолчание от пятёрки ценностей; дальше правится в меню
+            services.update_profile(session, p, {"interests": propose_interests(p.values or {}), "params": upd},
+                                    auto_onboarded=False)
+            p = services.get_profile(session, p.user_id)
+        return screen_interests(p, mode, changed)
+    if where == "ia":
+        return screen_all(p, mode)
+    if where == "s":
+        times = (p.params or {}).get("times")
+        if not times:
+            p = _write_params(session, p, times=["день", "вечер"])
+        out = screen_menu(p, dirty)
+        out.new_message = not _is_setup_screen(src_text)  # из заголовка подборки или /profile — новым сообщением
+        return out
+    if where == "sb":
+        return Out(texts.SETUP_BUDGET, kb.budget_keyboard(int((p.params or {}).get("budget") or 0)))
+    if where == "sa":
+        return Out(texts.SETUP_AEST, kb.aesthetics_keyboard(bool((p.params or {}).get("aesthetics"))))
+    if where == "st":
+        return Out(texts.SETUP_TIMES, kb.times_keyboard((p.params or {}).get("times") or []))
+    if where == "sc":
+        return Out(texts.SETUP_KIDS, kb.kids_keyboard((p.params or {}).get("company") == "с детьми"))
+    if where == "n":
+        return Out(texts.SETUP_NOTE, kb.note_keyboard(), wait_note=True)
+    return Out(toast=texts.STALE)
+
+
+def _is_setup_screen(src_text: str) -> bool:
+    return src_text.split("\n")[0] in texts.SETUP_TITLES
+
+
+def _setting(session, p, cmd: str, val: str) -> Out:
+    params = p.params or {}
+    if cmd == "b":
+        p = _write_params(session, p, budget=int(val))
+        return Out(*_menu_args(p), dirty=True)
+    if cmd == "a":
+        p = _write_params(session, p, aesthetics=val == "1")
+        return Out(*_menu_args(p), dirty=True)
+    if cmd == "t":
+        times = list(params.get("times") or [])
+        t = SLOTS[int(val)]
+        times = [x for x in times if x != t] if t in times else [x for x in SLOTS if x in times + [t]]
+        p = _write_params(session, p, times=times)
+        return Out(texts.SETUP_TIMES, kb.times_keyboard(times), dirty=True)
+    company = COMPANY_OPTIONS[int(val)]
+    p = _write_params(session, p, company=company, kids=company == "с детьми")
+    return Out(*_menu_args(p), dirty=True)
+
+
+def _menu_args(p) -> tuple[str, list]:
+    return texts.SETUP_TEXT, kb.setup_menu_keyboard(p.params or {}, bool(p.notes), True)
+
+
+def _show(session, p, mode: str) -> Out:
+    top = top_values(p)
+    if len(top) != kb.TOP_N:
+        out = screen_values(p)
+        out.toast = "Нужно выбрать ровно пять."
+        return out
+    if mode == "profile":
+        services.update_profile(session, p, {"onboarded": True}, auto_onboarded=False)
+        return Out(texts.PROFILE_SAVED, [])
+    first = p.onboarded_at is None
+    p = services.update_profile(session, p, {"onboarded": True}, auto_onboarded=False)
+    return Out(texts.saved_text(top, _levels(p)), [], toast=texts.TOAST_BUILD, digest="first" if first else "regular",
+               mode="profile")
+
+
+# ─── подборка (первая и по «Пересобрать») ───
+def _digest_for(session, user_id: int, first: bool):
+    p = services.get_profile(session, user_id)
+    if p is None:
+        return None
+    now = services.utcnow()
+    dg, _, _ = services.core_digest(session, p, services.local_today(p), now=now)
+    view = services.digest_view(p, dg, services.decision_map(session, user_id))
+    if first and dg.items():
+        services.save_digest(session, p, dg, sent=True)  # в четверг этот уикенд повторно не шлём
+    return p, view
+
+
+async def send_digest(message: Message, user_id: int, first: bool) -> None:
+    got = await run_db(_digest_for, user_id, first)
+    if got is None:
+        await message.answer(texts.STALE_NO_PROFILE)
+        return
+    p, view = got
+    await send_with_bot(message.bot, digest_messages(p, view, first=first))
+
+
+# ─── обработчики ───
+def _deeplink_card(session, uid: int, slug: str):
+    """Карточка события по диплинку /start e_<slug>: (текст, ряды) или None, если события нет. Оценка — только у настроенного профиля."""
+    from leisure.core.timeutil import weekend_iso
+    from leisure.worker import messages as msg
+
+    ev = services.get_event(session, slug)
+    p = services.get_profile(session, uid)
+    if ev is None or ev.status != "published" or p is None:
+        return None
+    day = services.first_day(ev, services.local_today(p))
+    iso = day.isoformat() if day else None
+    weekend = weekend_iso(day or services.local_today(p))
+    item = services.card_item(session, p, ev, iso, weekend, scored=p.onboarded_at is not None)
+    return msg.card_text(item, weekend), msg.card_keyboard(item)
+
+
+async def _send_deeplink(message: Message, slug: str, p) -> bool:
+    """Показать карточку события и, если профиль не настроен, предложить настройку. False — события нет."""
+    card = await run_db(_deeplink_card, message.from_user.id, slug)
+    if card is None:
+        await message.answer(texts.DEEPLINK_GONE)
+        return False
+    await message.answer(card[0], reply_markup=markup(card[1]))
+    if p.onboarded_at is None:
+        if p.consent_at is None:
+            text, rows = hello_message()
+            await message.answer(texts.DEEPLINK_OFFER + text, reply_markup=markup(rows))
+        else:
+            await message.answer(texts.DEEPLINK_CONTINUE)
+    return True
 
 
 @router.message(CommandStart())
-async def start(message: Message, state: FSMContext) -> None:
+async def start(message: Message, state: FSMContext, command: CommandObject | None = None) -> None:
     u = message.from_user
     p = await run_db(services.get_or_create_profile, u.id, u.full_name or "", u.username or "")
     if not p.active:
         await run_db(services.set_active, u.id, True)  # вернулся после блокировки бота — рассылки снова включены
-    if p.onboarded_at is not None:
-        await message.answer("С возвращением. Команды: /digest — подборка на выходные, /plan — план, "
-                             "/profile — что я о тебе знаю, /reset — пройти настройку заново.")
-        return
     await state.clear()
+    arg = (command.args or "").strip() if command else ""
+    if arg.startswith("e_") and len(arg) > 2:         # диплинк «Отправить другу»: t.me/<бот>?start=e_<slug>
+        if await _send_deeplink(message, arg[2:], p) or p.onboarded_at is not None:
+            return
+    if p.onboarded_at is not None:
+        await message.answer(texts.START_AGAIN)
+        return
+    if p.consent_at is not None:  # согласие уже дано: показываем экран, на котором остановился
+        await state.update_data(mode="start")
+        top = top_values(p)
+        out = screen_values(p) if len(top) != kb.TOP_N else await run_db(lambda s, uid: screen_interests(services.get_profile(s, uid), "start"), u.id)
+        await message.answer(out.text, reply_markup=markup(out.rows))
+        return
     text, rows = hello_message()
     await message.answer(text, reply_markup=markup(rows))
 
@@ -73,209 +367,92 @@ async def start(message: Message, state: FSMContext) -> None:
 @router.message(Command("reset"))
 async def reset(message: Message, state: FSMContext) -> None:
     await state.clear()
-    text, rows = hello_message()
-    await message.answer("Настроим заново. " + text, reply_markup=markup(rows))
-
-
-@router.callback_query(F.data == "ob:consent")
-async def consent(cb: CallbackQuery, state: FSMContext) -> None:
-    await run_db(lambda s, uid: services.update_profile(s, services.get_or_create_profile(s, uid), {"consent": True}), cb.from_user.id)
-    await state.set_state(Onb.values)
-    await state.update_data(top=[], important=[], asked=[])
-    await cb.message.edit_text("Шаг 1 из 5. Что для тебя главное? Выбери пять ценностей.",
-                               reply_markup=markup(kb.values_pick_keyboard([])))
-    await cb.answer()
-
-
-@router.callback_query(Onb.values, F.data.startswith("ob:v:"))
-async def pick_value(cb: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    top: list[str] = data.get("top", [])
-    v = VALUES[int(cb.data.split(":")[2])]
-    if v in top:
-        top.remove(v)
-    elif len(top) < kb.TOP_N:
-        top.append(v)
-    else:
-        await cb.answer("Уже пять. Сними одну, чтобы выбрать другую.")
+    p = await run_db(services.get_profile, message.from_user.id)
+    if p is None or p.consent_at is None:
+        text, rows = hello_message()
+        await message.answer(text, reply_markup=markup(rows))
         return
-    await state.update_data(top=top)
-    await cb.message.edit_reply_markup(reply_markup=markup(kb.values_pick_keyboard(top)))
-    await cb.answer()
+    await state.update_data(mode="reset")
+    out = screen_values(p)
+    await message.answer(texts.RESET_PREFIX + out.text, reply_markup=markup(out.rows))
 
 
-@router.callback_query(F.data == "ob:noop")
-async def noop(cb: CallbackQuery) -> None:
-    await cb.answer()
+async def _edit(cb: CallbackQuery, out: Out) -> None:
+    from aiogram.exceptions import TelegramBadRequest
 
-
-async def _ask_weight(cb: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    rest = [v for v in VALUES if v not in data["top"] and v not in data.get("asked", [])]
-    if not rest:
-        values = kb.weights_from_choice(data["top"], data.get("important", []))
-        interests = interests_from_values(values)
-        await state.update_data(values=values, interests=interests)
-        await state.set_state(Onb.interests)
-        await cb.message.edit_text("Шаг 2 из 5. Интересы. Я предзаполнил их по твоим ценностям — нажимай, чтобы поменять "
-                                   "(— не показывать · иногда · интересно · в первую очередь).",
-                                   reply_markup=markup(kb.interests_keyboard(interests)))
+    if out.text is None:
         return
-    v = rest[0]
-    await state.update_data(asked=data.get("asked", []) + [v])
-    await cb.message.edit_text(f"Шаг 1 из 5. А «{v}» — насколько важно?", reply_markup=markup(kb.weight_keyboard(VALUES.index(v))))
+    rows = out.rows or []
+    try:
+        if out.new_message:
+            await cb.message.answer(out.text, reply_markup=markup(rows) if rows else None)
+        else:
+            await cb.message.edit_text(out.text, reply_markup=markup(rows) if rows else None)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in (e.message or str(e)):
+            raise
 
 
-@router.callback_query(Onb.values, F.data == "ob:vnext")
-async def values_next(cb: CallbackQuery, state: FSMContext) -> None:
+@router.callback_query(F.data.startswith("ob:"))
+async def on_ob(cb: CallbackQuery, state: FSMContext) -> None:
+    """Любая кнопка онбординга. Не зависит от FSM: устаревший экран получает ответ, а не вечную загрузку."""
     data = await state.get_data()
-    if len(data.get("top", [])) != kb.TOP_N:
-        await cb.answer("Нужно ровно пять.")
+    parts = (cb.data or "").split(":")[1:]
+    try:
+        src = (cb.message.text or "") if cb.message else ""
+        out = await run_db(act, cb.from_user.id, parts, data.get("mode"), bool(data.get("dirty")), src)
+    except (ValueError, IndexError):
+        await cb.answer(texts.STALE)
         return
-    await state.set_state(Onb.weights)
-    await _ask_weight(cb, state)
-    await cb.answer()
-
-
-@router.callback_query(Onb.weights, F.data.startswith("ob:w:"))
-async def weight(cb: CallbackQuery, state: FSMContext) -> None:
-    _, _, idx, flag = cb.data.split(":")
-    data = await state.get_data()
-    important = data.get("important", [])
-    if flag == "1":
-        important.append(VALUES[int(idx)])
-    await state.update_data(important=important)
-    await _ask_weight(cb, state)
-    await cb.answer()
-
-
-@router.callback_query(Onb.interests, F.data.startswith("ob:i:"))
-async def interest_cycle(cb: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    interests = data["interests"]
-    c = ALL_CATS[int(cb.data.split(":")[2])]
-    interests[c] = (int(interests.get(c, 2)) + 1) % 4
-    await state.update_data(interests=interests)
-    await cb.message.edit_reply_markup(reply_markup=markup(kb.interests_keyboard(interests)))
-    await cb.answer()
-
-
-@router.callback_query(Onb.interests, F.data == "ob:inext")
-async def interests_next(cb: CallbackQuery, state: FSMContext) -> None:
-    await state.set_state(Onb.company)
-    await cb.message.edit_text("Шаг 3 из 5. С кем ты обычно ходишь?", reply_markup=markup(kb.company_keyboard()))
-    await cb.answer()
-
-
-@router.callback_query(Onb.company, F.data.startswith("ob:c:"))
-async def company(cb: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(company=COMPANY_OPTIONS[int(cb.data.split(":")[2])], times=[])
-    await state.set_state(Onb.times)
-    await cb.message.edit_text("Когда тебе удобнее? Можно несколько.", reply_markup=markup(kb.times_keyboard([])))
-    await cb.answer()
-
-
-@router.callback_query(Onb.times, F.data.startswith("ob:t:"))
-async def times_toggle(cb: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    times = data.get("times", [])
-    t = SLOTS[int(cb.data.split(":")[2])]
-    times = [x for x in times if x != t] if t in times else times + [t]
-    await state.update_data(times=times)
-    await cb.message.edit_reply_markup(reply_markup=markup(kb.times_keyboard(times)))
-    await cb.answer()
-
-
-@router.callback_query(Onb.times, F.data == "ob:tnext")
-async def times_next(cb: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    if not data.get("times"):
-        await state.update_data(times=["день", "вечер"])
-    await state.set_state(Onb.budget)
-    await cb.message.edit_text("Бюджет на одно событие?", reply_markup=markup(kb.budget_keyboard()))
-    await cb.answer()
-
-
-@router.callback_query(Onb.budget, F.data.startswith("ob:b:"))
-async def budget(cb: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(budget=int(cb.data.split(":")[2]))
-    await state.set_state(Onb.aesthetics)
-    await cb.message.edit_text("Красота места и формата для тебя обязательна?", reply_markup=markup(kb.aesthetics_keyboard()))
-    await cb.answer()
-
-
-@router.callback_query(Onb.aesthetics, F.data.startswith("ob:a:"))
-async def aesthetics(cb: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(aesthetics=cb.data.endswith(":1"))
-    await state.set_state(Onb.notes)
-    await cb.message.edit_text("Шаг 4 из 5. Напиши пару слов: что надоело, что хочется попробовать. Или пропусти.",
-                               reply_markup=markup(kb.notes_keyboard()))
-    await cb.answer()
+    except Exception:  # noqa: BLE001
+        log.exception("кнопка %s у %s", cb.data, cb.from_user.id)
+        await cb.answer("Что-то пошло не так, попробуй ещё раз.")
+        return
+    if out is None:
+        await cb.answer(texts.STALE_NO_PROFILE)
+        return
+    upd = {k: v for k, v in (("mode", out.mode), ("dirty", out.dirty)) if v is not None}
+    if upd:
+        await state.update_data(**upd)
+    if out.wait_note:
+        await state.set_state(Onb.notes)
+    elif await state.get_state() == Onb.notes.state and parts[0] != "noop":
+        await state.set_state(None)
+    try:
+        await _edit(cb, out)
+    except Exception:  # noqa: BLE001
+        log.exception("не обновился экран %s у %s", cb.data, cb.from_user.id)
+    await cb.answer(out.toast or None)
+    if out.digest:
+        await send_digest(cb.message, cb.from_user.id, out.digest == "first")
 
 
 @router.message(Onb.notes, F.text, ~F.text.startswith("/"))
 async def notes_text(message: Message, state: FSMContext) -> None:
-    await _finish(message, state, (message.text or "")[:2000], user_id=message.from_user.id)
+    """Текст заметки; команды сюда не попадают (идут в commands)."""
+    def save(session, uid, note):
+        p = services.get_profile(session, uid)
+        if p is None:
+            return None
+        p = services.update_profile(session, p, {"notes": note}, auto_onboarded=False)
+        return screen_menu(p, False)
 
-
-@router.callback_query(Onb.notes, F.data == "ob:skipnotes")
-async def notes_skip(cb: CallbackQuery, state: FSMContext) -> None:
-    await cb.answer()
-    await _finish(cb.message, state, "", user_id=cb.from_user.id)
-
-
-def _save_profile(session, user_id: int, data: dict):
-    p = services.get_profile(session, user_id)
-    if p is None:
-        return None  # профиль удалён по /delete посреди настройки — не воскрешаем без нового согласия
-    params = {"company": data["company"], "times": data["times"], "budget": data["budget"],
-              "aesthetics": data["aesthetics"], "adults30": True, "kids": data["company"] == "с детьми"}
-    return services.update_profile(session, p, {"values": data["values"], "interests": data["interests"],
-                                                 "params": params, "notes": data.get("notes", ""), "onboarded": True})
-
-
-def _first_digest(session, user_id: int, now: datetime):
-    p = services.get_profile(session, user_id)
-    dg, _, _ = services.core_digest(session, p, services.local_today(p), now=now)
-    view = services.digest_view(p, dg)
-    if dg.items():
-        services.save_digest(session, p, dg, sent=True)  # в четверг этот уикенд повторно не шлём
-    return p, view
-
-
-async def _finish(message: Message, state: FSMContext, notes: str, user_id: int) -> None:
     data = await state.get_data()
-    data["notes"] = notes
-    await state.clear()
-    try:
-        saved = await run_db(_save_profile, user_id, data)
-    except Exception:  # noqa: BLE001
-        log.exception("не сохранился профиль %s", user_id)
-        await message.answer("Не получилось сохранить профиль. Попробуй /reset ещё раз.")
+    out = await run_db(save, message.from_user.id, (message.text or "")[:2000])
+    await state.set_state(None)
+    if out is None:
+        await message.answer(texts.STALE_NO_PROFILE)
         return
-    if saved is None:
-        await message.answer(PROFILE_GONE)
-        return
-    await message.answer("Шаг 5 из 5. Профиль сохранён. Собираю первую подборку на ближайшие выходные…")
-    p, view = await run_db(_first_digest, user_id, services.utcnow())
-    await send_with_bot(message.bot, digest_messages(p, view))
+    await message.answer(texts.NOTE_SAVED)
+    await message.answer(out.text, reply_markup=markup(_with_dirty(out, bool(data.get("dirty")))))
 
 
-# ─── запасные обработчики (регистрируются последними: срабатывают, только если ни один шаг не подошёл) ───
-BUTTON_STEPS = (Onb.values, Onb.weights, Onb.interests, Onb.company, Onb.times, Onb.budget, Onb.aesthetics)
+def _with_dirty(out: Out, dirty: bool) -> list:
+    return out.rows if not dirty else out.rows[:-1] + [[{"text": "Пересобрать подборку", "callback_data": "ob:redo"}], out.rows[-1]]
 
 
-@router.message(StateFilter(*BUTTON_STEPS), F.text, ~F.text.startswith("/"))
-async def text_on_button_step(message: Message) -> None:
-    """Текст на шаге с кнопками: короткая подсказка, состояние не меняем. Команды сюда не попадают."""
-    await message.answer(PRESS_BUTTON)
-
-
-@router.callback_query(F.data.startswith("ob:"))
-async def stale_onboarding_button(cb: CallbackQuery) -> None:
-    """Кнопка онбординга без подходящего состояния (например, после перезапуска бота): объясняем и снимаем «часики»."""
-    try:
-        await cb.message.answer(STALE_SCREEN)
-    except Exception:  # noqa: BLE001
-        log.info("не удалось ответить на устаревшую кнопку %s", cb.data)
-    await cb.answer()
+@router.message(StateFilter(None), F.text, ~F.text.startswith("/"))
+async def text_when_idle(message: Message) -> None:
+    """Текст вне заметки: незавершённый профиль — подсказка про кнопки, готовый — список возможностей (T-TEXT-ONB, T-TEXT-ANY)."""
+    p = await run_db(services.get_profile, message.from_user.id)
+    await message.answer(texts.TEXT_ANY if p is not None and p.onboarded_at is not None else texts.TEXT_ONB)

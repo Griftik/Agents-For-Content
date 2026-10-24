@@ -10,7 +10,6 @@ from aiogram.methods import SendMessage
 from leisure import settings
 from leisure.bot import keyboards as kb
 from leisure.bot.callbacks import decision_cb, parse_cb, reason_cb
-from leisure.bot.decisions import card_rows
 from leisure.core.catalog import default_profile
 from leisure.core.scoring import score
 from leisure.core.timeutil import trim_past
@@ -21,16 +20,17 @@ from .conftest import make_event
 
 EID = "4f2c8a10-1111-2222-3333-444455556666"
 ITEM = {"event": {"id": EID, "title": "Концерт", "time_text": "19:00", "venue": "Зал", "url": "https://example.org/e"},
-        "day": "2026-10-25", "slot": "вечер", "score": 80, "why": [],
+        "day": "2026-10-25", "slot": "вечер", "score": 80, "why": [], "days": [], "decision": None,
         "links": {"tg": "https://t.me/share/url?x", "page": "https://leisure.example.org/e/x", "gcal": "g", "outlook": "o", "ics": "i"}}
 
 
 # ── Д5, Д1: кнопки карточки ──
 def test_card_has_interesting_button_and_day_in_callback():
-    row = msg.card_keyboard(ITEM, url_buttons=True)[0]
-    assert [b["text"] for b in row] == ["Иду", "Может быть", "Мимо", "Интересно"]
-    assert row[3]["callback_data"] == f"d:i:{EID}:2026-10-25"
-    assert all(len(b["callback_data"].encode()) <= 64 for b in row)
+    rows = msg.card_keyboard(ITEM, url_buttons=True)
+    flat = [b for r in rows for b in r]
+    assert [b["text"] for r in rows[:2] for b in r] == ["Иду", "Может быть", "Интересно", "Мимо"]
+    assert next(b for b in flat if b["text"] == "Интересно")["callback_data"] == f"d:i:{EID}:2026-10-25"
+    assert all(len(b["callback_data"].encode()) <= 64 for b in flat if "callback_data" in b)
     assert len(decision_cb("иду", EID, "2026-10-25").encode()) == 51
 
 
@@ -43,23 +43,21 @@ def test_parse_cb_day_optional_and_old_buttons_work():
     assert parse_cb(reason_cb("дорого", EID)).kind == "reason"
 
 
-# ── Д6: клавиатура после «Мимо» и причины ──
-def _rows_after_miss():
-    rows = msg.card_keyboard(ITEM, url_buttons=True) + msg.digest_footer_keyboard("https://leisure.example.org/digest", True)
-    return rows
+# ── Д6, Юзабилити 6: клавиатура после «Мимо» и причины ──
+def _rows_after_miss(reasons):
+    links = msg.card_link_rows(ITEM, True)
+    return msg.card_rows(EID, [], "2026-10-25", "мимо", reasons, links)
 
 
-def test_miss_keeps_links_and_footer_and_reasons_removed_after_choice():
-    rows = _rows_after_miss()
-    after_miss = card_rows(rows, "Мимо", EID)
-    texts = [[b["text"] for b in r] for r in after_miss]
-    assert texts[0] == ["Иду", "Может быть", "● Мимо", "Интересно"]
-    assert texts[1] == [kb.REASON_CAPTION]                             # Юзабилити 6: подпись, что причина необязательна
-    assert texts[-2:] == [["Подробнее", "Другу"], ["Весь дайджест"]]    # ссылки и футер на месте, ряд причин — между
-    after_reason = card_rows(after_miss, "Мимо")
-    assert [[b["text"] for b in r] for r in after_reason] == [["Иду", "Может быть", "● Мимо", "Интересно"],
-                                                                ["Подробнее", "Другу"], ["Весь дайджест"]]
-    assert card_rows(after_miss, "Мимо", EID) == after_miss             # повторный «Мимо» даёт ту же клавиатуру
+def test_miss_keeps_links_and_reasons_removed_after_choice():
+    texts = lambda rows: [[b["text"] for b in r] for r in rows]   # noqa: E731
+    after_miss = _rows_after_miss("main")
+    assert texts(after_miss)[:2] == [["Иду", "Может быть"], ["Интересно", "● Мимо"]]
+    assert texts(after_miss)[2] == [kb.REASON_CAPTION]                       # подпись: причина необязательна
+    assert texts(after_miss)[3] == ["Не моё", "Дорого", "Далеко", "Ещё…"] and texts(after_miss)[-1] == ["Подробнее", "Другу"]
+    more = _rows_after_miss("more")
+    assert texts(more)[3:5] == [["Уже был", "Не то время"], ["Не та компания"]] and "Без причины" not in str(more)
+    assert texts(_rows_after_miss(None)) == [["Иду", "Может быть"], ["Интересно", "● Мимо"], ["Подробнее", "Другу"]]
 
 
 # ── Д14: события, которые уже начались или вот-вот начнутся ──
@@ -135,7 +133,7 @@ def test_local_web_url_gives_text_links_not_url_buttons(monkeypatch):
     urls = [b["url"] for _, _, rows in out for r in (rows or []) for b in r if "url" in b]
     assert all("localhost" not in u for u in urls) and not any(b.get("text") in ("Другу", "Весь дайджест")
                                                                for _, _, rows in out for r in (rows or []) for b in r)
-    assert "Весь дайджест: http://localhost:8000/digest" in out[-1][1] and "Другу: " in out[-1][1]
+    assert "Весь дайджест: http://localhost:8000/digest" in out[0][1] and "Другу: " in out[-1][1]
     # а политика — текстом в приветствии
     from leisure.bot.onboarding import hello_message
     text, rows = hello_message()
@@ -144,7 +142,7 @@ def test_local_web_url_gives_text_links_not_url_buttons(monkeypatch):
 
 def test_public_web_url_keeps_url_buttons(monkeypatch):
     monkeypatch.setattr(settings, "WEB_BASE_URL", "https://leisure.example.org")
-    row2 = msg.card_keyboard(ITEM)[1]
+    row2 = msg.card_keyboard(ITEM)[-1]
     assert [b["text"] for b in row2] == ["Подробнее", "Другу"]
 
 
@@ -165,17 +163,18 @@ def test_empty_digest_is_one_message():
     from leisure.db.models import Profile
     from leisure.worker.schedules import digest_messages
     out = digest_messages(Profile(user_id=7, name="Б"), {"title": "t", "weekend": [], "items": [], "horizon": []})
-    assert out == [(7, "На эти выходные под твой профиль ничего не нашлось. Можно расширить интересы: /profile", None)]
+    assert len(out) == 1 and out[0][1].startswith("<b>Выходные t</b>\nНа эти выходные под твой профиль ничего не нашлось.")
+    assert [b["text"] for b in out[0][2][0]][-1] == "Мои интересы"
 
 
 # ── тексты напоминаний ──
 def test_texts_do_not_promise_saturday():
     assert "в субботу" not in msg.digest_header("23–25 октября", 3)
     from leisure.bot.decisions import TOASTS
-    assert TOASTS["иду"] == "В плане ✓ Напомню утром в день события." and "суббот" not in TOASTS["иду"]
+    assert TOASTS["иду"] == "В плане: {day}. Напомню утром." and "суббот" not in TOASTS["иду"]
     plan = {"weekend": ["2026-10-27"], "days": {"2026-10-27": [
         {"event": {"title": "А", "time_text": "13:00", "venue": "V", "address": "A"}, "status": "иду"}]}}
-    assert "План на сегодня · Вторник, 27 окт" in msg.plan_today_text(plan, "2026-10-27")
+    assert "План на сегодня · вторник, 27 окт" in msg.plan_today_text(plan, "2026-10-27")
 
 
 # ── Д10, Д11: отправка ──
