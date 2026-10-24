@@ -2,6 +2,9 @@
 
 Эталон (fixtures/prototype_reference.json) получен прогоном score()/affinity()/learningBonus()/recommend()
 прототипа в Node по 177 событиям для трёх профилей (fixtures/prototype_cases.json).
+
+Единственная правка в JS-эталоне относительно артефакта: парсер времени не принимает даты («23.10 — 20:00»)
+за время начала — та же семантика, что в core/timeutil.time_tokens. Это меняет одно событие seed.
 """
 import json
 

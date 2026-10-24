@@ -24,7 +24,7 @@ class SlotPick:
     chosen: bool = False
     result: ScoreResult | None = None
 
-    def as_item(self) -> dict | None:
+    def as_item(self, why_limit: int | None = None) -> dict | None:
         if self.event is None:
             return None
         return {
@@ -34,7 +34,7 @@ class SlotPick:
             "slot": self.slot,
             "chosen": self.chosen,
             "score": self.result.score if self.result else None,
-            "why": self.result.why_dicts() if self.result else [],
+            "why": self.result.why_dicts(why_limit) if self.result else [],
         }
 
 
@@ -45,16 +45,14 @@ class Digest:
     horizon: list[tuple[dict, ScoreResult]] = field(default_factory=list)
 
     def items(self, why_limit: int | None = None) -> list[dict]:
-        out = [p.as_item() for p in self.slots if p.event is not None]
+        """Элементы дайджеста; why обрезается через trim_why (негативные причины не теряются)."""
+        out = [p.as_item(why_limit) for p in self.slots if p.event is not None]
         for ev, r in self.horizon:
             out.append({
                 "event_id": str(ev.get("id") or ev.get("slug")), "slug": ev.get("slug"),
                 "day": event_dates(ev)[0] if event_dates(ev) else None, "slot": "горизонт", "chosen": False,
                 "score": r.score, "why": r.why_dicts(why_limit),
             })
-        if why_limit:
-            for it in out:
-                it["why"] = it["why"][:why_limit]
         return out
 
     def event_ids(self) -> list[str]:
@@ -109,8 +107,8 @@ def recommend_slots(events: Sequence[Mapping], scores: Mapping[str, ScoreResult]
             if day not in weekend_days(ev, weekend) or reco_slot(ev) != slot:
                 continue
             d = decisions_by_id.get(eid)
-            if d and d.get("status") in NO_FILL:
-                continue
+            if d and (d.get("status") in NO_FILL or d.get("status") == "иду"):
+                continue  # «иду» закрепляется в своём слоте выше и не дублируется как кандидат
             if int(interests.get(ev.get("category") or "", default_interest) or 0) <= 0:
                 continue
             r = scores.get(eid)
@@ -167,10 +165,11 @@ def build_digest(events: Sequence[Mapping], profile: Mapping, decisions: Iterabl
     """
     cfg = cfg or scoring_config()
     decisions = list(decisions)
+    recent = set(map(str, recently_shown))
     by_id = {str(d.get("event_id") or d.get("id")): d for d in decisions}
     if scores is None:
         scores = score_events(events, profile, decisions, cfg, now=now)
-    slots = recommend_slots(events, scores, profile, by_id, weekend, cfg, recently_shown)
-    taken = {p.event["id"] if p.event and p.event.get("id") else _id(p.event) for p in slots if p.event}
-    horizon = horizon_picks(events, scores, by_id, weekend, cfg, set(map(str, recently_shown)) | set(map(str, taken)))
+    slots = recommend_slots(events, scores, profile, by_id, weekend, cfg, recent)
+    taken = {_id(p.event) for p in slots if p.event}
+    horizon = horizon_picks(events, scores, by_id, weekend, cfg, recent | taken)
     return Digest(list(weekend), slots, horizon)

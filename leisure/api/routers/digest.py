@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import services
@@ -10,18 +10,25 @@ from ..schemas import DigestOut, PlanOut, ScoredEventOut
 router = APIRouter(prefix="/api", tags=["дайджест и план"], dependencies=[Depends(require_api_key)])
 
 
+def _profile(session: Session, user_id: int):
+    p = services.get_profile(session, user_id)
+    if p is None:
+        raise HTTPException(404, "профиль не найден")
+    return p
+
+
 @router.get("/digest/{user_id}/preview", response_model=DigestOut)
 def digest_preview(user_id: int, today: date | None = None, session: Session = Depends(get_session)) -> dict:
     """Состав дайджеста на ближайший уикенд: 5 слотов + до 2 «на горизонте». Ничего не сохраняет."""
-    return services.digest_preview(session, user_id, today or date.today())
+    return services.digest_preview(session, _profile(session, user_id), today)
 
 
 @router.get("/digest/{user_id}/all", response_model=list[ScoredEventOut])
 def digest_all(user_id: int, today: date | None = None, session: Session = Depends(get_session)) -> list[dict]:
     """Полный список предстоящих событий с баллом совпадения — для веба с фильтрами."""
-    return services.scored_events(session, user_id, today or date.today())
+    return services.scored_events(session, _profile(session, user_id), today)
 
 
 @router.get("/plan/{user_id}", response_model=PlanOut)
 def plan(user_id: int, today: date | None = None, session: Session = Depends(get_session)) -> dict:
-    return services.plan(session, user_id, today or date.today())
+    return services.plan(session, _profile(session, user_id), today)

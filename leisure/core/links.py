@@ -80,6 +80,22 @@ def tg_share_url(ev: Mapping, day: str | None = None, url: str | None = None, **
     return "https://t.me/share/url?" + urlencode(q)
 
 
+def _ics_fold(line: str, limit: int = 75) -> str:
+    """RFC 5545: строки не длиннее 75 октетов, продолжение — с пробела; не рвём многобайтовые символы."""
+    out, cur, cur_len, first = [], [], 0, True
+    for ch in line:
+        b = len(ch.encode("utf-8"))
+        cap = limit if first else limit - 1
+        if cur_len + b > cap:
+            out.append("".join(cur))
+            cur, cur_len, first = [ch], b, False
+        else:
+            cur.append(ch)
+            cur_len += b
+    out.append("".join(cur))
+    return "\r\n ".join(out)
+
+
 def _ics_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
 
@@ -104,7 +120,7 @@ def ics_text(ev: Mapping, day: str | None = None, tz: str = DEFAULT_TZ, city: st
     if ev.get("url"):
         lines.append(f"URL:{ev['url']}")
     lines += ["END:VEVENT", "END:VCALENDAR"]
-    return "\r\n".join(lines) + "\r\n"
+    return "\r\n".join(_ics_fold(ln) for ln in lines) + "\r\n"
 
 
 def plan_text(by_day: Mapping[str, Sequence[Mapping]], weekend: Sequence[str],

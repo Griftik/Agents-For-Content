@@ -6,6 +6,7 @@ import os
 
 os.environ.setdefault("ADMIN_PASSWORD", "test-admin")
 os.environ.setdefault("API_KEY", "test-key")
+os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
 
 import pytest  # noqa: E402
 from sqlalchemy import text  # noqa: E402
@@ -65,11 +66,18 @@ def test_api_key_required(client):
 
 
 def test_profile_digest_decisions_plan(client):
-    p = client.get(f"/api/profile/{TEST_USER}", headers=H).json()
-    assert p["onboarded"] is False and p["values"]["Творчество"] == 5
-    p = client.put(f"/api/profile/{TEST_USER}", headers=H, json={
-        "name": "Тест", "values": {"Природа": 5}, "interests": {"Вечеринки": 0}, "params": {"budget": 1500}, "consent": True}).json()
-    assert p["onboarded"] is True and p["values"]["Природа"] == 5 and p["interests"]["Вечеринки"] == 0 and p["params"]["budget"] == 1500
+    assert client.get(f"/api/profile/{TEST_USER}", headers=H).status_code == 404
+    assert client.get(f"/api/digest/{TEST_USER}/preview", headers=H).status_code == 404
+    p = client.put(f"/api/profile/{TEST_USER}", headers=H, json={"name": "Тест", "values": {"Природа": 5}, "consent": True}).json()
+    assert p["onboarded"] is False and p["values"]["Творчество"] == 5 and p["values"]["Природа"] == 5
+    p = client.put(f"/api/profile/{TEST_USER}", headers=H, json={"interests": {"Вечеринки": 0}, "params": {"budget": 1500}}).json()
+    assert p["onboarded"] is True and p["interests"]["Вечеринки"] == 0 and p["params"]["budget"] == 1500 and p["params"]["aesthetics"] is True
+    # валидация: мусор не сохраняется
+    assert client.put(f"/api/profile/{TEST_USER}", headers=H, json={"params": {"budget": "abc"}}).status_code == 422
+    assert client.put(f"/api/profile/{TEST_USER}", headers=H, json={"interests": {"Джаз": 9}}).status_code == 422
+    assert client.put(f"/api/profile/{TEST_USER}", headers=H, json={"values": {"Романтика": 5}}).status_code == 422
+    assert client.put(f"/api/profile/{TEST_USER}", headers=H, json={"params": {"times": ["полдник"]}}).status_code == 422
+    assert client.put(f"/api/profile/{TEST_USER}", headers=H, json={"tz": "Mars/Olympus"}).status_code == 422
 
     dg = client.get(f"/api/digest/{TEST_USER}/preview", headers=H, params={"today": "2026-10-24"}).json()
     assert dg["title"] == "23–25 октября" and 4 <= len(dg["items"]) <= 5 and len(dg["horizon"]) <= 2
@@ -100,6 +108,9 @@ def test_profile_digest_decisions_plan(client):
 
     assert client.delete(f"/api/decisions/{TEST_USER}/{ev['slug']}", headers=H).json() == {"removed": True}
     assert client.post("/api/decisions", headers=H, json={"user_id": TEST_USER, "event": ev["slug"], "status": "хз"}).status_code == 422
+    assert client.post("/api/decisions", headers=H, json={"user_id": TEST_USER, "event": ev["slug"], "status": "иду", "day": "сб"}).status_code == 422
+    assert client.post("/api/decisions", headers=H, json={"user_id": TEST_USER, "event": ev["slug"], "status": "мимо", "reason": "лень"}).status_code == 422
+    assert client.get("/api/events/ges2-pocket-ongon-oct24/ics", params={"day": "вчера"}).status_code == 422
 
 
 def test_admin_login_and_list(client):

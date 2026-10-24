@@ -23,6 +23,12 @@ def test_weekend_title():
 
 def test_hours():
     assert start_hour("19:30") == 19.5 and start_hour("с 12.00") == 12 and start_hour("весь день") is None
+    # даты перед временем не принимаются за время; невозможные значения отбрасываются
+    assert start_hour("23.10 — 20:00; 24.10 и 25.10 — 17:00 и 20:00") == 20
+    assert end_hour({"time_text": "23.10 — 20:00; 24.10 и 25.10 — 17:00 и 20:00"}) == 22.5
+    assert start_hour("25.10 в 12:00") == 12 and start_hour("99:00") is None and start_hour("12:75") is None
+    assert end_hour({"time_text": "12:00; экскурсии 14:00–16:00"}) == 14.5  # конец только у смежного диапазона
+    assert end_hour({"time_text": "10:00–18:00 (чт до 21:00)"}) == 18 and end_hour({"time_text": "19:00 — 21:30"}) == 21.5
     assert end_hour({"time_text": "10:00–12:00"}) == 12
     assert end_hour({"time_text": "19:00", "duration_min": 90}) == 20.5
     assert end_hour({"time_text": "19:00"}) == 21.5  # 150 минут по умолчанию

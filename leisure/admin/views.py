@@ -1,6 +1,7 @@
 """Админка куратора (SQLAdmin, п. 4 F11): модерация событий, статус и уверенность, ручное добавление."""
 from __future__ import annotations
 
+import logging
 import secrets
 
 from fastapi import FastAPI
@@ -18,7 +19,9 @@ class AdminAuth(AuthenticationBackend):
     async def login(self, request: Request) -> bool:
         form = await request.form()
         user, pwd = str(form.get("username", "")), str(form.get("password", ""))
-        if secrets.compare_digest(user, settings.ADMIN_USER) and secrets.compare_digest(pwd, settings.ADMIN_PASSWORD):
+        ok_user = secrets.compare_digest(user.encode(), settings.ADMIN_USER.encode())
+        ok_pwd = secrets.compare_digest(pwd.encode(), settings.ADMIN_PASSWORD.encode())
+        if ok_user and ok_pwd:
             request.session.update({"admin": True})
             return True
         return False
@@ -88,7 +91,11 @@ class DigestAdmin(ModelView, model=Digest):
 
 
 def mount_admin(app: FastAPI) -> Admin | None:
-    if not settings.ADMIN_PASSWORD or settings.ADMIN_PASSWORD == "REPLACE_ME":
+    """Админка поднимается только с заданным ADMIN_PASSWORD и настоящим SECRET_KEY (подпись cookie сессии)."""
+    if not settings.ADMIN_PASSWORD:
+        return None
+    if settings.SECRET_KEY == settings.DEV_SECRET:
+        logging.getLogger("leisure.admin").warning("SECRET_KEY не задан — админка не смонтирована")
         return None
     admin = Admin(app, engine(), title="Досуг · админка", authentication_backend=AdminAuth(secret_key=settings.SECRET_KEY),
                   base_url="/admin")

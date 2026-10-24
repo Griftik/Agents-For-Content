@@ -13,8 +13,8 @@ DAY_SHORT = ["Пт", "Сб", "Вс"]
 DAY_FULL = ["Пятница", "Суббота", "Воскресенье"]
 DEFAULT_DURATION_MIN = 150
 
-_TIME_RE = re.compile(r"(\d{1,2})[:.](\d{2})")
-_RANGE_RE = re.compile(r"\d{1,2}[:.]\d{2}\s*[–-]\s*(\d{1,2})[:.](\d{2})")
+_TOKEN_RE = re.compile(r"(?<!\d)(\d{1,2})([:.])(\d{2})(?!\d)")
+_DASH_RE = re.compile(r"^\s*[–—-]\s*$")
 _FREE_RE = re.compile(r"бесплатн|вход свободн|свободный вход")
 _MONEY_RE = re.compile(r"\d\s?₽|руб")
 
@@ -24,20 +24,36 @@ def time_text(ev: Mapping) -> str:
     return str(ev.get("time_text") or ev.get("time") or "")
 
 
+def time_tokens(t: str | None) -> list[tuple[float, str, int, int]]:
+    """Отметки времени в тексте: (час с долей, разделитель, начало, конец).
+
+    Берём только правдоподобные (час ≤ 23, минуты ≤ 59); если есть хоть одна с двоеточием —
+    отметки с точкой считаем датами («23.10 — 20:00») и отбрасываем.
+    """
+    out = []
+    for m in _TOKEN_RE.finditer(t or ""):
+        h, sep, mi = int(m.group(1)), m.group(2), int(m.group(3))
+        if h <= 23 and mi <= 59:
+            out.append((h + mi / 60, sep, m.start(), m.end()))
+    if any(sep == ":" for _, sep, _, _ in out):
+        out = [x for x in out if x[1] == ":"]
+    return out
+
+
 def start_hour(t: str | None) -> float | None:
-    m = _TIME_RE.search(t or "")
-    return int(m.group(1)) + int(m.group(2)) / 60 if m else None
+    tk = time_tokens(t)
+    return tk[0][0] if tk else None
 
 
 def end_hour(ev: Mapping) -> float | None:
+    """Конец: вторая отметка, если она идёт сразу за первой через тире («19:00–21:00»), иначе старт + длительность."""
     t = time_text(ev)
-    m = _RANGE_RE.search(t)
-    if m:
-        return int(m.group(1)) + int(m.group(2)) / 60
-    s = start_hour(t)
-    if s is None:
+    tk = time_tokens(t)
+    if len(tk) >= 2 and _DASH_RE.match(t[tk[0][3]:tk[1][2]]):
+        return tk[1][0]
+    if not tk:
         return None
-    return s + (ev.get("duration_min") or DEFAULT_DURATION_MIN) / 60
+    return tk[0][0] + (ev.get("duration_min") or DEFAULT_DURATION_MIN) / 60
 
 
 def hhmm(h: float | None) -> str | None:

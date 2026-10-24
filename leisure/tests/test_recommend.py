@@ -84,3 +84,24 @@ def test_recommend_slots_direct(profile, weekend):
     picks = recommend_slots(evs, scores, profile, {}, weekend)
     assert picks[0].event["id"] == "b"  # kindBonus: событие +6 против места 0
     assert all(p.event is None for p in picks[1:])
+
+
+def test_pinned_event_not_duplicated(profile, weekend):
+    """«Иду» на воскресенье: событие с двумя датами закрепляется один раз, а не предлагается ещё и в субботу."""
+    ev = make_event(id="x", slug="x", dates=[weekend[1], weekend[2]], time_text="19:00")
+    other = make_event(id="y", slug="y", dates=[weekend[1]], time_text="19:00", aesthetics=1)
+    d = build_digest([ev, other], profile, [{"event_id": "x", "status": "иду", "day": weekend[2],
+                                            "event_category": ev["category"], "event_tags": ev["tags"]}], weekend)
+    ids = [(p.slot, p.day, p.event["id"] if p.event else None, p.chosen) for p in d.slots]
+    assert ("вечер", weekend[2], "x", True) in ids
+    assert ("вечер", weekend[1], "y", False) in ids
+    assert [i for i in ids if i[2] == "x"] == [("вечер", weekend[2], "x", True)]
+
+
+def test_items_keep_negative_reasons(profile, weekend):
+    from leisure.core.scoring import Why
+    ev = make_event(id="x", slug="x", dates=[weekend[1]], time_text="19:00", price_from=9000)
+    profile["params"]["budget"] = 1000
+    d = build_digest([ev], profile, [], weekend)
+    item = [it for it in d.items(why_limit=1) if it["event_id"] == "x"][0]
+    assert any(w["c"] == "neg" for w in item["why"])

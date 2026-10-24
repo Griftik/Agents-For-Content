@@ -3,7 +3,8 @@
     python -m leisure.seed.load                       # leisure/seed/events_2026-10-23.json
     python -m leisure.seed.load path/to/events.json --status draft
 
-Повторный запуск обновляет поля существующих событий и не трогает решения пользователей (они ссылаются на id).
+Повторный запуск обновляет поля существующих событий, но не трогает выставленный куратором status
+(если не передан --status) и решения пользователей (они ссылаются на id).
 """
 from __future__ import annotations
 
@@ -24,9 +25,9 @@ DEFAULT_FILE = Path(__file__).with_name("events_2026-10-23.json")
 
 def upsert_events(session: Session, items: list[dict], status: str | None = None) -> tuple[int, int]:
     created = updated = 0
-    existing = {e.slug: e for e in session.scalars(select(Event).where(Event.slug.in_([i["slug"] for i in items])))}
-    for raw in items:
-        ev = EventIn.model_validate(raw)
+    parsed = [EventIn.model_validate(raw) for raw in items]
+    existing = {e.slug: e for e in session.scalars(select(Event).where(Event.slug.in_([ev.slug for ev in parsed])))}
+    for ev in parsed:
         data = ev.model_dump()
         data.pop("organizer_id", None)
         rating = data.pop("rating")
@@ -38,6 +39,8 @@ def upsert_events(session: Session, items: list[dict], status: str | None = None
             session.add(Event(**data))
             created += 1
         else:
+            if not status:
+                data.pop("status")  # статус модерации куратора важнее файла
             for k, v in data.items():
                 setattr(obj, k, v)
             updated += 1

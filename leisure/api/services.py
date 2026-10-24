@@ -1,8 +1,12 @@
-"""Сервисный слой: БД ↔ ядро. Один модуль, чтобы бот, воркер и роутеры звали одно и то же."""
+"""Сервисный слой: БД ↔ ядро. Один модуль, чтобы бот, воркер и роутеры звали одно и то же.
+
+«Сегодня» всегда считается по часовому поясу профиля (или города по умолчанию), а не по часам сервера.
+"""
 from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,6 +23,23 @@ from leisure.core.timeutil import (event_dates, event_times, is_free, is_horizon
 from leisure.db.models import Decision, Digest, Event, Profile
 
 
+# ─── время ───
+def _zone(tz: str | None) -> ZoneInfo:
+    try:
+        return ZoneInfo(tz or settings.DEFAULT_TZ)
+    except Exception:  # noqa: BLE001
+        return ZoneInfo(settings.DEFAULT_TZ)
+
+
+def local_today(p: Profile | None = None, now: datetime | None = None) -> date:
+    now = now or datetime.now(timezone.utc)
+    return now.astimezone(_zone(p.tz if p else None)).date()
+
+
+def today_or(p: Profile | None, today: date | None) -> date:
+    return today or local_today(p)
+
+
 # ─── события ───
 def event_view(ev: dict) -> dict:
     return {**ev, "slot": slot_of(ev), "free": is_free(ev)}
@@ -31,10 +52,15 @@ def upcoming_events(session: Session, city: str, today: date) -> list[dict]:
 
 
 def get_event(session: Session, key: str) -> Event | None:
-    try:
-        return session.get(Event, uuid.UUID(str(key)))
-    except (ValueError, AttributeError):
-        return session.scalar(select(Event).where(Event.slug == key))
+    key = str(key).strip()
+    if len(key) == 36 and key.count("-") == 4:
+        try:
+            ev = session.get(Event, uuid.UUID(key))
+            if ev is not None:
+                return ev
+        except ValueError:
+            pass
+    return session.scalar(select(Event).where(Event.slug == key))
 
 
 def page_url(ev: dict) -> str:
@@ -67,6 +93,7 @@ def get_or_create_profile(session: Session, user_id: int, name: str = "", userna
 
 
 def update_profile(session: Session, p: Profile, data: dict) -> Profile:
+    """data — словарь из ProfileIn.model_dump(exclude_none=True); словари сливаются, остальное заменяется."""
     for k in ("name", "username", "city", "notes", "tz", "digest_day", "digest_hour"):
         if data.get(k) is not None:
             setattr(p, k, data[k])
@@ -75,10 +102,12 @@ def update_profile(session: Session, p: Profile, data: dict) -> Profile:
     if data.get("interests") is not None:
         p.interests = {**(p.interests or {}), **{k: int(v) for k, v in data["interests"].items()}}
     if data.get("params") is not None:
-        p.params = {**(p.params or {}), **data["params"]}
+        p.params = {**(p.params or {}), **{k: v for k, v in data["params"].items() if v is not None}}
     if data.get("consent") and p.consent_at is None:
         p.consent_at = datetime.now(timezone.utc)
-    if p.onboarded_at is None and data.get("values") is not None and data.get("interests") is not None:
+    # Онбординг идёт по шагам (ценности → интересы → параметры): считаем завершённым по явному флагу
+    # или по шагу «интересы» — с него профиль уже можно скорить.
+    if p.onboarded_at is None and (data.get("onboarded") or data.get("interests") is not None):
         p.onboarded_at = datetime.now(timezone.utc)
     session.commit()
     session.refresh(p)
@@ -109,8 +138,16 @@ def recompute_affinity(session: Session, p: Profile) -> dict:
     return p.affinity
 
 
+def _default_day(ev: Event, today: date) -> date | None:
+    """День решения по умолчанию: первая дата события не раньше сегодня, иначе последняя известная."""
+    ds = sorted(ev.dates or [])
+    if not ds:
+        return None
+    return next((d for d in ds if d >= today), ds[-1])
+
+
 def set_decision(session: Session, user_id: int, ev: Event, status: str, reason: str | None = None,
-                 day: str | None = None, rating: int | None = None) -> Decision:
+                 day: date | None = None, rating: int | None = None) -> Decision:
     if status not in DECISION_STATUSES:
         raise ValueError(f"status должен быть одним из {DECISION_STATUSES}")
     p = get_or_create_profile(session, user_id)
@@ -119,8 +156,8 @@ def set_decision(session: Session, user_id: int, ev: Event, status: str, reason:
         d = Decision(user_id=user_id, event_id=ev.id)
         session.add(d)
     d.status = status
-    d.reason = reason if status == "мимо" or status == "пропуск" else None
-    d.day = date.fromisoformat(day) if day else (d.day or (ev.dates[0] if ev.dates else None))
+    d.reason = reason if status in ("мимо", "пропуск") else None
+    d.day = day or d.day or _default_day(ev, local_today(p))
     if rating is not None:
         d.rating = rating
     d.event_slug, d.event_category, d.event_tags = ev.slug, ev.category, list(ev.tags or [])
@@ -148,21 +185,25 @@ def decision_view(d: Decision) -> dict:
 
 
 # ─── дайджест ───
-def recently_shown_ids(session: Session, user_id: int, n: int | None = None) -> set[str]:
-    """События из последних n дайджестов, на которые не было реакции."""
+def recently_shown_ids(session: Session, user_id: int, before_weekend: date, n: int | None = None) -> set[str]:
+    """События из последних n ОТПРАВЛЕННЫХ дайджестов за прошлые уикенды, на которые не было реакции."""
     n = n or int(scoring_config()["recommend"]["digests_without_reaction"])
-    digests = session.scalars(select(Digest).where(Digest.user_id == user_id).order_by(Digest.weekend_start.desc()).limit(n)).all()
+    digests = session.scalars(
+        select(Digest).where(Digest.user_id == user_id, Digest.sent_at.is_not(None), Digest.weekend_start < before_weekend)
+        .order_by(Digest.weekend_start.desc()).limit(n)).all()
     shown = {str(it.get("event_id")) for dg in digests for it in (dg.items or [])}
     reacted = {str(d.event_id) for d in user_decisions(session, user_id) if d.event_id}
     return shown - reacted
 
 
-def core_digest(session: Session, p: Profile, today: date) -> tuple[CoreDigest, list[dict], dict[str, ScoreResult]]:
+def core_digest(session: Session, p: Profile, today: date, weekend: list[str] | None = None
+                ) -> tuple[CoreDigest, list[dict], dict[str, ScoreResult]]:
+    weekend = weekend or weekend_iso(today)
     events = upcoming_events(session, p.city, today)
     decs = [d.as_core() for d in user_decisions(session, p.user_id)]
-    weekend = weekend_iso(today)
     scores = score_events(events, p.as_core(), decs, aff=p.affinity or None)
-    dg = build_digest(events, p.as_core(), decs, weekend, recently_shown=recently_shown_ids(session, p.user_id), scores=scores)
+    recent = recently_shown_ids(session, p.user_id, date.fromisoformat(weekend[0]))
+    dg = build_digest(events, p.as_core(), decs, weekend, recently_shown=recent, scores=scores)
     return dg, events, scores
 
 
@@ -180,18 +221,22 @@ def digest_view(p: Profile, dg: CoreDigest) -> dict:
     return {"user_id": p.user_id, "weekend": dg.weekend, "title": weekend_title(dg.weekend), "items": items, "horizon": horizon}
 
 
-def digest_preview(session: Session, user_id: int, today: date) -> dict:
-    p = get_or_create_profile(session, user_id)
-    dg, _, _ = core_digest(session, p, today)
+def digest_preview(session: Session, p: Profile, today: date | None = None) -> dict:
+    dg, _, _ = core_digest(session, p, today_or(p, today))
     return digest_view(p, dg)
 
 
-def save_digest(session: Session, p: Profile, dg: CoreDigest, sent: bool = False) -> Digest:
-    ws = date.fromisoformat(dg.weekend[0])
-    row = session.scalar(select(Digest).where(Digest.user_id == p.user_id, Digest.weekend_start == ws))
+def digest_row(session: Session, p: Profile, weekend_start: date) -> Digest:
+    row = session.scalar(select(Digest).where(Digest.user_id == p.user_id, Digest.weekend_start == weekend_start))
     if row is None:
-        row = Digest(user_id=p.user_id, weekend_start=ws)
+        row = Digest(user_id=p.user_id, weekend_start=weekend_start, items=[])
         session.add(row)
+        session.commit()
+    return row
+
+
+def save_digest(session: Session, p: Profile, dg: CoreDigest, sent: bool = False) -> Digest:
+    row = digest_row(session, p, date.fromisoformat(dg.weekend[0]))
     row.items = dg.items(int(scoring_config()["why"]["max_total"]))
     if sent:
         row.sent_at = datetime.now(timezone.utc)
@@ -199,9 +244,9 @@ def save_digest(session: Session, p: Profile, dg: CoreDigest, sent: bool = False
     return row
 
 
-def scored_events(session: Session, user_id: int, today: date) -> list[dict]:
+def scored_events(session: Session, p: Profile, today: date | None = None) -> list[dict]:
     """Полный дайджест для веба: все предстоящие события с баллом, по убыванию совпадения."""
-    p = get_or_create_profile(session, user_id)
+    today = today_or(p, today)
     events = upcoming_events(session, p.city, today)
     decs = [d.as_core() for d in user_decisions(session, p.user_id)]
     scores = score_events(events, p.as_core(), decs, aff=p.affinity or None)
@@ -212,8 +257,8 @@ def scored_events(session: Session, user_id: int, today: date) -> list[dict]:
 
 
 # ─── план ───
-def plan(session: Session, user_id: int, today: date) -> dict:
-    p = get_or_create_profile(session, user_id)
+def plan(session: Session, p: Profile, today: date | None = None) -> dict:
+    today = today_or(p, today)
     weekend = weekend_iso(today)
     events = {e["id"]: e for e in upcoming_events(session, p.city, today)}
     decs = [d for d in user_decisions(session, p.user_id) if d.status in ("иду", "может") and d.event_id and str(d.event_id) in events]
@@ -243,5 +288,6 @@ def plan(session: Session, user_id: int, today: date) -> dict:
     return {"weekend": weekend, "title": weekend_title(weekend), "days": days, "horizon": horizon, "text": text}
 
 
-def ics_for(ev: dict, day: str | None) -> str:
-    return ics_text(ev, day, uid_domain=settings.WEB_BASE_URL.split("//")[-1].split("/")[0] or "leisure")
+def ics_for(ev: dict, day: date | str | None) -> str:
+    d = day.isoformat() if isinstance(day, date) else day
+    return ics_text(ev, d, uid_domain=settings.WEB_BASE_URL.split("//")[-1].split("/")[0] or "leisure")

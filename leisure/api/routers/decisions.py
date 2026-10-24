@@ -15,10 +15,6 @@ def list_decisions(user_id: int, session: Session = Depends(get_session)) -> lis
 
 @router.post("", response_model=DecisionOut)
 def post_decision(body: DecisionIn, session: Session = Depends(get_session)) -> dict:
-    try:
-        body.check()
-    except ValueError as e:
-        raise HTTPException(422, str(e))
     ev = services.get_event(session, body.event)
     if ev is None:
         raise HTTPException(404, "событие не найдено")

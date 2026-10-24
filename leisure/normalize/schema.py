@@ -26,17 +26,17 @@ class EventIn(BaseModel):
     slug: str
     title: str = Field(min_length=3, max_length=300)
     category: str = Field(min_length=2, max_length=80)
-    subcategory: str = ""
+    subcategory: str = Field(default="", max_length=80)
     kind: str = "событие"
-    city: str = "Москва"
+    city: str = Field(default="Москва", max_length=80)
     dates: list[date] = Field(min_length=1)
-    time_text: str = ""
+    time_text: str = Field(default="", max_length=200)
     start_time: time | None = None
     end_time: time | None = None
     duration_min: int | None = Field(default=None, ge=0, le=24 * 60 * 14)
     venue: str = ""
     address: str = ""
-    metro: str = ""
+    metro: str = Field(default="", max_length=200)
     lat: float | None = None
     lon: float | None = None
     price_from: int | None = Field(default=None, ge=0)

@@ -14,15 +14,16 @@ router = APIRouter(prefix="/api/events", tags=["события"])
 
 
 @router.get("", response_model=list[EventOut])
-def list_events(city: str = settings.DEFAULT_CITY, today: date | None = None, day: str | None = None,
+def list_events(city: str = settings.DEFAULT_CITY, today: date | None = None, day: date | None = None,
                 category: str | None = None, free: bool = False, horizon: bool | None = None,
                 session: Session = Depends(get_session)) -> list[dict]:
-    today = today or date.today()
+    today = today or services.local_today()
     weekend = weekend_iso(today)
+    day_s = day.isoformat() if day else None
     out = []
     for ev in services.upcoming_events(session, city, today):
         v = services.event_view(ev)
-        if day and day not in v["dates"]:
+        if day_s and day_s not in v["dates"]:
             continue
         if category and v["category"] != category:
             continue
@@ -45,7 +46,7 @@ def get_event(key: str, session: Session = Depends(get_session)) -> dict:
 
 
 @router.get("/{key}/ics")
-def event_ics(key: str, day: str | None = Query(default=None), session: Session = Depends(get_session)) -> Response:
+def event_ics(key: str, day: date | None = Query(default=None), session: Session = Depends(get_session)) -> Response:
     ev = services.get_event(session, key)
     if ev is None or ev.status != "published":
         raise HTTPException(404, "событие не найдено")

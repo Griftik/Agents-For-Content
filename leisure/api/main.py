@@ -4,8 +4,11 @@
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 
+from leisure import settings
 from leisure.admin.views import mount_admin
 
 from .routers import catalog, decisions, digest, events, profiles
@@ -23,3 +26,5 @@ def health() -> dict:
 
 
 mount_admin(app)
+if not settings.API_KEY:
+    logging.getLogger("leisure.api").warning("API_KEY не задан — маршруты профиля/решений/дайджеста открыты (только для разработки)")

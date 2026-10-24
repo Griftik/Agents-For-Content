@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import services
@@ -10,7 +10,9 @@ router = APIRouter(prefix="/api/profile", tags=["профиль"], dependencies=
 
 @router.get("/{user_id}", response_model=ProfileOut)
 def get_profile(user_id: int, session: Session = Depends(get_session)) -> dict:
-    p = services.get_or_create_profile(session, user_id)
+    p = services.get_profile(session, user_id)
+    if p is None:
+        raise HTTPException(404, "профиль не найден — создаётся первым PUT или /start в боте")
     return services.profile_view(p, services.user_decisions(session, user_id))
 
 

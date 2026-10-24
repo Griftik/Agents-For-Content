@@ -15,13 +15,19 @@ load_dotenv(ROOT / ".env")
 load_dotenv(ROOT.parent / ".env")  # общий .env Фабрики, если переменные лежат там
 
 
+PLACEHOLDER = "REPLACE_ME"
+DEV_SECRET = "dev-only-change-me"
+
+
 def _opt(name: str, default: str = "") -> str:
-    return os.getenv(name, default).strip()
+    """Значение переменной; пустое или плейсхолдер из .env.example считаются незаданными."""
+    val = os.getenv(name, "").strip()
+    return default if not val or val == PLACEHOLDER else val
 
 
 def _req(name: str) -> str:
     val = _opt(name)
-    if not val or val == "REPLACE_ME":
+    if not val:
         raise RuntimeError(
             f"Не задана переменная окружения {name}. Впиши её в leisure/.env (шаблон — leisure/.env.example)."
         )
@@ -36,12 +42,11 @@ REDIS_URL = _opt("REDIS_URL", "redis://localhost:6379/0")
 DEFAULT_CITY = _opt("LEISURE_CITY", "Москва")
 DEFAULT_TZ = _opt("LEISURE_TZ", "Europe/Moscow")
 WEB_BASE_URL = _opt("WEB_BASE_URL", "http://localhost:8000")  # публичные страницы событий /e/<slug>
-SCORING_CONFIG = Path(_opt("SCORING_CONFIG", str(ROOT / "core" / "scoring.yaml")))
 
 # ─── Админка ───
 ADMIN_USER = _opt("ADMIN_USER", "admin")
 ADMIN_PASSWORD = _opt("ADMIN_PASSWORD", "")  # пустой пароль = админка выключена
-SECRET_KEY = _opt("SECRET_KEY", "dev-only-change-me")
+SECRET_KEY = _opt("SECRET_KEY", DEV_SECRET)  # с DEV_SECRET админка не поднимается
 # Общий ключ для бота/воркера/веба к API (заголовок X-API-Key). Пустой = API открыт (только для разработки).
 API_KEY = _opt("API_KEY", "")
 

@@ -49,3 +49,12 @@ def test_plan_text(by_slug, weekend):
     assert text.startswith("План на 23–25 октября\n\nСуббота, 24 окт\n")
     lines = text.split("\n")
     assert lines[3].startswith("• 12:00–20:00 — ") and lines[4].startswith("• 13:00–15:00 — ")  # по времени
+
+
+def test_ics_lines_folded():
+    ev = {"title": "Очень длинное название события " * 6, "dates": ["2026-10-24"], "time_text": "19:00",
+          "venue": "Площадка", "address": "Длинный адрес, дом 1, строение 2", "metro": "Метро", "description": "Описание " * 40}
+    ics = ics_text(ev, "2026-10-24")
+    assert all(len(line.encode("utf-8")) <= 75 for line in ics.split("\r\n"))
+    unfolded = ics.replace("\r\n ", "")
+    assert "SUMMARY:Очень длинное название события " in unfolded and "END:VCALENDAR" in unfolded
