@@ -160,6 +160,7 @@ class ProfileIn(BaseModel):
     tz: str | None = Field(default=None, max_length=64)
     digest_day: int | None = Field(default=None, ge=1, le=7)
     digest_hour: int | None = Field(default=None, ge=0, le=23)
+    ref_code: str | None = Field(default=None, max_length=8, description="код рекомендации/приглашения из start_param: новому человеку ставит source и referred_by")
     show_name: bool | None = None         # показывать ли имя друзьям (приглашения)
     can_write: bool | None = None         # бот может писать человеку (Mini App: после requestWriteAccess true)
     offer_seen: int | None = Field(default=None, ge=0, le=2)   # предложение своей подборки приглашённому: 0 / 1 («Потом») / 2 (повтор показан)
@@ -321,12 +322,12 @@ class InviteOpenIn(BaseModel):
 
 
 class InviteAcceptIn(InviteOpenIn):
-    status: str = Field(pattern="^(going|maybe)$")
+    status: str = Field(pattern="^(going|maybe|declined)$")      # declined — «Другие выходные под меня»: запись без решения
     consent: bool = False               # согласие на обработку данных при первом касании (когда профиля или согласия нет)
 
 
 class InviteAcceptOut(BaseModel):
-    decision: DecisionOut
+    decision: DecisionOut | None        # null для status=declined
     together_with: str | None           # имя пригласившего (если не скрыто)
     profile_state: str                  # new | onboarded
 
@@ -341,5 +342,8 @@ class CatalogOut(BaseModel):
     areas: list[str]
     times: list[str]
     default_profile: dict
+    category_values: dict[str, dict[str, float]] = {}
+    proposed_n: int = 8
+    proposed_top: int = 5
     value_clusters: dict[str, list[str]] = {}
     value_short: dict[str, str] = {}

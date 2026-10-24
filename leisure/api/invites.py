@@ -77,14 +77,15 @@ def display_name(p: Profile | None) -> str | None:
 
 
 def status_of(session: Session, inv: Invite, today: date) -> str:
-    """active | past (событие прошло) | unpublished (снято с публикации) | gone (событие удалено)."""
+    """unpublished (событие снято с публикации или удалено) | past (прошло) | gone (пригласивший удалил профиль, событие доступно) |
+    active. Событие важнее пригласившего: нельзя звать на то, чего нет или что уже прошло."""
     ev = inv.event
-    if ev is None:
-        return "gone"
-    if ev.status != "published":
+    if ev is None or ev.status != "published":
         return "unpublished"
     last = inv.day or (max(ev.dates) if ev.dates else None)
-    return "past" if last is not None and last < today else "active"
+    if last is not None and last < today:
+        return "past"
+    return "gone" if inv.inviter_id is None else "active"
 
 
 def open_invite(session: Session, inv: Invite, user_id: int) -> tuple[InviteAccept, bool]:
@@ -143,7 +144,7 @@ def companion_names(session: Session, user_id: int, d: Decision) -> list[str]:
     names: list[str] = []
     if d.invite_id:
         inv = session.get(Invite, d.invite_id)
-        if inv is not None and inv.inviter_id != user_id:
+        if inv is not None and inv.inviter_id is not None and inv.inviter_id != user_id:
             names.append(display_name(session.get(Profile, inv.inviter_id)) or HIDDEN_NAME)
     if d.event_id:
         rows = session.execute(
@@ -256,7 +257,7 @@ def create_for_api(session: Session, user_id: int, ev: Event | None, day: date |
 
 def view(session: Session, inv: Invite, user_id: int | None = None) -> dict:
     """GET /api/invites/{code}: карточка события как в дайджесте, день, имя пригласившего (если не скрыто), статус, число принявших."""
-    inviter = session.get(Profile, inv.inviter_id)
+    inviter = session.get(Profile, inv.inviter_id) if inv.inviter_id else None
     p = services.get_profile(session, user_id) if user_id else None
     today = services.local_today(p)
     item = None
@@ -272,7 +273,8 @@ def view(session: Session, inv: Invite, user_id: int | None = None) -> dict:
     return {"code": inv.code, "kind": inv.kind, "event": item, "event_slug": inv.event_slug or None,
             "day": inv.day.isoformat() if inv.day else None,
             "inviter_name": display_name(inviter), "is_own": user_id is not None and user_id == inv.inviter_id,
-            "status": "active" if inv.kind == "ref" else status_of(session, inv, today), "accepted": inv.accepted,
+            "status": ("gone" if inv.inviter_id is None else "active") if inv.kind == "ref" else status_of(session, inv, today),
+            "accepted": inv.accepted,
             "my_status": mine}
 
 
@@ -290,21 +292,32 @@ def web_open(session: Session, inv: Invite, user_id: int, name: str = "", userna
 
 def accept_result(session: Session, inv: Invite, user_id: int, d: Decision) -> dict:
     p = services.get_profile(session, user_id)
-    return {"decision": services.decision_view(d), "together_with": display_name(session.get(Profile, inv.inviter_id)),
+    inviter = session.get(Profile, inv.inviter_id) if inv.inviter_id else None
+    return {"decision": services.decision_view(d) if d is not None else None, "together_with": display_name(inviter),
             "profile_state": "onboarded" if p is not None and p.onboarded_at is not None else "new"}
 
 
 def web_accept(session: Session, inv: Invite, user_id: int, status: str, name: str = "", username: str = "",
-               consent: bool = False) -> tuple[Decision, bool]:
-    """«Иду» / «может быть» по приглашению из Mini App. Первое касание без профиля или согласия требует consent=True: тогда профиль
-    получает согласие, source=invite и referred_by. Повторное принятие тем же человеком идемпотентно (счётчики и уведомление не
-    дублируются; смена «может» ↔ «иду» разрешена). Возвращает (решение, первое_ли_принятие)."""
+               consent: bool = False) -> tuple[Decision | None, bool]:
+    """«Иду» / «может быть» / «declined» по приглашению из Mini App.
+
+    going / maybe: первое касание без профиля или согласия требует consent=True — профиль получает согласие, source=invite и
+    referred_by. Повтор идемпотентен (счётчики и уведомление не дублируются; смена «может» ↔ «иду» разрешена).
+    declined («Другие выходные под меня»): запись в invite_accepts без решения и без согласия; уже принявшего не откатывает.
+    Возвращает (решение или None, первое_ли_принятие)."""
     if inv.kind != "event":
         raise ValueError("принять можно только приглашение на событие")
     if inv.inviter_id == user_id:
         raise OwnInvite()
+    if status == "declined":
+        acc = web_open(session, inv, user_id, name, username)
+        if acc.status in ("opened", "declined"):
+            acc.status = "declined"
+            session.commit()
+        d = session.scalar(select(Decision).where(Decision.user_id == user_id, Decision.invite_id == inv.id))
+        return d, False
     state = status_of(session, inv, services.local_today(services.get_profile(session, user_id)))
-    if state != "active":
+    if state not in ("active", "gone"):
         raise InviteUnavailable(state)
     web_open(session, inv, user_id, name, username)
     p = services.get_profile(session, user_id)
@@ -315,6 +328,18 @@ def web_accept(session: Session, inv: Invite, user_id: int, status: str, name: s
     adopt_new_profile(session, p, inv)
     first = session.scalar(select(InviteAccept.accepted_at).where(InviteAccept.invite_id == inv.id, InviteAccept.user_id == user_id)) is None
     return accept_invite(session, inv, user_id, status), first
+
+
+def apply_ref_code(session: Session, p: Profile, code: str) -> bool:
+    """PUT /api/profile с ref_code: новому человеку (профиль не настроен, источник не задан) ставит source и referred_by по коду
+    рекомендации или приглашения; учитывает открытие. Неизвестный код и свой собственный игнорируются. True — источник проставлен."""
+    inv = get_invite(session, code)
+    if inv is None or inv.inviter_id == p.user_id:
+        return False
+    before = p.source
+    open_invite(session, inv, p.user_id)
+    adopt_new_profile(session, p, inv)
+    return p.source != before
 
 
 INDIVIDUAL_NOTICES = 3          # по одному приглашению первые три друга сообщаются отдельно, дальше — сводка раз в день
@@ -331,7 +356,7 @@ def _deliver(session: Session, inviter_id: int, text: str) -> bool | None:
     """Отправить пригласившему через бота. True — ушло; False — не ушло, повторить позже; None — писать не нужно/нельзя."""
     from leisure.worker import send as send_mod
 
-    inviter = session.get(Profile, inviter_id)
+    inviter = session.get(Profile, inviter_id) if inviter_id else None
     if inviter is None or not inviter.active:
         return None
     res = send_mod.send_sync([(inviter_id, text, [[{"text": "Мой план", "callback_data": "pl:s"}]])])
@@ -385,7 +410,7 @@ def notify_many(session: Session, now: datetime | None = None, hour: int = 10, i
     sent = 0
     for invite_id, accs in by_invite.items():
         inv = session.get(Invite, invite_id)
-        inviter = session.get(Profile, inv.inviter_id)
+        inviter = session.get(Profile, inv.inviter_id) if inv.inviter_id else None
         if inviter is None or inv.event is None:
             for acc in accs:
                 acc.notified_at = now

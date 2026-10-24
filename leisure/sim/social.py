@@ -82,7 +82,7 @@ def user_id_of(f: Friend) -> int:
 
 def p_invite(p: Persona, soc: float, friend_fit: float) -> float:
     """После «иду» зовёт друга: общительность и вовлечённость, плюс подходит ли событие другу (его скрытый вкус)."""
-    return max(0.0, min(0.9, 0.12 + 0.35 * soc + 0.12 * p.engagement + 0.25 * (friend_fit - 0.5)))
+    return max(0.0, min(0.9, 0.02 + 0.22 * soc + 0.08 * p.engagement + 0.2 * (friend_fit - 0.5)))
 
 
 def p_accept(friend_fit: float, going: bool = True) -> float:

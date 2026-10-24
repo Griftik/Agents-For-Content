@@ -124,6 +124,7 @@ class FakeTelegram:
         self.calls: list[dict] = []
         self.violations: list[dict] = []
         self.blocked: set[int] = set()
+        self.cannot_initiate: set[int] = set()    # Mini App-профили без права писать: бот им первым написать не может (Forbidden)
         self.commands: list[list[dict]] = []
         self.callbacks: dict[str, dict] = {}
         self._cb_seq = 0
@@ -259,6 +260,10 @@ class FakeTelegram:
             if exc is not None:
                 self._record(method="SendMessage", chat_id=chat_id, ok=False, error=type(exc).__name__, text=plain_text(m.text, pm)[:80])
                 raise exc
+        if chat_id in self.cannot_initiate:
+            self._record(method="SendMessage", chat_id=chat_id, ok=False, error="Forbidden: bot can't initiate conversation with a user",
+                         text=plain_text(m.text, pm)[:80])
+            raise TelegramForbiddenError(method=m, message="Forbidden: bot can't initiate conversation with a user")
         if chat_id in self.blocked:
             self._record(method="SendMessage", chat_id=chat_id, ok=False, error="Forbidden: bot was blocked by the user",
                          text=plain_text(m.text, pm)[:80])

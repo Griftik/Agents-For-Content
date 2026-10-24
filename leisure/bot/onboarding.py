@@ -147,6 +147,8 @@ def act(session, uid: int, parts: list[str], mode_hint: str | None, dirty: bool,
         invites_service.mark_ref_joined(session, uid)
         services.update_profile(session, p, {"consent": True, "values": weights_from_top([]),
                                              "params": d["params"]}, auto_onboarded=False)
+        p.params = {k: v for k, v in (p.params or {}).items() if k != "interests_basis"}   # заново: ценности ещё не подтверждены
+        session.commit()
         p = services.get_profile(session, uid)
         out = screen_values(p)
         out.mode = "start"
@@ -165,6 +167,10 @@ def act(session, uid: int, parts: list[str], mode_hint: str | None, dirty: bool,
         else:
             top.append(v)
         p = _set_values(session, p, top)
+        if len(top) == kb.TOP_N and not (p.params or {}).get("interests_basis"):
+            # Автопереход: пятая ценность при первом прохождении «Шага 1» сразу открывает «Шаг 2» (без «Дальше →»). Признак «ценности
+            # подтверждены» — interests_basis в черновике: после возврата по «← Назад» или снятия-и-выбора кнопка «Дальше →» остаётся.
+            return _go(session, p, "i", mode, False, "")
         return screen_values(p)
 
     if cmd == "ct":

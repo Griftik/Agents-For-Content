@@ -70,7 +70,8 @@ def open_invite(code: str, body: InviteOpenIn, x_user_id: str | None = Header(de
 @router.post("/invites/{code}/accept", response_model=InviteAcceptOut)
 def accept_invite(code: str, body: InviteAcceptIn, x_user_id: str | None = Header(default=None),
                   session: Session = Depends(get_session)) -> dict:
-    """«Иду» (going) или «Может быть» (maybe). Первое касание без профиля: consent=true, иначе 409 consent_required.
+    """«Иду» (going), «Может быть» (maybe) или declined («Другие выходные под меня»: запись без решения, согласие не нужно).
+    Первое касание без профиля: consent=true, иначе 409 consent_required.
     410 — событие прошло, снято с публикации или удалено; 400 — своё приглашение. Повтор идемпотентен."""
     uid = _uid(body.user_id, x_user_id)
     inv = _invite(session, code)
@@ -84,7 +85,7 @@ def accept_invite(code: str, body: InviteAcceptIn, x_user_id: str | None = Heade
         raise HTTPException(400, "своё приглашение принять нельзя")
     except ValueError as e:
         raise HTTPException(400, str(e))
-    if body.status == "going":
+    if body.status == "going" and d is not None:
         inv_service.notify_inviter(session, inv, uid)   # один раз: повтор и «может» → «иду» не дублируют уведомление
     return inv_service.accept_result(session, inv, uid, d)
 

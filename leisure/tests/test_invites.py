@@ -152,7 +152,7 @@ def test_get_invite_unpublished_and_gone(client, db, event, seed_raw):
         db.delete(ev)
         db.commit()
         got = client.get(f"/api/invites/{code}", headers=H).json()
-        assert got["status"] == "gone" and got["event"] is None and got["event_slug"] == slug
+        assert got["status"] == "unpublished" and got["event"] is None and got["event_slug"] == slug     # событие удалено
     finally:
         db.expire_all()
         e = db.scalar(select(Event).where(Event.slug == slug))
@@ -470,11 +470,77 @@ def test_growth_metrics_one_request(client, db, event, sent):
     assert client.get("/api/metrics/growth", params={"since": since.isoformat()}).status_code == 401
 
 
-def test_deleting_inviter_removes_invite_and_keeps_friend_decision(client, db, event, sent):
+def test_inviter_deleted_gives_gone_status_and_friend_can_still_accept(client, db, event, sent):
+    """Пригласивший удалил профиль: ссылка живая, статус gone, имени нет; связи с ним в данных не остаётся."""
     code = _create(client, event)["code"]
     _accept(client, code, F1)
     services.delete_profile(db, INVITER)
-    assert client.get(f"/api/invites/{code}", headers=H).status_code == 404
+    got = client.get(f"/api/invites/{code}", headers=H, params={"user_id": F2})
+    assert got.status_code == 200
+    g = got.json()
+    assert g["status"] == "gone" and g["inviter_name"] is None and g["is_own"] is False and g["event"]["event"]["slug"] == event.slug
     db.expire_all()
     d = db.scalar(select(Decision).where(Decision.user_id == F1))
-    assert d.status == "иду" and d.invite_id is None and db.get(Profile, F1).referred_by is None
+    assert d.status == "иду" and d.invite_id is not None and db.get(Profile, F1).referred_by is None
+    n = len(sent)
+    r = _accept(client, code, F2)
+    assert r.status_code == 200 and r.json()["together_with"] is None and r.json()["decision"]["status"] == "иду"
+    assert len(sent) == n                                                      # уведомлять некого
+    assert services.companion_names(db, F2, db.scalar(select(Decision).where(Decision.user_id == F2))) == []
+    db.expire_all()
+    assert db.get(Profile, F2).source == "invite" and db.get(Profile, F2).referred_by is None
+    assert client.get("/api/invites/ZZZZZZZZ", headers=H).status_code == 404   # а неизвестный код — по-прежнему 404
+
+
+def test_declined_records_without_decision_or_consent(client, db, event, sent):
+    code = _create(client, event)["code"]
+    r = _accept(client, code, F1, status="declined", consent=False)
+    assert r.status_code == 200 and r.json()["decision"] is None and r.json()["profile_state"] == "new"
+    db.expire_all()
+    acc = db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1))
+    assert acc.status == "declined" and acc.accepted_at is None
+    assert db.scalar(select(Decision).where(Decision.user_id == F1)) is None and db.get(Profile, F1).consent_at is None
+    assert db.scalar(select(Invite).where(Invite.code == code)).accepted == 0 and not sent
+    assert _accept(client, code, F1, status="declined", consent=False).status_code == 200            # повтор безвреден
+    # потом передумал и пошёл: declined уступает going
+    assert _accept(client, code, F1).json()["decision"]["status"] == "иду"
+    # а принявшего declined не откатывает
+    r = _accept(client, code, F1, status="declined", consent=False)
+    assert r.json()["decision"]["status"] == "иду"
+    db.expire_all()
+    assert db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1)).status == "going"
+    assert _accept(client, code, INVITER, status="declined").status_code == 400
+    assert client.get(f"/api/invites/{code}", headers=H, params={"user_id": F2}).json()["status"] == "active"
+    # declined на прошедшем событии тоже записывается: человек уходит в свою подборку
+    past = _create(client, event, day="2026-01-05")["code"]
+    assert _accept(client, past, F2, status="declined", consent=False).status_code == 200
+
+
+def test_put_profile_ref_code_sets_source_once(client, db):
+    ref = client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()["code"]
+    r = client.put(f"/api/profile/{F1}", headers=H, json={"name": "Гость", "ref_code": ref})
+    assert r.status_code == 200 and r.json()["source"] == "ref"
+    db.expire_all()
+    p = db.get(Profile, F1)
+    assert p.source == "ref" and p.referred_by == INVITER and p.can_write is False
+    inv = db.scalar(select(Invite).where(Invite.code == ref))
+    assert inv.opened == 1
+    client.put(f"/api/profile/{F1}", headers=H, json={"ref_code": ref})                 # повтор: ничего не накручивается
+    db.refresh(inv)
+    assert inv.opened == 1
+    client.put(f"/api/profile/{F2}", headers=H, json={"ref_code": "NOSUCH00"})           # чужой код игнорируется
+    client.put(f"/api/profile/{INVITER}", headers=H, json={"ref_code": ref})              # свой — тоже
+    db.expire_all()
+    assert db.get(Profile, F2).source == "organic" and db.get(Profile, INVITER).source == "organic"
+    # профиль, уже пришедший по приглашению, источник не меняет
+    p3 = client.put(f"/api/profile/{F3}", headers=H, json={"ref_code": ref}).json()
+    assert p3["source"] == "ref" and client.put(f"/api/profile/{F3}", headers=H, json={"ref_code": "ZZZZZZZZ"}).json()["source"] == "ref"
+    assert client.put(f"/api/profile/{F4}", headers=H, json={"ref_code": "123456789"}).status_code == 422
+
+
+def test_catalog_gives_category_values_for_web(client):
+    from leisure.core.catalog import ALL_CATS, CATEGORY_VALUES, VALUES
+    cat = client.get("/api/catalog").json()
+    assert cat["category_values"] == CATEGORY_VALUES and set(cat["category_values"]) == set(ALL_CATS)
+    assert all(v in VALUES for d in cat["category_values"].values() for v in d)
+    assert cat["proposed_n"] == 8 and cat["proposed_top"] == 5

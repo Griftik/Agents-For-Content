@@ -215,7 +215,7 @@ class Invite(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(8), unique=True, index=True, nullable=False)
-    inviter_id: Mapped[int] = mapped_column(ForeignKey("profiles.user_id", ondelete="CASCADE"), index=True, nullable=False)
+    inviter_id: Mapped[int | None] = mapped_column(ForeignKey("profiles.user_id", ondelete="SET NULL"), index=True, nullable=True)   # NULL: пригласивший удалил профиль
     event_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
     event_slug: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     day: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -224,7 +224,7 @@ class Invite(Base):
     accepted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)     # сколько приняло («иду» / «может быть»; для ref — начали онбординг)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    inviter: Mapped[Profile] = relationship(foreign_keys=[inviter_id])
+    inviter: Mapped[Profile | None] = relationship(foreign_keys=[inviter_id])
     event: Mapped[Event | None] = relationship()
     accepts: Mapped[list["InviteAccept"]] = relationship(back_populates="invite", cascade="all, delete-orphan")
 

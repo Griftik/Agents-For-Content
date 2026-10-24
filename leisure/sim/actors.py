@@ -46,8 +46,13 @@ class Findings:
         self.count: Counter = Counter()
         self.examples: dict[str, list[str]] = {}
         self.users: dict[str, set] = {}
+        self.ignore: set[int] = set()          # приглашённые и пришедшие по ссылке: их наблюдения в основные счётчики не идут
+        self.guest_count: Counter = Counter()
 
     def add(self, code: str, msg: str, uid: int | None = None, t: datetime | None = None, n: int = 1) -> None:
+        if uid is not None and uid in self.ignore:
+            self.guest_count[code] += n
+            return
         self.count[code] += n
         if uid is not None:
             self.users.setdefault(code, set()).add(uid)
@@ -145,6 +150,8 @@ class Driver:
         self.commands: list[dict] = []
         self.updates = 0
         self.handler_errors = 0
+        self.on_going: Callable[[PState, CardRec], None] | None = None        # «иду» нажато: социальный граф решает, звать ли друга
+        self.on_rated: Callable[[PState, int, list], None] | None = None      # оценка поставлена: момент рекомендации
         self.on_same_day_go: Callable[[PState], None] | None = None   # «иду» на сегодня после 09:00 — воркер напомнит на ближайшем часовом запуске
 
     # ───────── базовые операции ─────────
@@ -300,19 +307,24 @@ class Driver:
                 return self._abandon(ps, "values", i)
             if not await pick(v):
                 return "stuck"
-        if p.overselect:
-            s = self.screen(ps)
-            extra = self.find(s, lambda t: not t.startswith("✓ ") and t in {VALUE_SHORT.get(x, x) for x in VALUES})
-            if extra is not None:
-                r = await self.tap(ps, s, extra, "шестая ценность")
-                ps.onb["overselect_toast"] = r["toast"]
-                self.f.add("sixth_value", f"шестая ценность «{extra['text']}» → тост «{r['toast']}»", p.user_id, self.clock.now)
         s = self.screen(ps)
-        btn = self.find(s, lambda t: t.startswith("Дальше"))
-        if btn is None:
-            self._stuck(ps, "values", "Дальше →")
-            return "stuck"
-        await self.tap(ps, s, btn)
+        if s is not None and "Шаг 1 из 2" not in s.text:                 # пятая ценность при первом проходе сама открывает «Шаг 2» (автопереход)
+            ps.onb["auto_advance"] = True
+            if p.overselect:
+                self.f.add("overselect_skipped", "шестую ценность нажать нельзя: после пятой экран уже сменился", p.user_id, self.clock.now)
+        else:
+            if p.overselect:
+                extra = self.find(s, lambda t: not t.startswith("✓ ") and t in {VALUE_SHORT.get(x, x) for x in VALUES})
+                if extra is not None:
+                    r = await self.tap(ps, s, extra, "шестая ценность")
+                    ps.onb["overselect_toast"] = r["toast"]
+                    self.f.add("sixth_value", f"шестая ценность «{extra['text']}» → тост «{r['toast']}»", p.user_id, self.clock.now)
+            s = self.screen(ps)
+            btn = self.find(s, lambda t: t.startswith("Дальше"))
+            if btn is None:
+                self._stuck(ps, "values", "Дальше →")
+                return "stuck"
+            await self.tap(ps, s, btn)
         close("values")
 
         # ── Шаг 2 из 2: интересы ──
@@ -641,6 +653,7 @@ class Driver:
 
     def _set_decision(self, ps: PState, rec: DigestRec, card: CardRec, status: str, res: dict, reason: str | None = None) -> None:
         d = ps.decisions.get(card.event_id)
+        fresh = d is None or d.get("status") != status
         if d is None or d.get("status") != status:
             redecided = d is not None and d.get("week") != rec.week
             d = {"status": status, "reason": reason, "week": rec.week, "card_day": card.day, "cycle": self.cycle_of(self.clock.now),
@@ -660,6 +673,8 @@ class Driver:
             local = self.clock.now.astimezone(ZoneInfo(ps.p.tz))
             if reason is None and self.on_same_day_go and card.day == local.date().isoformat() and local.hour >= 9:
                 self.on_same_day_go(ps)
+            if reason is None and fresh and self.on_going is not None:
+                self.on_going(ps, card)
             if ps.first_go_taps is None:
                 ps.first_go_taps = ps.taps
                 ps.first_go_cycle = self.cycle_of(self.clock.now)
@@ -835,8 +850,11 @@ class Driver:
             if btn is None:
                 self.f.add("missing_button", f"оценка: кнопки {rating} ★ нет", p.user_id, self.clock.now)
                 continue
+            n_chat = len(self.world.chats[p.user_id])
             res = await self.tap(ps, st, btn, f"оценка {rating}")
             ok = res["exc"] is None and res["toast"] != ERROR_TOAST
+            if ok and self.on_rated is not None:
+                self.on_rated(ps, rating, list(self.world.chats[p.user_id][n_chat:]))
             if ok:
                 ps.ratings.append({"event_id": eid, "rating": rating})
                 ps.decisions.setdefault(eid, {"status": "иду", "reason": None, "week": None, "card_day": None})["rating"] = rating

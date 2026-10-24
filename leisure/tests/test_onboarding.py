@@ -71,11 +71,9 @@ def test_values_screen_has_19_buttons_in_four_clusters():
     assert all(len(b["callback_data"].encode()) <= 64 for r in five for b in r if "callback_data" in b)
 
 
-def test_path_nothing_changes_is_10_presses(db):
+def test_path_nothing_changes_is_9_presses(db):
     chat = Chat()
-    mid = _start_and_pick_five(chat)
-    assert "Выбрано 5 из 5: Творчество, Дружба, Развитие, Эстетика, Покой. Нажми «Дальше»." in chat.world.get(UID, mid).text
-    chat.tap(mid, "Дальше →")
+    mid = _start_and_pick_five(chat)                                # пятая ценность сама открывает «Шаг 2 из 2», «Дальше →» не нужен
     assert chat.world.get(UID, mid).text.startswith("Шаг 2 из 2 · Интересы")
     p = _profile(db)
     assert p.onboarded_at is None                                   # готов только после подборки
@@ -89,7 +87,7 @@ def test_path_nothing_changes_is_10_presses(db):
     assert _profile(db).params["budget"] == 2500
     assert p.values["Творчество"] == 5 and p.values["Природа"] == 2 and p.params["aesthetics"] is True
     toast = chat.tap(mid, "Показать подборку")
-    assert toast == "Собираю подборку." and chat.presses() == 10      # было 9 + нажатие на бюджет
+    assert toast == "Собираю подборку." and chat.presses() == 9       # /start, согласие, 5 ценностей (пятая открывает Шаг 2), бюджет, «Показать подборку»
     assert chat.world.get(UID, mid).text.startswith("Профиль сохранён.\nГлавные ценности: ")
     assert "Бюджет: до 2 500 ₽." in chat.world.get(UID, mid).text
     assert chat.world.get(UID, mid).rows is None
@@ -105,7 +103,6 @@ def test_path_nothing_changes_is_10_presses(db):
 def test_budget_row_repeat_tap_is_silent_and_default_is_not_important(db):
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     assert _profile(db).params["budget"] == 0 and "● Не важно" in [b for r in chat.rows(mid) for b in r]
     assert chat.tap(mid, "до 1 000 ₽") == "" and chat.tap(mid, "до 1 000 ₽") == ""                 # повторное нажатие тихое
     assert _profile(db).params["budget"] == 1000 and "● до 1 000 ₽" in [b for r in chat.rows(mid) for b in r]
@@ -113,10 +110,9 @@ def test_budget_row_repeat_tap_is_silent_and_default_is_not_important(db):
     assert _profile(db).params["budget"] == 0 and not chat.world.violations
 
 
-def test_typical_path_is_13_presses(db):
+def test_typical_path_is_12_presses(db):
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     shown = [b for r in chat.rows(mid)[:-4] for b in r]
     assert len(shown) == 8
     first = shown[5]                                                # шестое из восьми — уровень 2 («✓ …»)
@@ -132,7 +128,7 @@ def test_typical_path_is_13_presses(db):
                  and not b.startswith(("✓", "—")))
     chat.tap(mid, other)                                            # добавил направление (12)
     chat.tap(mid, "Показать подборку")                              # (13)
-    assert chat.presses() == 13 and _profile(db).onboarded_at is not None
+    assert chat.presses() == 12 and _profile(db).onboarded_at is not None
 
 
 def test_draft_survives_bot_restart_and_brush_sets_level(db):
@@ -140,7 +136,6 @@ def test_draft_survives_bot_restart_and_brush_sets_level(db):
     mid = _start_and_pick_five(chat)
     chat2 = Chat()                                                  # новый диспетчер = пустая память FSM (перезапуск бота)
     chat2.world, chat2.bot = chat.world, chat.bot
-    chat2.tap(mid, "Дальше →")
     assert chat2.world.get(UID, mid).text.startswith("Шаг 2 из 2")
     chat2.tap(mid, "Все направления")
     chat2.tap(mid, "В первую очередь")
@@ -155,7 +150,6 @@ def test_draft_survives_bot_restart_and_brush_sets_level(db):
 def test_changing_values_recomputes_interests_and_says_so(db):
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     chat.tap(mid, "Все направления")
     chat.press(mid, "ob:cs:0:0")                                    # ручная правка
     chat.tap(mid, "← К восьми")
@@ -169,9 +163,58 @@ def test_changing_values_recomputes_interests_and_says_so(db):
     assert chat.tap(mid, "Показать подборку") == "Собираю подборку."
 
 
+def test_fifth_value_opens_step_two_by_itself_only_the_first_time(db):
+    """Автопереход (FLOW-ONBOARDING Э1): при первом прохождении пятая ценность открывает «Шаг 2» без «Дальше →»; после возврата по
+    «← Назад» и после «снял и выбрал снова» кнопка «Дальше →» остаётся."""
+    chat = Chat()
+    chat.say("/start")
+    mid = chat.last_mid()
+    chat.tap(mid, "Принять и начать")
+    for label in FIVE[:4]:
+        chat.tap(mid, label)
+        assert chat.world.get(UID, mid).text.startswith("Шаг 1 из 2")
+    assert "Дальше →" not in [b for r in chat.rows(mid) for b in r]
+    chat.tap(mid, FIVE[4])                                          # пятое — само на Шаг 2
+    assert chat.world.get(UID, mid).text.startswith("Шаг 2 из 2") and chat.presses() == 2 + 5
+    chat.tap(mid, "← Назад")                                        # возврат: пять выбраны, «Дальше →» на месте, автоперехода нет
+    assert chat.world.get(UID, mid).text.startswith("Шаг 1 из 2") and "Дальше →" in [b for r in chat.rows(mid) for b in r]
+    chat.tap(mid, "Покой")                                          # снял одно из пяти
+    assert "Дальше →" not in [b for r in chat.rows(mid) for b in r]
+    chat.tap(mid, "Покой")                                          # выбрал снова: пять, но Шаг 1 остаётся
+    assert chat.world.get(UID, mid).text.startswith("Шаг 1 из 2") and "Дальше →" in [b for r in chat.rows(mid) for b in r]
+    chat.tap(mid, "Дальше →")
+    assert chat.world.get(UID, mid).text.startswith("Шаг 2 из 2")
+
+
+def test_auto_advance_does_not_repeat_after_reset_and_restarts_after_new_consent(db):
+    chat = Chat()
+    mid = _start_and_pick_five(chat)
+    chat.tap(mid, "Показать подборку")
+    chat.say("/reset")                                              # настроенный профиль: пять уже выбраны, «Дальше →» есть, автоперехода нет
+    rmid = chat.last_mid()
+    assert "Дальше →" in [b for r in chat.rows(rmid) for b in r]
+    # человек, бросивший настройку и начавший с согласия заново, проходит автопереход снова
+    services.delete_profile(db, UID)
+    chat2 = Chat()
+    chat2.say("/start")
+    m2 = chat2.last_mid()
+    chat2.tap(m2, "Принять и начать")
+    for label in FIVE:
+        chat2.tap(m2, label)
+    assert chat2.world.get(UID, m2).text.startswith("Шаг 2 из 2")
+    chat2.tap(m2, "← Назад")
+    chat2.tap(m2, "← Назад")                                        # к приветствию
+    assert chat2.world.get(UID, m2).text.startswith("Я подбираю события")
+    chat2.tap(m2, "Принять и начать")                               # согласие заново: ценности сброшены и снова не подтверждены
+    for label in FIVE:
+        chat2.tap(m2, label)
+    assert chat2.world.get(UID, m2).text.startswith("Шаг 2 из 2")
+
+
 def test_sixth_value_is_refused_and_next_needs_five(db):
     chat = Chat()
     mid = _start_and_pick_five(chat)
+    chat.tap(mid, "← Назад")                                        # автопереход уже случился; шестую проверяем на Шаге 1
     assert chat.tap(mid, "Природа") == "Уже пять. Сними одну, чтобы выбрать другую."
     chat.tap(mid, "Покой")
     assert "Дальше →" not in [b for r in chat.rows(mid) for b in r]
@@ -181,7 +224,6 @@ def test_sixth_value_is_refused_and_next_needs_five(db):
 def test_menu_setup_budget_times_kids_note_and_redo(db):
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     chat.tap(mid, "Показать подборку")
     head = next(m for m in chat.world.chats[UID] if not m.from_user and "вот первая подборка" in m.text)
     n_before = len(chat.world.chats[UID])
@@ -215,7 +257,6 @@ def test_old_note_button_still_saves_the_note(db):
     """Поле и обработчик остаются (API пишет заметку), в меню и в /profile кнопки больше нет."""
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     chat.tap(mid, "Показать подборку")
     chat.say("/profile")
     assert not any("Заметка" in b for r in chat.rows(chat.last_mid()) for b in r)
@@ -229,7 +270,6 @@ def test_old_note_button_still_saves_the_note(db):
 def test_profile_mode_saves_without_new_digest(db):
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     chat.tap(mid, "Показать подборку")
     n = len(chat.world.chats[UID])
     chat.say("/profile")
@@ -247,7 +287,6 @@ def test_profile_mode_saves_without_new_digest(db):
 def test_reset_keeps_consent_and_sends_regular_digest(db):
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     chat.tap(mid, "Показать подборку")
     chat.say("/reset")
     assert chat.last_text().startswith("Настроим заново. Новые ответы заменят прежние, а решения по событиям останутся.")
@@ -295,7 +334,6 @@ def test_rebuilt_digest_is_written_to_digest_items_of_the_same_weekend(db):
     """Д3 отчёта: «Пересобрать подборку» перезаписывает Digest.items того же уикенда, а не оставляет первую подборку."""
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     chat.tap(mid, "Показать подборку")
     first_ids = _shown_event_ids(chat, 0)
     assert first_ids and {str(it["event_id"]) for it in db.scalar(select(Digest).where(Digest.user_id == UID)).items} == first_ids
@@ -323,7 +361,6 @@ def test_nudge_after_second_expensive_miss_once_and_only_when_budget_not_set(db)
     ev = db.scalars(select(Event).where(Event.status == "published").order_by(Event.slug).limit(4)).all()
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     chat.tap(mid, "Показать подборку")
 
     def card(i):
@@ -361,7 +398,6 @@ def test_no_nudge_when_budget_already_set(db):
     ev = db.scalars(select(Event).where(Event.status == "published").order_by(Event.slug).limit(2)).all()
     chat = Chat()
     mid = _start_and_pick_five(chat)
-    chat.tap(mid, "Дальше →")
     chat.tap(mid, "до 2 500 ₽")
     chat.tap(mid, "Показать подборку")
     for e in ev:

@@ -18,8 +18,11 @@ def get_profile(user_id: int, session: Session = Depends(get_session)) -> dict:
 
 @router.put("/{user_id}", response_model=ProfileOut)
 def put_profile(user_id: int, body: ProfileIn, session: Session = Depends(get_session)) -> dict:
-    p = services.get_or_create_profile(session, user_id)
+    p = services.get_or_create_profile(session, user_id, via_bot=False)   # профиль создаёт веб: бот этому человеку пока писать не может
     p = services.update_profile(session, p, body.model_dump(exclude_none=True))
+    if body.ref_code:
+        from .. import invites
+        invites.apply_ref_code(session, p, body.ref_code)
     return services.profile_view(p, services.user_decisions(session, user_id))
 
 

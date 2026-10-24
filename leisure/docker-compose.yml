@@ -28,6 +28,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://leisure:${POSTGRES_PASSWORD:-leisure}@db:5432/leisure
       REDIS_URL: redis://redis:6379/0
+      NEXT_PUBLIC_BOT_USERNAME: ${NEXT_PUBLIC_BOT_USERNAME:-}
+      MINIAPP_SHORT_NAME: ${MINIAPP_SHORT_NAME:-}   # одно имя приложения на все сервисы, задаётся в .env
     command: sh -c "alembic -c leisure/alembic.ini upgrade head && uvicorn leisure.api.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
@@ -44,6 +46,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://leisure:${POSTGRES_PASSWORD:-leisure}@db:5432/leisure
       REDIS_URL: redis://redis:6379/0
+      NEXT_PUBLIC_BOT_USERNAME: ${NEXT_PUBLIC_BOT_USERNAME:-}
+      MINIAPP_SHORT_NAME: ${MINIAPP_SHORT_NAME:-}   # одно имя приложения на все сервисы, задаётся в .env
     command: python -m leisure.worker.schedules
     depends_on:
       db:
@@ -60,6 +64,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://leisure:${POSTGRES_PASSWORD:-leisure}@db:5432/leisure
       REDIS_URL: redis://redis:6379/0
+      NEXT_PUBLIC_BOT_USERNAME: ${NEXT_PUBLIC_BOT_USERNAME:-}
+      MINIAPP_SHORT_NAME: ${MINIAPP_SHORT_NAME:-}   # одно имя приложения на все сервисы, задаётся в .env
     command: python -m leisure.bot.main
     depends_on:
       db:
@@ -78,6 +84,7 @@ services:
       API_KEY: ${API_KEY:-}
       LEISURE_BOT_TOKEN: ${LEISURE_BOT_TOKEN:-}
       NEXT_PUBLIC_BOT_USERNAME: ${NEXT_PUBLIC_BOT_USERNAME:-}
+      NEXT_PUBLIC_MINIAPP_SHORT_NAME: ${MINIAPP_SHORT_NAME:-}   # тот же MINIAPP_SHORT_NAME из .env
       WEB_BASE_URL: ${WEB_BASE_URL:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
     ports:

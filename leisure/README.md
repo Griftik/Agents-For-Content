@@ -71,17 +71,17 @@ seed: `docker compose exec api python -m leisure.seed.load`.
 
 | Метод | Путь | Что |
 |---|---|---|
-| GET | `/api/catalog` | ценности, категории, теги, причины, профиль по умолчанию — для онбординга |
+| GET | `/api/catalog` | ценности, категории, теги, причины, профиль по умолчанию — для онбординга; `category_values` (веса пяти ценностей по направлениям), `proposed_n` (8) и `proposed_top` (5) — для предложения интересов |
 | GET | `/api/events?today=&day=&category=&free=&horizon=` | опубликованные события с будущими датами |
 | GET | `/api/events/{slug}`, `/api/events/{slug}/ics?day=` | публичная карточка, файл календаря |
-| GET/PUT | `/api/profile/{user_id}` | профиль; PUT — частичное обновление, `consent: true` фиксирует согласие |
+| GET/PUT | `/api/profile/{user_id}` | профиль; PUT — частичное обновление, `consent: true` фиксирует согласие; `ref_code` (до 8 знаков) при первом касании ставит `source` и `referred_by`, повторно не перезаписывает |
 | POST/DELETE | `/api/decisions` | решение иду / может / интересно / мимо (+ причина, день, оценка); пересчитывает affinity |
 | GET | `/api/digest/{user_id}/preview?today=` | 5 слотов + «на горизонте», с причинами, ссылками (`links`: gcal, outlook, ics, tg, page), днями уикенда и текущим решением (`decision` или null) |
 | GET | `/api/digest/{user_id}/all?today=` | все события с баллом, ссылками и текущим решением — для веба с фильтрами |
 | GET | `/api/plan/{user_id}?today=` | план по дням, конфликты по времени, `companions` («вдвоём с Имя»), текст для копирования |
 | POST | `/api/invites` | приглашение друга (`event_slug`, `day`) или ссылка-рекомендация (`kind: ref`): `code`, `url` (Mini App), `web_url`, `share_text` |
-| GET | `/api/invites/{code}?user_id=` | карточка события, `day`, `inviter_name` (null при скрытом имени), `status` (active / past / unpublished / gone), `accepted`, `is_own`, `event_slug` |
-| POST | `/api/invites/{code}/open`, `/accept` | открытие и принятие («going» / «maybe», `consent: true` при первом касании): `decision`, `together_with`, `profile_state` |
+| GET | `/api/invites/{code}?user_id=` | карточка события, `day`, `inviter_name` (null при скрытом имени), `status` (active / past / unpublished / gone; приоритет unpublished > past > gone > active), `accepted`, `is_own`, `event_slug` |
+| POST | `/api/invites/{code}/open`, `/accept` | открытие и принятие (`status`: `going` / `maybe` / `declined`, `consent: true` при первом касании): `decision` (для `declined` null), `together_with`, `profile_state`; неизвестный код — 404 |
 | GET | `/api/metrics/growth?since=` | метрики роста из `docs/GROWTH.md` §4 |
 
 Маршруты профиля, решений и дайджеста требуют заголовок `X-API-Key` (значение `API_KEY` из `.env`); без настроенного
@@ -126,3 +126,7 @@ seed: `docker compose exec api python -m leisure.seed.load`.
 - **Человек из Mini App, которому бот писать не может** (`Profile.can_write = false` — профиль создал API, бот не запускали): Forbidden на «Плане на сегодня» и «Как прошло?» молча пропускается, профиль остаётся активным. `can_write = true` ставит `/start` или `PUT /api/profile` после `requestWriteAccess`. Планы и «Как прошло?» идут всем с согласием, в том числе не прошедшим онбординг.
 - **План «вдвоём с Имя»** (`companions` в плане, строка в «Плане на сегодня» и в `/plan`; несколько друзей — «С друзьями (n)»). Переключатель `show_name`, флаги `can_write` и `offer_seen` (0 — предложение своей подборки не показывали, 1 — «Потом», 2 — повтор показан или «Не нужно») пишутся через `PUT /api/profile/{id}`.
 - **Рекомендация.** После оценки 4–5 бот не чаще раза в 14 дней просит поделиться ссылкой `startapp=ref_<код>` (URL-кнопка; показ пишется в `growth_events`), после 1–2 спрашивает «что было не так» теми же причинами, что у «Мимо» (причина пишется в `Decision.reason`, статус «иду» и оценка остаются). Новый человек по ref-ссылке (Mini App `POST /api/invites/{code}/open` или `/start ref_<код>`) получает `source = ref` и `referred_by`; по диплинку события `e_<slug>` — `source = share`. Метрика «Рекомендация» считает показы, после которых ссылку открыли: нажатие URL-кнопки бот не видит.
+- **Контракт API (кратко, подробно — `docs/GROWTH.md` §6).** `POST /api/invites` создаёт код; `GET /api/invites/{code}` отдаёт карточку и статус; `POST .../open` фиксирует открытие и источник; `POST .../accept` принимает решение. `declined` («Другие выходные под меня») пишет запись в `invite_accepts` без решения и без согласия и не трогает уже принятое going/maybe. Уведомление пригласившему уходит только при `going`.
+- **Статус `gone` и миграция 0006.** Если пригласивший удалил профиль, приглашение живёт: `invites.inviter_id` стал nullable с `ON DELETE SET NULL`, `inviter_name` пуст, статус `gone`, друг по-прежнему может принять; в списке «идут вместе» удалённый пропускается. Событие снято или удалено — всегда `unpublished` (410 на принятие). Миграция проверена вверх-вниз-вверх, `alembic check` чистый.
+- **Автопереход на «Шаге 1 из 2» (онбординг).** Пятое выбранное значение сразу открывает Шаг 2 без «Дальше →». Признак — `params.interests_basis` в черновике профиля: пока он пуст, автопереход срабатывает один раз. «Дальше →» остаётся при возврате по «← Назад» и когда человек снял одно из пяти и выбрал снова; шестое значение отклоняется. Автопереход возвращается после нового согласия у ненастроенного профиля. Путь без правок — 9 нажатий, типичный (с бюджетом) — 12; покрыто `tests/test_onboarding.py`.
+- **Имя Mini App задаётся один раз:** `MINIAPP_SHORT_NAME` в `.env`; compose отдаёт его api/worker/bot как есть, а web — как `NEXT_PUBLIC_MINIAPP_SHORT_NAME`.

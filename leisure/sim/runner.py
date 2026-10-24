@@ -122,6 +122,37 @@ def migrate(url: str) -> None:
         raise RuntimeError("alembic upgrade head не прошёл:\n" + r.stderr[-1500:])
 
 
+CLOCK_SQL = [
+    "CREATE TABLE sim_clock (id int PRIMARY KEY, now timestamptz NOT NULL)",
+    "INSERT INTO sim_clock VALUES (1, '2026-10-20T00:00:00+00')",
+    """CREATE FUNCTION sim_stamp() RETURNS trigger AS $$
+       BEGIN
+         IF TG_TABLE_NAME = 'invite_accepts' THEN
+           IF TG_OP = 'INSERT' THEN NEW.opened_at := (SELECT now FROM sim_clock WHERE id = 1); END IF;
+         ELSIF TG_TABLE_NAME IN ('invites', 'growth_events') THEN
+           IF TG_OP = 'INSERT' THEN NEW.created_at := (SELECT now FROM sim_clock WHERE id = 1); END IF;
+         ELSE
+           IF TG_OP = 'INSERT' THEN NEW.created_at := (SELECT now FROM sim_clock WHERE id = 1); END IF;
+           NEW.updated_at := (SELECT now FROM sim_clock WHERE id = 1);
+         END IF;
+         RETURN NEW;
+       END $$ LANGUAGE plpgsql""",
+] + [f"CREATE TRIGGER sim_stamp_{t} BEFORE INSERT OR UPDATE ON {t} FOR EACH ROW EXECUTE FUNCTION sim_stamp()"
+     for t in ("profiles", "decisions", "invites", "invite_accepts", "growth_events")]
+
+
+def install_db_clock(url: str) -> None:
+    """Часы БД: `server_default=now()` у created_at/opened_at/updated_at подменяются триггерами, читающими sim_clock. Без этого метрики
+    «онбординг в течение двух недель», «просьба о рекомендации не чаще раза в 14 дней» сравнивали бы время симуляции с настоящим."""
+    from sqlalchemy import create_engine, text
+
+    eng = create_engine(url, isolation_level="AUTOCOMMIT")
+    with eng.connect() as c:
+        for q in CLOCK_SQL:
+            c.execute(text(q))
+    eng.dispose()
+
+
 @contextlib.contextmanager
 def use_database(url: str):
     """Переключает движок продукта на url (и возвращает назад): settings.DATABASE_URL + сброс кэшей engine/session_factory."""
@@ -175,9 +206,26 @@ def patched_product(world, clock: Clock):
     from leisure.bot import onboarding
     from leisure.worker import send as send_mod
 
+    from leisure.api import invites as inv_service
+
+    from .social_run import API_KEY, BOT_USERNAME, MINIAPP
+
     saved = (services.utcnow, send_mod.send_messages, send_mod.SEND_INTERVAL, send_mod.RETRY_DELAYS, settings.WEB_BASE_URL,
              onboarding.POLICY_URL)
+    saved_api = (settings.API_KEY, settings.BOT_USERNAME, settings.MINIAPP_SHORT_NAME, services.datetime, inv_service.datetime)
     WEB_ORIGINAL.setdefault("url", settings.WEB_BASE_URL)
+
+    class SimDatetime(datetime):
+        """`datetime.now()` продукта в модулях профилей и приглашений (consent_at, onboarded_at, accepted_at, просьба о рекомендации)
+        отдаёт часы симуляции; остальные операции datetime — настоящие."""
+
+        @classmethod
+        def now(cls, tz=None):
+            t = clock.now
+            return t.astimezone(tz) if tz else t.replace(tzinfo=None)
+
+    settings.API_KEY, settings.BOT_USERNAME, settings.MINIAPP_SHORT_NAME = API_KEY, BOT_USERNAME, MINIAPP
+    services.datetime = inv_service.datetime = SimDatetime
 
     async def fake_send_messages(messages):
         return await send_mod.send_with_bot(world.bot, messages)
@@ -194,6 +242,7 @@ def patched_product(world, clock: Clock):
     finally:
         (services.utcnow, send_mod.send_messages, send_mod.SEND_INTERVAL, send_mod.RETRY_DELAYS, settings.WEB_BASE_URL,
          onboarding.POLICY_URL) = saved
+        settings.API_KEY, settings.BOT_USERNAME, settings.MINIAPP_SHORT_NAME, services.datetime, inv_service.datetime = saved_api
 
 
 class LogCatcher(logging.Handler):
@@ -238,6 +287,11 @@ class Sim:
         self.scenarios: dict = {}
         self.job_fns: dict = {}
         self.resend: dict = {"stage": 0, "tried": []}
+        self.social = None              # социальный граф (ТЗ-B); None — без приглашений (--no-social)
+        self.social_enabled = True
+        self.guest_data: dict = {}
+        self._clock_eng = None
+        self._clock_written = None
 
     # ── очередь ──
     def push(self, t: datetime, prio: int, kind: str, payload=None) -> None:
@@ -437,6 +491,12 @@ class Sim:
                                      "parse_mode": str(getattr(self.bot.default, "parse_mode", None))}
         self.driver = Driver(self.world, self.bot, lambda: self.dp, self.clock, self.f, self.events, cycle_of)
         self.driver.on_same_day_go = self.lazy_plan
+        if self.social_enabled:
+            from .social_run import Social
+
+            self.social = Social(self, {"at_local": at_local, "PRIO_USER": PRIO_USER, "MSK": MSK, "FRI0": FRI0})
+            self.driver.on_going = self.social.on_going
+            self.driver.on_rated = self.social.on_rated
         await self.fault_probe()
 
     async def fault_probe(self) -> None:
@@ -491,13 +551,39 @@ class Sim:
         await self.startup()
 
         self.job_fns = {"build": schedules.job_build_digests, "send": schedules.job_send_digests,
-                        "plan": schedules.job_plan_today, "feedback": schedules.job_how_was_it}
+                        "plan": schedules.job_plan_today, "feedback": schedules.job_how_was_it,
+                        "invites": schedules.job_invite_notifications}
         self.schedule()
-        while self.heap:
-            t, _, _, kind, payload = heapq.heappop(self.heap)
-            if t > self.clock.now:
-                self.clock.now = t
-            await getattr(self, "on_" + kind)(payload)
+        if self.social is not None:
+            last = FRI0 + timedelta(days=7 * self.weeks + 3)
+            day = START.date()
+            while day <= last:                              # в проде job_invite_notifications крутится каждую минуту: гоняем раз в час
+                for h in range(24):
+                    self.push(datetime(day.year, day.month, day.day, h, 5, tzinfo=UTC), PRIO_JOB, "job", "invites")
+                day += timedelta(days=1)
+        from sqlalchemy import create_engine, text
+
+        from leisure import settings
+        self._clock_eng = create_engine(settings.DATABASE_URL, isolation_level="AUTOCOMMIT")
+        try:
+            while self.heap:
+                t, _, _, kind, payload = heapq.heappop(self.heap)
+                if t > self.clock.now:
+                    self.clock.now = t
+                if self._clock_written != self.clock.now:
+                    now = self.clock.now
+
+                    def write_clock(t=now):
+                        with self._clock_eng.connect() as c:
+                            c.execute(text("UPDATE sim_clock SET now = :t"), {"t": t})
+
+                    await asyncio.to_thread(write_clock)
+                    self._clock_written = now
+                await getattr(self, "on_" + kind)(payload)
+            if self.social is not None:
+                await self.social.finalize()
+        finally:
+            self._clock_eng.dispose()
 
     # ── проба «недоставленная карточка досылается»: одному человеку в четверговой рассылке 4 раза подряд 502 на первой карточке ──
     def _resend_before(self, name: str) -> None:
@@ -580,6 +666,26 @@ class Sim:
             return
         await self.driver.refine(ps)
         self.collect("rebuilt")
+
+    async def on_social(self, payload) -> None:
+        if self.social is not None:
+            await self.social.handle(payload)
+
+    def split_guests(self) -> None:
+        """Приглашённые и пришедшие по ссылке не входят в основные метрики п. 11: их наблюдения уходят в отдельные списки раздела «Рост»."""
+        guests = set(self.social.guests) if self.social else set()
+        gd = self.guest_data
+        gd["digest_recs"] = [r for r in self.digest_recs if r.uid in guests]
+        self.digest_recs = [r for r in self.digest_recs if r.uid not in guests]
+        for name in ("plan_pushes", "feedback_sent", "empty_notices"):
+            lst = getattr(self, name)
+            gd[name] = [x for x in lst if x["u"] in guests]
+            setattr(self, name, [x for x in lst if x["u"] not in guests])
+        drv = self.driver
+        gd["taps"] = [x for x in drv.taps if x["u"] in guests]
+        drv.taps = [x for x in drv.taps if x["u"] not in guests]
+        gd["commands"] = [x for x in drv.commands if x["u"] in guests]
+        drv.commands = [x for x in drv.commands if x["u"] not in guests]
 
     async def on_nudge_probe(self, _payload) -> None:
         """Подсказка про бюджет: второй «Мимо — дорого» при бюджете «не важно» (человек без правок бюджета и без других «дорого»)."""
@@ -1058,7 +1164,7 @@ def build_results(sim: Sim, args: dict, db_url: str, facts: dict, sens: dict, lo
 
 
 def run_simulation(users: int = 50, weeks: int = 5, seed: int = 20261024, db_url: str | None = None, keep_db: bool = False,
-                   out_dir: Path | None = None, log_path: Path | None = None, quiet: bool = False) -> dict:
+                   out_dir: Path | None = None, log_path: Path | None = None, quiet: bool = False, social: bool = True) -> dict:
     t_start = time.perf_counter()
     url = resolve_db_url(db_url)
     guard_db_name(url)
@@ -1071,6 +1177,7 @@ def run_simulation(users: int = 50, weeks: int = 5, seed: int = 20261024, db_url
     results: dict | None = None
     try:
         migrate(url)
+        install_db_clock(url)
         with use_database(url):
             created = seed_events()
             from leisure.db.models import Event
@@ -1092,10 +1199,12 @@ def run_simulation(users: int = 50, weeks: int = 5, seed: int = 20261024, db_url
             try:
                 with patched_product(world, clock):
                     sim = Sim(personas, weeks, seed, world, clock, events)
+                    sim.social_enabled = social
                     sim.catcher = catcher
                     if not quiet:
                         print(f"[sim] {len(personas)} персон, {weeks + 1} уикендов, старт {START.date()}", flush=True)
                     asyncio.run(sim.run())
+                    sim.split_guests()
                     facts = db_facts(sim)
                     sens = sensitivity(sim)
             finally:
@@ -1103,6 +1212,8 @@ def run_simulation(users: int = 50, weeks: int = 5, seed: int = 20261024, db_url
                 lg.propagate, lg.level = old_prop, old_level
             args = {"users": users, "weeks": weeks, "seed": seed}
             results = build_results(sim, args, url, facts, sens, catcher.records, time.perf_counter() - t_start, created, catcher.nothing)
+            if sim.social is not None:
+                results["growth"] = growth_results(sim)
             if log_path is not None:
                 log_path.parent.mkdir(parents=True, exist_ok=True)
                 with log_path.open("w", encoding="utf-8") as fh:
@@ -1116,6 +1227,24 @@ def run_simulation(users: int = 50, weeks: int = 5, seed: int = 20261024, db_url
     return results
 
 
+def growth_results(sim: Sim) -> dict:
+    """Раздел «Рост через друзей»: итоги Social.finalize и данные приглашённых, отделённые от основных метрик (Sim.split_guests)."""
+    soc = sim.social
+    g = dict(soc.final)
+    gd = sim.guest_data
+    gids = set(soc.guests)
+    ratings = [t["rating"] for t in gd.get("taps", []) if t["kind"] == "rating"]
+    g["guests"] = {"digests": len(gd.get("digest_recs", [])), "plan_pushes": len(gd.get("plan_pushes", [])), "feedback_requests": sum(x["n"] for x in gd.get("feedback_sent", [])),
+                   "ratings_n": len(ratings), "ratings_mean": round(sum(ratings) / len(ratings), 2) if ratings else None, "users": len(gids),
+                   "decisions_taps": sum(1 for t in gd.get("taps", []) if t["kind"] == "decision")}
+    g["invites"] = [{k: r.get(k) for k in ("code", "inviter", "friend", "inside", "event_id", "day", "t", "opened", "accept", "declined", "was_new",
+                                         "consent_409", "notified", "profile_state")} for r in soc.invites]
+    g["ref"] = {"asks": soc.ref_asks, "shares": [{k: v for k, v in x.items() if k != "link"} for x in soc.ref_shares], "newcomers": soc.ref_newcomers}
+    g["offers"] = soc.offers
+    g["onboarding_api"] = soc.onboard_api
+    return g
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Симулятор пользователей планировщика досуга")
     ap.add_argument("--users", type=int, default=50)
@@ -1124,6 +1253,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--db-url", default=None, help="база симуляции (имя содержит «sim»); по умолчанию leisure_sim на сервере из DATABASE_URL")
     ap.add_argument("--out-dir", default=str(SIM_DIR), help="куда писать REPORT.md и report.json")
     ap.add_argument("--keep-db", action="store_true", help="не удалять базу симуляции после прогона")
+    ap.add_argument("--no-social", action="store_true", help="без социального графа (приглашения друзей, рекомендации)")
     ap.add_argument("--no-log", action="store_true", help="не писать журнал вызовов out/sim_log.jsonl")
     args = ap.parse_args(argv)
     WEB_ORIGINAL["url"] = os.environ.get("WEB_BASE_URL") or "http://localhost:8000 (значение по умолчанию settings.py)"
@@ -1131,7 +1261,7 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(args.out_dir)
     log_path = None if args.no_log else out / "out" / "sim_log.jsonl"
     try:
-        results = run_simulation(args.users, args.weeks, args.seed, args.db_url, args.keep_db, out, log_path)
+        results = run_simulation(args.users, args.weeks, args.seed, args.db_url, args.keep_db, out, log_path, social=not args.no_social)
     except SystemExit:
         raise
     except Exception as e:  # noqa: BLE001

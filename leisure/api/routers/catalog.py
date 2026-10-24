@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from leisure.core.catalog import (ALL_CATS, AREA_OPTIONS, BUSINESS_CATS, CATS, COMPANY_OPTIONS, KNOWN_TAGS, REASONS,
                                   SLOTS, VALUE_CLUSTERS, VALUE_SHORT, VALUES, default_profile)
+from leisure.core.catalog import CATEGORY_VALUES, PROPOSED_N, PROPOSED_TOP
 
 from ..schemas import CatalogOut
 
@@ -12,4 +13,5 @@ router = APIRouter(prefix="/api/catalog", tags=["справочники"])
 def catalog() -> dict:
     return {"values": VALUES, "categories": CATS, "business_categories": BUSINESS_CATS, "tags": sorted(KNOWN_TAGS),
             "reasons": REASONS, "company": COMPANY_OPTIONS, "areas": AREA_OPTIONS, "times": SLOTS,
-            "default_profile": default_profile(), "value_clusters": VALUE_CLUSTERS, "value_short": VALUE_SHORT}
+            "default_profile": default_profile(), "value_clusters": VALUE_CLUSTERS, "value_short": VALUE_SHORT,
+            "category_values": CATEGORY_VALUES, "proposed_n": PROPOSED_N, "proposed_top": PROPOSED_TOP}
