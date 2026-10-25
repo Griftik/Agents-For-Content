@@ -1,12 +1,15 @@
-import type { Decision } from "./api-types";
+import type { Decision, PlanItem } from "./api-types";
 
 /** Прошедшие «иду» без отметки «сходил / не сходил»: точка на вкладке «План». */
-export const unmarkedPast = (decisions: Decision[], today: string): Decision[] =>
-  decisions.filter((d) => d.status === "иду" && !!d.day && d.day < today);
-export const hasUnmarkedPast = (decisions: Decision[], today: string): boolean => unmarkedPast(decisions, today).length > 0;
+export const unmarkedPast = (past: PlanItem[]): PlanItem[] => past.filter((it) => it.status === "иду" || it.status === "может");
+export const hasUnmarkedPast = (past: PlanItem[] | undefined): boolean => unmarkedPast(past ?? []).length > 0;
 
-/** Прошедшие решения для секции «Прошли»: «иду» без отметки первыми, затем отмеченные; не больше n. */
-export function pastDecisions(decisions: Decision[], today: string, n = 12): Decision[] {
-  const past = decisions.filter((d) => !!d.day && d.day < today && (d.status === "иду" || d.status === "сходил" || d.status === "не сходил"));
-  return past.sort((a, b) => (a.status === "иду" ? 0 : 1) - (b.status === "иду" ? 0 : 1) || (b.day ?? "").localeCompare(a.day ?? "")).slice(0, n);
+/** Секция «Прошли»: неотмеченные первыми, затем отмеченные; свежие выше; не больше n. */
+export function pastItems(past: PlanItem[] | undefined, n = 12): PlanItem[] {
+  const rank = (it: PlanItem) => (it.status === "иду" || it.status === "может" ? 0 : 1);
+  return [...(past ?? [])].sort((a, b) => rank(a) - rank(b) || b.day.localeCompare(a.day)).slice(0, n);
 }
+
+/** То же по решениям (для страниц без плана): «иду» с датой до сегодня. */
+export const hasUnmarkedDecisions = (decisions: Decision[], today: string): boolean =>
+  decisions.some((d) => d.status === "иду" && !!d.day && d.day < today);

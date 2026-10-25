@@ -1,5 +1,5 @@
 // Рисует иконки PWA без внешних зависимостей (PNG собирается вручную: zlib + CRC). Запуск: node scripts/make-icons.mjs
-// Знак: кольцо совпадения (как ScoreRing в интерфейсе) на бордовом фоне и латунная точка в центре. Цвета — DESIGN.md.
+// Знак: буква C (Catch) акцентом на фоне светлой темы. Цвета — DESIGN.md; окончательный знак опишет дизайн.
 import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -8,9 +8,8 @@ import { fileURLToPath } from "node:url";
 const out = resolve(dirname(fileURLToPath(import.meta.url)), "..", "public", "icons");
 mkdirSync(out, { recursive: true });
 
-const BG = [0x7a, 0x1f, 0x3d];
-const RING = [0xf1, 0xdf, 0xe6];
-const DOT = [0xd2, 0xb0, 0x65];
+const BG = [0xec, 0xee, 0xf1];   // --bg светлой темы
+const INK = [0x7a, 0x1f, 0x3d];  // --accent
 
 const crcTable = Array.from({ length: 256 }, (_, n) => {
   let c = n;
@@ -52,8 +51,11 @@ function png(size, scale, rounded) {
         let col = null;
         if (inside) {
           col = BG;
-          if (Math.abs(d - R * 0.74) <= R * 0.17) col = RING;
-          else if (d <= R * 0.22) col = DOT;
+          // буква C: кольцо толщиной 0.26R с вырезом справа (сектор ±38°)
+          const ang = Math.atan2(py - cx, px - cx);
+          const inRing = Math.abs(d - R * 0.62) <= R * 0.13;
+          const gap = Math.abs(ang) < (38 * Math.PI) / 180;
+          if (inRing && !gap) col = INK;
         }
         if (col) { r += col[0]; g += col[1]; b += col[2]; a += 255; }
       }

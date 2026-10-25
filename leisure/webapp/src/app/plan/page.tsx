@@ -4,12 +4,12 @@ import { ApiDown, AuthGate, NoProfile } from "@/components/Gate";
 import { InviteButton } from "@/components/InviteButton";
 import { Masthead } from "@/components/Masthead";
 import { PastMark } from "@/components/PastMark";
-import { ApiError, api } from "@/lib/api";
-import type { AccountProfile, EventT, PlanItem } from "@/lib/api-types";
+import { api } from "@/lib/api";
+import type { AccountProfiles, PlanItem } from "@/lib/api-types";
 import { dayLabel, timeLine } from "@/lib/feed";
 import { moscowToday, placeLine, timeRange } from "@/lib/format";
 import { load } from "@/lib/load";
-import { hasUnmarkedPast, pastDecisions } from "@/lib/plan";
+import { hasUnmarkedPast, pastItems } from "@/lib/plan";
 import { getProfileId, getUserId } from "@/lib/session";
 
 export const metadata: Metadata = { title: "План" };
@@ -52,42 +52,30 @@ export default async function PlanPage() {
   const pid = await getProfileId();
   if (!uid || !pid) return <AuthGate />;
   const today = moscowToday();
-  const loaded = await load(() => Promise.all([api.plan(pid), api.profile(pid), api.decisions(pid), api.profiles(uid).catch((): AccountProfile[] => [])]));
+  const loaded = await load(() => Promise.all([api.plan(pid), api.profile(pid), api.profiles(uid).catch((): AccountProfiles | null => null)]));
   if (loaded.kind === "no-profile") return <NoProfile />;
   if (loaded.kind === "down") return <ApiDown message={loaded.message} />;
-  const [plan, profile, decisions, profiles] = loaded.data;
+  const [plan, profile, acc] = loaded.data;
   if (!profile.has_consent) return <NoProfile />;
-  const list = profiles.length ? profiles : [{ id: uid, name: profile.name || "я", kind: "self", onboarded: profile.onboarded }];
-
-  // Прошедшие: решения с датой до сегодня; карточки событий подгружаем по слагу (API плана отдаёт только будущее)
-  const past = pastDecisions(decisions, today);
-  const pastEvents = await Promise.all(
-    past.map(async (d) => {
-      try {
-        return { d, ev: await api.event(d.event_slug) };
-      } catch (e) {
-        if (e instanceof ApiError) return { d, ev: null as EventT | null };
-        throw e;
-      }
-    }),
-  );
+  const list = acc?.profiles?.length ? acc.profiles : [{ user_id: uid, name: profile.name || "я", kind: "self", onboarded: profile.onboarded, is_main: true }];
+  const past = pastItems(plan.past);
   const days = plan.weekend.filter((d) => (plan.days[d] ?? []).length);
   const empty = days.length === 0 && plan.horizon.length === 0;
 
   return (
     <div className="wrap">
-      <Masthead title="План" tab="plan" profiles={list} activeId={pid} planDot={hasUnmarkedPast(decisions, today)} />
+      <Masthead title="План" tab="plan" profiles={list} activeId={pid} planDot={hasUnmarkedPast(plan.past)} />
       <main id="main" className="page reveal" style={{ paddingTop: 4, gap: 24 }}>
-        {pastEvents.length ? (
+        {past.length ? (
           <section className="pday" aria-labelledby="past-h">
-            <h2 id="past-h">Прошли <span className="svc">{pastEvents.length}</span></h2>
+            <h2 id="past-h">Прошли <span className="svc">{past.length}</span></h2>
             <div className="items">
-              {pastEvents.map(({ d, ev }) => (
-                <div key={d.event_slug} className="pitem">
-                  <span className="svc">{d.day ? dayLabel(d.day as `${number}-${number}-${number}`) : ""}{ev && timeRange(ev) ? ` · ${timeRange(ev)}` : ""}</span>
-                  <div className="n"><a href={`/e/${d.event_slug}`}>{ev?.title ?? d.event_slug}</a></div>
-                  {ev ? <div className="v">{ev.venue}</div> : null}
-                  <PastMark slug={d.event_slug} initialStatus={d.status} initialRating={d.rating} />
+              {past.map((it) => (
+                <div key={`${it.event.slug}-${it.day}`} className="pitem">
+                  <span className="svc">{dayLabel(it.day as `${number}-${number}-${number}`)}{timeRange(it.event) ? ` · ${timeRange(it.event)}` : ""}</span>
+                  <div className="n"><a href={`/e/${it.event.slug}`}>{it.event.title}</a></div>
+                  <div className="v">{it.event.venue}</div>
+                  <PastMark slug={it.event.slug} initialStatus={it.status} initialRating={it.rating ?? null} />
                 </div>
               ))}
             </div>

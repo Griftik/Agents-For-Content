@@ -10,11 +10,11 @@ import { getProfileId, getUserId } from "@/lib/session";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "Досуг", template: "%s · Досуг" },
-  description: "События под то, что для тебя важно: сегодня, завтра, на неделю.",
+  title: { default: "Catch", template: "%s · Catch" },
+  description: "Ничего интересного мимо тебя не пройдёт.",
   robots: { index: false, follow: false },
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "Досуг" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Catch" },
   icons: { apple: "/icons/apple-touch-icon.png", icon: "/icons/icon-192.png" },
 };
 

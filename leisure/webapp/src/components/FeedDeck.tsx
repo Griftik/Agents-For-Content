@@ -71,7 +71,13 @@ function Card({ it, today, counter, style, className, behind, onPointerDown, onP
  * Лента: одна карточка на экран, «Иду» и «Не моё» кнопками и свайпом (жест повторяет кнопки, не заменяет их). После действия 5 секунд
  * доступно «Отменить». Стрелки ←/→ делают то же, Enter — «Подробнее». Без JS страница показывает первую карточку и ссылку «Подробнее».
  */
-export function FeedDeck({ items, today, emptyLabel, nextLabel, nextHref }: { items: FeedItem[]; today: string; emptyLabel: string; nextLabel: string; nextHref: string | null }) {
+export function FeedDeck({ items, today, emptyLabel, nextLabel, nextHref, allHref }: {
+  items: FeedItem[]; today: string;
+  /** T-FEED-END / T-FEED-LATE: когда все карточки просмотрены. */
+  emptyLabel: string; nextLabel: string; nextHref: string | null;
+  /** T-FEED-EMPTY: лента с самого начала пуста — «Пока ничего», кнопки «Всё» (если выбрано направление) и следующий день. */
+  allHref: string | null;
+}) {
   const [idx, setIdx] = useState(0);
   const [dx, setDx] = useState(0);
   const [phase, setPhase] = useState<"idle" | "drag" | "settle" | "fly">("idle");
@@ -178,10 +184,14 @@ export function FeedDeck({ items, today, emptyLabel, nextLabel, nextHref }: { it
   }, [cur, busy]);
 
   if (!cur) {
+    const none = items.length === 0;
     return (
       <div className="fempty" role="status">
-        <h2>{emptyLabel}</h2>
-        {nextHref ? <a className="btn primary" href={nextHref}>{nextLabel}</a> : null}
+        <h2>{none ? "Пока ничего" : emptyLabel}</h2>
+        <div className="row" style={{ justifyContent: "center" }}>
+          {none && allHref ? <a className="btn primary" href={allHref}>Всё</a> : null}
+          {nextHref ? <a className={`btn${none && allHref ? "" : " primary"}`} href={nextHref}>{nextLabel}</a> : null}
+        </div>
         {toast ? <Toasty toast={toast} onUndo={undo} /> : null}
       </div>
     );

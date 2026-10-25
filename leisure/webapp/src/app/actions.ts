@@ -181,8 +181,8 @@ export async function switchProfileAction(profileId: number): Promise<void> {
   const secret = sessionSecret(process.env);
   if (!uid || !secret || !Number.isSafeInteger(profileId) || profileId <= 0) redirect("/profile");
   try {
-    const list = await api.profiles(uid);
-    if (!list.some((p) => p.id === profileId)) redirect("/profile");
+    const list = (await api.profiles(uid)).profiles;
+    if (!list.some((p) => p.user_id === profileId)) redirect("/profile");
   } catch (e) {
     if (!(e instanceof ApiError)) throw e;
     redirect("/profile");
@@ -201,11 +201,15 @@ export async function createProfileAction(formData: FormData): Promise<void> {
   if (!uid || !secret) redirect("/profile");
   if (!name) redirect(`/profile?error=${encodeURIComponent("Дай профилю имя")}`);
   try {
-    const p = await api.createProfile(uid, name, KINDS.includes(kind) ? kind : "other");
-    await setProfileCookie(issueProfile(p.id, uid, secret));
+    const before = new Set((await api.profiles(uid)).profiles.map((p) => p.user_id));
+    const after = (await api.createProfile(uid, name, KINDS.includes(kind) ? kind : "other")).profiles;
+    // API отдаёт обновлённый список: новый профиль — тот, которого не было (запасной вариант — последний с таким именем)
+    const created = after.find((p) => !before.has(p.user_id)) ?? [...after].reverse().find((p) => p.name === name && !p.is_main);
+    if (!created) redirect(`/profile?error=${encodeURIComponent("Не получилось создать профиль, попробуй ещё раз")}`);
+    await setProfileCookie(issueProfile(created.user_id, uid, secret));
   } catch (e) {
     if (!(e instanceof ApiError)) throw e;
-    redirect(`/profile?error=${encodeURIComponent("Не получилось создать профиль, попробуй ещё раз")}`);
+    redirect(`/profile?error=${encodeURIComponent(e.status === 409 ? "Не больше шести профилей, и нужно согласие" : "Не получилось создать профиль, попробуй ещё раз")}`);
   }
   revalidatePath("/", "layout");
   redirect("/profile?onboarding=1");

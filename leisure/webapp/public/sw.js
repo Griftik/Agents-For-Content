@@ -1,4 +1,4 @@
-// Service worker приложения «Досуг»: только офлайн-заглушка (push и уведомления из MVP сняты, docs/PIVOT-PWA.md, версия 2).
+// Service worker приложения Catch: только офлайн-заглушка (push и уведомления из MVP сняты, docs/PIVOT-PWA.md, версия 2).
 // Данные пользователя здесь не кэшируются: подборка и план всегда с сервера.
 const CACHE = "leisure-shell-v1";
 const OFFLINE_URL = "/offline.html";

@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
-import type { Decision } from "./api-types";
-import { hasUnmarkedPast, pastDecisions } from "./plan";
+import type { Decision, EventT, PlanItem } from "./api-types";
+import { hasUnmarkedDecisions, hasUnmarkedPast, pastItems } from "./plan";
 
+const ev = { slug: "x", title: "x", dates: [] } as unknown as EventT;
+const pi = (slug: string, status: string, day: string): PlanItem => ({ event: { ...ev, slug }, status, day, conflict: false, links: { gcal: "", outlook: "", ics: "", tg: "", page: "" } });
 const d = (slug: string, status: string, day: string): Decision => ({ event_id: null, event_slug: slug, status, reason: null, day, rating: null });
-const T = "2026-10-25";
 
 describe("план: прошедшие события", () => {
-  it("точка на вкладке, пока есть «иду» в прошлом без отметки", () => {
-    expect(hasUnmarkedPast([d("a", "иду", "2026-10-23")], T)).toBe(true);
-    expect(hasUnmarkedPast([d("a", "сходил", "2026-10-23"), d("b", "иду", "2026-10-26")], T)).toBe(false);
-    expect(hasUnmarkedPast([d("a", "иду", T)], T)).toBe(false);
+  it("точка на вкладке, пока в past есть «иду» без отметки", () => {
+    expect(hasUnmarkedPast([pi("a", "иду", "2026-10-23")])).toBe(true);
+    expect(hasUnmarkedPast([pi("a", "сходил", "2026-10-23"), pi("b", "не сходил", "2026-10-22")])).toBe(false);
+    expect(hasUnmarkedPast(undefined)).toBe(false);
   });
   it("неотмеченные первыми, затем отмеченные, свежие выше", () => {
-    const list = pastDecisions([d("a", "сходил", "2026-10-20"), d("b", "иду", "2026-10-18"), d("c", "не сходил", "2026-10-24"), d("x", "мимо", "2026-10-19")], T);
-    expect(list.map((x) => x.event_slug)).toEqual(["b", "c", "a"]);
+    const list = pastItems([pi("a", "сходил", "2026-10-20"), pi("b", "иду", "2026-10-18"), pi("c", "не сходил", "2026-10-24")]);
+    expect(list.map((x) => x.event.slug)).toEqual(["b", "c", "a"]);
+  });
+  it("по решениям: «иду» с датой до сегодня", () => {
+    expect(hasUnmarkedDecisions([d("a", "иду", "2026-10-23")], "2026-10-25")).toBe(true);
+    expect(hasUnmarkedDecisions([d("a", "иду", "2026-10-25")], "2026-10-25")).toBe(false);
   });
 });

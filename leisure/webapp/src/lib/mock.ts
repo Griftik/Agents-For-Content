@@ -130,7 +130,7 @@ function profile(uid: number, name: string, onboarded: boolean): Profile {
     user_id: uid, name, username: "", city: "Москва", values: Object.fromEntries(VALUES.map((v, i) => [v, i < 5 ? 5 : 2])),
     interests: Object.fromEntries(CATEGORIES.map((c) => [c, 2])), params: { budget: 0, company: "любая", times: ["день", "вечер"], areas: ["любой"], travel_minutes: 40 },
     notes: "", tz: "Europe/Moscow", digest_day: 4, digest_hour: 18, plan: "", learned: {}, learned_text: "", onboarded, show_name: true, source: "organic",
-    has_consent: true, offer_seen: 0, offer_due: null, kind: "self", affinity: { tag: {}, cat: {}, n: 0 },
+    has_consent: true, offer_seen: 0, offer_due: null, kind: "self", account_id: uid, email: null, affinity: { tag: {}, cat: {}, n: 0 },
   };
 }
 
@@ -147,18 +147,23 @@ function planOf(uid: number): Plan {
   const week = Array.from({ length: 7 }, (_, i) => addDays(today, i));
   const days: Record<string, PlanItem[]> = Object.fromEntries(week.map((d) => [d, []]));
   const horizon: PlanItem[] = [];
+  const past: PlanItem[] = [];
   for (const d of st.decisions.get(uid) ?? []) {
-    if (d.status !== "иду" && d.status !== "может") continue;
     const e = bySlug(d.event_slug);
     if (!e) continue;
     const day = d.day ?? e.dates[0];
-    if (day < today) continue;
     const who = st.together.get(`${uid}:${e.slug}`);
-    const item: PlanItem = { event: e, status: d.status, day, conflict: false, links: links(e, day), companions: who ? [who] : [] };
+    const item: PlanItem = { event: e, status: d.status, day, rating: d.rating, conflict: false, links: links(e, day), companions: who ? [who] : [] };
+    if (day < today) {
+      if (["иду", "может", "сходил", "не сходил"].includes(d.status) && day >= addDays(today, -30)) past.push(item);
+      continue;
+    }
+    if (d.status !== "иду" && d.status !== "может") continue;
     if (days[day]) days[day].push(item);
     else horizon.push(item);
   }
-  return { weekend: week, title: "Неделя", days, horizon, text: "План (мок)" };
+  past.sort((a, b) => b.day.localeCompare(a.day));
+  return { weekend: week, today, title: "Неделя", days, horizon, past, text: "План (мок)" };
 }
 
 const j = (init: RequestInit) => (init.body ? JSON.parse(String(init.body)) : {});
@@ -180,25 +185,29 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
     const b = method === "POST" ? j(init) : {};
     const uid = Number(method === "POST" ? b.user_id : url.searchParams.get("user_id"));
     const main = st.profiles.get(uid);
+    if (!main) throw new MockError(404, "профиль не найден");
     const list = st.accountProfiles.get(uid) ?? [];
-    const self: AccountProfile = { id: uid, name: main?.name || "я", kind: "self", onboarded: !!main?.onboarded };
+    const self: AccountProfile = { user_id: uid, name: main.name || "я", kind: "self", onboarded: !!main.onboarded, is_main: true };
     if (method === "POST") {
       const name = String(b.name ?? "").trim().slice(0, 40);
       if (!name) throw new MockError(422, "нужно имя профиля");
+      if (!main.has_consent) throw new MockError(409, "consent_required");
+      if (list.length + 1 >= 6) throw new MockError(409, "не больше 6 профилей в аккаунте");
       const id = st.nextUser++;
-      const kind = ["parent", "child", "other"].includes(b.kind) ? b.kind : "other";
-      const np: AccountProfile = { id, name, kind, onboarded: false };
+      const kind = ["self", "parent", "child", "other"].includes(b.kind) ? b.kind : "other";
+      const np: AccountProfile = { user_id: id, name, kind, onboarded: false, is_main: false };
       st.accountProfiles.set(uid, [...list, np]);
-      st.profiles.set(id, { ...profile(id, name, false), kind, has_consent: !!main?.has_consent });
-      return np;
+      st.profiles.set(id, { ...profile(id, name, false), kind, account_id: uid, has_consent: true });
+      return { account_id: uid, email: main.email ?? null, profiles: [self, ...list, np] };
     }
-    return [self, ...list];
+    return { account_id: uid, email: main.email ?? null, profiles: [self, ...list] };
   }
 
   if (p === "/api/feed") {
-    const pid = Number(url.searchParams.get("profile_id"));
+    const pid = Number(url.searchParams.get("user_id") ?? url.searchParams.get("profile_id"));
     const prof = st.profiles.get(pid);
     if (!prof) throw new MockError(404, "профиль не найден");
+    if (!prof.onboarded) throw new MockError(409, "not_onboarded");
     const dateQ = url.searchParams.get("date") || "today";
     const seg = url.searchParams.get("segment") || "leisure";
     const limit = Math.min(50, Number(url.searchParams.get("limit")) || 20);
@@ -216,11 +225,11 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
         const start = e.start_time ? Number(e.start_time.split(":")[0]) * 60 + Number(e.start_time.split(":")[1]) : null;
         if (day === today && start != null && start < nowMin + travel) continue; // на сегодня — только то, куда ещё успеваешь
         const score = 60 + ((prof.interests[e.category] ?? 1) * 10) + (e.free ? 3 : 0);
-        items.push({ event: e, day, score, can_make_it: day === today, cover: null, decision: null });
+        items.push({ event: e, day, days: e.dates.filter((d) => days.includes(d)), score, why: [], can_make_it: day === today, links: links(e, day), cover: null, decision: null });
       }
     }
     items.sort((a, b) => a.day.localeCompare(b.day) || b.score - a.score);
-    return { date: dateQ, segment: seg, items: items.slice(0, limit) };
+    return { user_id: pid, date: dateQ, days, today, segment: seg, travel_minutes: travel, items: items.slice(0, limit) };
   }
 
   if (p === "/api/auth/email" && method === "POST") {
@@ -276,6 +285,7 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
     const e = bySlug(b.event);
     if (!e) throw new MockError(404, "событие не найдено");
     const prev = (st.decisions.get(b.user_id) ?? []).find((d) => d.event_slug === e.slug);
+    if ((b.status === "сходил" || b.status === "не сходил") && (prev?.day ?? e.dates[0]) >= moscowToday()) throw new MockError(400, "отметить можно после дня события");
     const list = (st.decisions.get(b.user_id) ?? []).filter((d) => d.event_slug !== e.slug);
     const d: Decision = { event_id: e.id, event_slug: e.slug, status: b.status, reason: b.reason ?? null, day: b.day ?? prev?.day ?? e.dates[0], rating: b.rating ?? prev?.rating ?? null };
     st.decisions.set(b.user_id, [...list, d]);

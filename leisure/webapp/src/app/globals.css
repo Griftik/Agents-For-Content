@@ -275,7 +275,7 @@ body:has(.bottom-nav) { padding-bottom: calc(var(--nav-h) + 16px + env(safe-area
 .fcard .when b { font: 800 40px/1 var(--display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--fg); }
 .fcard .when b.sm { font-size: 24px; }
 .fcard h2 { font-size: 24px; line-height: 1.1; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.fcard .place { font-size: 16px; line-height: 1.4; }
+.fcard .place { font-size: 16px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .tear { position: relative; border-top: 2px dashed var(--line); margin: 8px -16px 4px; height: 0; }
 .tear::before, .tear::after { content: ""; position: absolute; top: -11px; width: 20px; height: 20px; border-radius: 50%; background: var(--bg); }
 .tear::before { left: -10px; }

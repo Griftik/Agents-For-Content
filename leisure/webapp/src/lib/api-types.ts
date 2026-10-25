@@ -37,8 +37,9 @@ export type EventT = {
 export type ScoredEvent = EventT & { score: number; why: Why[] };
 export type DigestItem = { event: EventT; day: string | null; slot: string; score: number | null; why: Why[]; chosen: boolean; links: Links };
 export type Digest = { user_id: number; weekend: string[]; title: string; items: DigestItem[]; horizon: DigestItem[] };
-export type PlanItem = { event: EventT; status: string; day: string; conflict: boolean; links: Links; companions?: string[] };
-export type Plan = { weekend: string[]; title: string; days: Record<string, PlanItem[]>; horizon: PlanItem[]; text: string };
+export type PlanItem = { event: EventT; status: string; day: string; rating?: number | null; conflict: boolean; links: Links; companions?: string[] };
+/** GET /api/plan/{id}: weekend — окно из 7 дат от сегодня (имя историческое), past — прошедшие за 30 дней для отметок и оценки. */
+export type Plan = { weekend: string[]; today?: string; title: string; days: Record<string, PlanItem[]>; horizon: PlanItem[]; past?: PlanItem[]; text: string };
 export type Decision = { event_id: string | null; event_slug: string; status: string; reason: string | null; day: string | null; rating: number | null };
 export type Learned = { likes?: unknown[]; dislikes?: unknown[]; reasons?: Record<string, number>; n?: number } & Record<string, unknown>;
 export type Profile = {
@@ -77,6 +78,10 @@ export type Profile = {
   travel_minutes?: number;
   /** Вид профиля в аккаунте: self | parent | child | other. */
   kind?: string;
+  /** Аккаунт (у основного профиля равен user_id). */
+  account_id?: number;
+  /** Привязанная почта аккаунта или null. */
+  email?: string | null;
   /** YYYY-MM-DD: когда повторить предложение онбординга приглашённому (день события + 1) или null. */
   offer_due?: string | null;
   /** Согласие на обработку данных дано (профиль-заготовка без согласия — false). */
@@ -141,17 +146,21 @@ export type InviteAccepted = { decision: Decision | null; together_with: string 
 /** Гостевая сессия: POST /api/session. */
 export type SessionCreated = { user_id: number; token?: string };
 
-// ─── Лента и профили аккаунта (docs/PIVOT-PWA.md, версия 2) ───
-/** Элемент GET /api/feed: событие на день с баллом; can_make_it — старт не раньше, чем через время на дорогу. */
+// ─── Лента и профили аккаунта (API v2, leisure/README.md «Продукт без Telegram») ───
+/** Элемент GET /api/feed: day — первый день окна, на который успеваешь; can_make_it — на сегодня старт не раньше now + travel_minutes. */
 export type FeedItem = {
   event: EventT;
   day: string;
-  score: number | null;
+  days: string[];
+  score: number;
+  why: Why[];
   can_make_it: boolean;
-  /** Обложка, если источник её дал; иначе типографская обложка. */
-  cover?: string | null;
+  links: Links;
   decision?: Decision | null;
+  /** Обложки в модели события пока нет; поле на будущее. */
+  cover?: string | null;
 };
-export type Feed = { date: string; segment: string; items: FeedItem[] };
+export type Feed = { user_id: number; date: string; days: string[]; today: string; segment: string; travel_minutes: number; items: FeedItem[] };
 /** Профиль аккаунта в переключателе («я», «мама», «ребёнок»). */
-export type AccountProfile = { id: number; name: string; kind: "self" | "parent" | "child" | "other" | string; onboarded: boolean };
+export type AccountProfile = { user_id: number; name: string; kind: "self" | "parent" | "child" | "other" | string; onboarded: boolean; is_main: boolean };
+export type AccountProfiles = { account_id: number; email: string | null; profiles: AccountProfile[] };

@@ -97,7 +97,7 @@ export function PwaBoot() {
     <section className="install-bar card" role="region" aria-label="Установка на экран">
       <div className="stack" style={{ gap: 6 }}>
         <b>Установить на экран</b>
-        {hint === "prompt" ? <p className="muted">Так «Досуг» открывается в один тап, как обычное приложение, и может присылать напоминания.</p> : null}
+        {hint === "prompt" ? <p className="muted">Catch откроется в один тап, как обычное приложение.</p> : null}
         {hint === "ios-steps" ? (
           <ol className="muted" style={{ margin: 0, paddingLeft: 20 }}>
             <li>Нажми «Поделиться» (квадрат со стрелкой) внизу экрана Safari.</li>

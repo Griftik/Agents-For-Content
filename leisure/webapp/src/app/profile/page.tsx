@@ -11,11 +11,11 @@ import { ProfileChips } from "@/components/ProfileSwitcher";
 import { ShowNameSwitch } from "@/components/ShowNameSwitch";
 import { ValuePicker } from "@/components/ValuePicker";
 import { ApiError, api } from "@/lib/api";
-import type { AccountProfile, Profile } from "@/lib/api-types";
+import type { AccountProfiles, Profile } from "@/lib/api-types";
 import { first, moscowToday } from "@/lib/format";
 import { load } from "@/lib/load";
 import { TOP_VALUES, clusters, parseStep } from "@/lib/onboarding";
-import { hasUnmarkedPast } from "@/lib/plan";
+import { hasUnmarkedDecisions } from "@/lib/plan";
 import { getProfileId, getUserId } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Профиль" };
@@ -54,12 +54,12 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
     return <Onboarding step={eff} profile={prof} catalog={cat.data} error={first(sp.error)} needConsent={first(sp.need) === "consent"} />;
   }
 
-  const loaded = await load(() => Promise.all([api.catalog(), api.decisions(pid), api.profiles(uid).catch((): AccountProfile[] => [])]));
+  const loaded = await load(() => Promise.all([api.catalog(), api.decisions(pid), api.profiles(uid).catch((): AccountProfiles | null => null)]));
   if (loaded.kind === "no-profile") return <NoProfile />;
   if (loaded.kind === "down") return <ApiDown message={loaded.message} />;
-  const [catalog, decisions, profiles] = loaded.data;
+  const [catalog, decisions, acc] = loaded.data;
   const p = prof;
-  const list = profiles.length ? profiles : [{ id: uid, name: p.name || "я", kind: "self", onboarded: true }];
+  const list = acc?.profiles?.length ? acc.profiles : [{ user_id: uid, name: p.name || "я", kind: "self", onboarded: true, is_main: true }];
 
   const saved = first(sp.saved) === "1";
   const error = first(sp.error);
@@ -74,7 +74,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
 
   return (
     <div className="wrap">
-      <Masthead title="Профиль" tab="profile" profiles={list} activeId={pid} planDot={hasUnmarkedPast(decisions, moscowToday())} />
+      <Masthead title="Профиль" tab="profile" profiles={list} activeId={pid} planDot={hasUnmarkedDecisions(decisions, moscowToday())} />
       <main id="main" className="page reveal" style={{ paddingTop: 4 }}>
         <ProfileChips profiles={list} activeId={pid} />
         {saved ? <p className="notice ok" role="status">Сохранено</p> : null}

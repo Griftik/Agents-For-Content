@@ -1,6 +1,6 @@
 import "server-only";
 import { apiBase, apiKey } from "./config";
-import type { AccountProfile, Catalog, Feed, SessionCreated, Decision, Digest, EventT, InviteAcceptStatus, InviteAccepted, InviteCreated, InviteView, Plan, Profile, ProfilePatch, ScoredEvent } from "./api-types";
+import type { AccountProfiles, Catalog, Feed, SessionCreated, Decision, Digest, EventT, InviteAcceptStatus, InviteAccepted, InviteCreated, InviteView, Plan, Profile, ProfilePatch, ScoredEvent } from "./api-types";
 import { MockError, mockCall, mockEnabled } from "./mock";
 
 export class ApiError extends Error {
@@ -66,12 +66,12 @@ export const api = {
   createSession: () => call<SessionCreated>("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }),
   /** GET /api/feed: лента на день или неделю по направлению, ранжированная под профиль. */
   feed: (profileId: number, date: string, segment: string, limit = 20) =>
-    call<Feed>(`/api/feed${q({ profile_id: String(profileId), date, segment, limit: String(limit) })}`),
-  /** GET /api/profiles: профили аккаунта. */
-  profiles: (uid: number) => call<AccountProfile[]>(`/api/profiles${q({ user_id: String(uid) })}`),
-  /** POST /api/profiles: новый профиль в аккаунте («мама», «ребёнок»). */
+    call<Feed>(`/api/feed${q({ user_id: String(profileId), date, segment, limit: String(limit) })}`),
+  /** GET /api/profiles?user_id=: все профили аккаунта по id любого из них. */
+  profiles: (uid: number) => call<AccountProfiles>(`/api/profiles${q({ user_id: String(uid) })}`),
+  /** POST /api/profiles: новый профиль в аккаунте («мама», «ребёнок»); ответ — обновлённый список. */
   createProfile: (uid: number, name: string, kind: string) =>
-    call<AccountProfile>("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: uid, name, kind }) }),
+    call<AccountProfiles>("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: uid, name, kind }) }),
   /** POST /api/auth/email: ссылка-вход на почту; 503, пока у API нет SMTP. */
   linkEmail: (uid: number, email: string) =>
     call<unknown>("/api/auth/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: uid, email }) }),

@@ -23,8 +23,9 @@ export function Onboarding({ step, profile, catalog, error, needConsent }: { ste
 function Welcome({ hasConsent, error, needConsent }: { hasConsent: boolean; error?: string; needConsent?: boolean }) {
   return (
     <>
-      <h1>События под то, что для тебя важно</h1>
-      <p style={{ maxWidth: "60ch" }}>Два шага, около минуты. Регистрации нет: приложение запомнит тебя на этом телефоне.</p>
+      <p className="svc fg">Catch</p>
+      <h1>Ничего интересного мимо тебя не пройдёт</h1>
+      <p style={{ maxWidth: "60ch" }}>Два шага, около минуты: что для тебя важно и что интересно. Регистрации нет.</p>
       <form action={startOnboardingAction} className="stack">
         {!hasConsent ? (
           <label className="consent">

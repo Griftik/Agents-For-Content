@@ -11,7 +11,7 @@ const initial = (name: string) => (name.trim().charAt(0) || "Я").toUpperCase();
 export function ProfileSwitcher({ profiles, activeId, compact = false }: { profiles: AccountProfile[]; activeId: number; compact?: boolean }) {
   const dlg = useRef<HTMLDialogElement>(null);
   const newDlg = useRef<HTMLDialogElement>(null);
-  const active = profiles.find((p) => p.id === activeId) ?? profiles[0];
+  const active = profiles.find((p) => p.user_id === activeId) ?? profiles[0];
   const name = active?.name || "я";
   return (
     <>
@@ -27,10 +27,10 @@ export function ProfileSwitcher({ profiles, activeId, compact = false }: { profi
         <h2 id="psw-h">Профиль</h2>
         <ul className="plist" role="listbox" aria-label="Профили">
           {profiles.map((p) => (
-            <li key={p.id} role="option" aria-selected={p.id === activeId} aria-current={p.id === activeId ? "true" : undefined}>
-              <button type="button" onClick={() => void switchProfileAction(p.id)}>
+            <li key={p.user_id} role="option" aria-selected={p.user_id === activeId} aria-current={p.user_id === activeId ? "true" : undefined}>
+              <button type="button" onClick={() => void switchProfileAction(p.user_id)}>
                 <span className="ava" aria-hidden="true">{initial(p.name)}</span>
-                {p.id === activeId ? "● " : ""}{p.name}
+                {p.user_id === activeId ? "● " : ""}{p.name}
                 <span className="svc kind">{KIND_LABEL[p.kind] ?? ""}</span>
               </button>
             </li>
@@ -73,9 +73,9 @@ export function ProfileChips({ profiles, activeId }: { profiles: AccountProfile[
   return (
     <div className="pchips" role="group" aria-label="Профили">
       {profiles.map((p) => (
-        <button key={p.id} type="button" className="chip" aria-pressed={p.id === activeId} aria-current={p.id === activeId ? "true" : undefined}
-          onClick={() => p.id !== activeId && void switchProfileAction(p.id)}>
-          {p.id === activeId ? "● " : ""}{p.name}
+        <button key={p.user_id} type="button" className="chip" aria-pressed={p.user_id === activeId} aria-current={p.user_id === activeId ? "true" : undefined}
+          onClick={() => p.user_id !== activeId && void switchProfileAction(p.user_id)}>
+          {p.user_id === activeId ? "● " : ""}{p.name}
         </button>
       ))}
       <ProfileSwitcher profiles={profiles} activeId={activeId} compact />
