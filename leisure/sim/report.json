@@ -1,29 +1,28 @@
 {
  "api_calls": {
-  "DELETE /api/profile/{id} 200": 6,
+  "DELETE /api/profile/{id} 200": 7,
   "GET /api/decisions/{id} 200": 1,
-  "GET /api/feed 200": 1105,
+  "GET /api/feed 200": 1135,
   "GET /api/feed 409": 1,
-  "GET /api/invites/{code} 200": 87,
+  "GET /api/invites/{code} 200": 96,
   "GET /api/metrics/growth 200": 1,
-  "GET /api/plan/{id} 200": 717,
-  "GET /api/plan/{id} 404": 1,
-  "GET /api/profile/{id} 200": 4,
-  "GET /api/profile/{id} 404": 9,
-  "POST /api/decisions 200": 1346,
+  "GET /api/plan/{id} 200": 679,
+  "GET /api/profile/{id} 200": 5,
+  "GET /api/profile/{id} 404": 10,
+  "POST /api/decisions 200": 1158,
   "POST /api/decisions 400": 1,
-  "POST /api/invites 200": 115,
-  "POST /api/invites/{code}/accept 200": 56,
-  "POST /api/invites/{code}/accept 409": 26,
-  "POST /api/invites/{code}/accept 410": 8,
-  "POST /api/invites/{code}/open 200": 99,
+  "POST /api/invites 200": 122,
+  "POST /api/invites/{code}/accept 200": 64,
+  "POST /api/invites/{code}/accept 409": 20,
+  "POST /api/invites/{code}/accept 410": 7,
+  "POST /api/invites/{code}/open 200": 108,
   "POST /api/profiles 200": 5,
   "POST /api/session 200": 107,
-  "PUT /api/profile/{id} 200": 218
+  "PUT /api/profile/{id} 200": 198
  },
  "closed_defects": [
   {
-   "evidence": "вызовов API 3913, ответов 5xx 0",
+   "evidence": "вызовов API 3725, ответов 5xx 0",
    "key": "api5xx",
    "title": "API отвечает 5xx на обычные действия приложения"
   },
@@ -33,7 +32,7 @@
    "title": "Действие в приложении не записалось (ошибка API на решении, ленте, плане, профиле)"
   },
   {
-   "evidence": "нажатий сверено с БД 675, расхождений 0",
+   "evidence": "нажатий сверено с БД 618, расхождений 0",
    "key": "integrity",
    "title": "Решение из приложения не совпадает с БД"
   },
@@ -48,7 +47,12 @@
    "title": "После трёх «не моё» категория остаётся в первой пятёрке ленты"
   },
   {
-   "evidence": "проверок 2, лента второго профиля не изменилась в 2",
+   "evidence": "проб 5, категория поднялась выше, чем у двойника, в 5",
+   "key": "learn_pos",
+   "title": "Три «сходил, 5» не поднимают категорию в ленте профиля"
+  },
+  {
+   "evidence": "проверок 3, лента второго профиля не изменилась в 3",
    "key": "learn_iso",
    "title": "Обучение одного профиля меняет ленту другого профиля того же аккаунта"
   },
@@ -73,29 +77,49 @@
    "title": "Удаление аккаунта оставляет второй профиль или его решения"
   },
   {
+   "evidence": "«Дело» на неделю у 11 предпринимателей (41 проб по четвергам): не пусто во всех, в среднем 4,9 карточек (Бизнес-завтраки, Закрытые клубы, Конференции и форумы, Образование для управленцев); открытий с направлением «Дело» 47, из них пустых 31",
+   "key": "business",
+   "title": "Сегмент «Дело» пуст у персон-предпринимателей"
+  },
+  {
+   "evidence": "в лентах 3 детских профилей проверено 268 карточек, взрослых (категории, теги, слова из audience_child) 0",
+   "key": "child",
+   "title": "Профиль ребёнка получает взрослые события (audience_child)"
+  },
+  {
+   "evidence": "«Неделя»: 196 непустых открытий, дней в ленте в среднем 4,8, карточек на день не больше 5; догрузка страницы (offset=next_offset) 13 раз из 51 возможных, ошибок 0",
+   "key": "perday",
+   "title": "Лента на период отдаёт больше 5 карточек на день"
+  },
+  {
    "evidence": "в «Сегодня» не было событий с can_make_it=false",
    "key": "reach",
    "title": "В «Сегодня» есть события, на которые уже не успеть"
   },
   {
-   "evidence": "контракт §6 соблюдён: проверок 216, нарушений 0",
+   "evidence": "все девять метрик §4 совпали с расчётом симулятора",
+   "key": "growthmetrics",
+   "title": "Метрики роста API расходятся с формулами GROWTH.md §4"
+  },
+  {
+   "evidence": "контракт §6 соблюдён: проверок 244, нарушений 0",
    "key": "invitecontract",
    "title": "API приглашений нарушает контракт GROWTH.md §6"
   },
   {
-   "evidence": "«вдвоём с Имя» в плане пригласившего: 34 из 35; имя с <, > или & показано корректно 0 раз, неверно 0",
+   "evidence": "«вдвоём с Имя» в плане пригласившего: 37 из 37; имя с <, > или & показано корректно 0 раз, неверно 0",
    "key": "companion",
    "title": "Пригласивший не видит «вдвоём с Имя» в плане"
   },
   {
-   "evidence": "ref_ask пришёл 96 раз у 59 профилей, раньше срока 0; source=ref по ссылке верно 6",
+   "evidence": "ref_ask пришёл 78 раз у 50 профилей, раньше срока 0; source=ref по ссылке верно 5",
    "key": "refmoment",
    "title": "Момент рекомендации в ответе на оценку работает не по правилу"
   }
  ],
  "db": {
   "decision_integrity": {
-   "checked": 675,
+   "checked": 618,
    "mismatch": 0,
    "missing": 0
   },
@@ -104,29 +128,14 @@
    "ok": 4
   },
   "profiles": {
-   "consent_only": 7,
+   "consent_only": 11,
    "no_consent": 0,
-   "onboarded": 75,
-   "total": 82
+   "onboarded": 65,
+   "total": 76
   },
   "values_mismatch": 0
  },
- "defects": [
-  {
-   "count": 1,
-   "id": "Д1",
-   "severity": "средняя",
-   "title": "Три «сходил, 5» не поднимают категорию в ленте профиля",
-   "where": "leisure/core/affinity.py (decision_weights «сходил», rating_scale), leisure/core/feed.py"
-  },
-  {
-   "count": 2,
-   "id": "Д2",
-   "severity": "средняя",
-   "title": "Метрики роста API расходятся с формулами GROWTH.md §4",
-   "where": "leisure/api/invites.py (growth_metrics: going)"
-  }
- ],
+ "defects": [],
  "findings": {},
  "first_go": {
   "of": 45,
@@ -135,26 +144,26 @@
  },
  "growth": {
   "checks": {
-   "accept_gone_410": 8,
-   "accept_ok": 45,
-   "consent_not_given": 2,
-   "consent_required_409": 26,
-   "declined_ok": 11,
-   "friend_without_app": 1,
-   "invite_contract_ok": 99,
-   "invite_idempotent": 16,
-   "inviter_sees_companion": 34,
-   "ref_no_profile_without_consent": 6,
-   "ref_source_ok": 6,
-   "together_name_ok": 35,
-   "view_ok": 72,
-   "view_past": 15
+   "accept_gone_410": 7,
+   "accept_ok": 52,
+   "consent_not_given": 1,
+   "consent_required_409": 20,
+   "declined_ok": 12,
+   "friend_without_app": 3,
+   "invite_contract_ok": 108,
+   "invite_idempotent": 14,
+   "inviter_sees_companion": 37,
+   "ref_no_profile_without_consent": 7,
+   "ref_source_ok": 5,
+   "together_name_ok": 37,
+   "view_ok": 84,
+   "view_past": 12
   },
   "compare": {
    "activation": {
     "invited": {
-     "den": 47,
-     "num": 24
+     "den": 42,
+     "num": 19
     },
     "organic": {
      "den": 50,
@@ -163,8 +172,8 @@
    },
    "onboarding": {
     "invited": {
-     "den": 25,
-     "num": 21
+     "den": 20,
+     "num": 13
     },
     "organic": {
      "den": 49,
@@ -173,192 +182,189 @@
    },
    "ratings": {
     "invited_decisions": {
-     "mean": 3.87,
-     "n": 23,
-     "share_4_5": 0.7826
+     "mean": 3.93,
+     "n": 27,
+     "share_4_5": 0.7037
     },
     "invited_users_all": {
-     "mean": 3.99,
-     "n": 96,
-     "share_4_5": 0.7083
+     "mean": 4.38,
+     "n": 58,
+     "share_4_5": 0.8621
     },
     "organic": {
-     "mean": 4.04,
-     "n": 305,
-     "share_4_5": 0.7279
+     "mean": 4.08,
+     "n": 286,
+     "share_4_5": 0.7308
     },
     "solo": {
-     "mean": 4.04,
-     "n": 281,
-     "share_4_5": 0.726
+     "mean": 4.08,
+     "n": 259,
+     "share_4_5": 0.722
     },
     "together": {
-     "mean": 4.02,
+     "mean": 4.05,
      "n": 44,
      "share_4_5": 0.7727
     }
    }
   },
   "funnel": {
-   "accepted": 45,
-   "consent_409": 26,
-   "declined": 11,
-   "going": 35,
-   "going_ever": 633,
-   "going_now": 175,
-   "guests_active": 21,
-   "guests_opened_app": 24,
-   "guests_total": 52,
-   "inviters": 39,
-   "invites": 99,
-   "maybe": 10,
-   "new_accepted": 24,
-   "new_openers": 47,
-   "notified": 34,
-   "offers_round1": 24,
+   "accepted": 52,
+   "consent_409": 20,
+   "declined": 12,
+   "going": 37,
+   "going_ever": 557,
+   "going_now": 141,
+   "guests_active": 13,
+   "guests_opened_app": 16,
+   "guests_total": 51,
+   "inviters": 42,
+   "invites": 108,
+   "maybe": 15,
+   "new_accepted": 19,
+   "new_openers": 42,
+   "notified": 37,
+   "offers_round1": 19,
    "offers_round2": 7,
-   "offers_yes1": 17,
-   "offers_yes2": 5,
-   "onboarding_done": 27,
-   "onboarding_started": 28,
-   "opened": 86,
-   "opened_anonymous_api": 29,
-   "ref_ask_users": 59,
-   "ref_asks": 96,
-   "ref_codes_seen": 9,
+   "offers_yes1": 12,
+   "offers_yes2": 1,
+   "onboarding_done": 17,
+   "onboarding_started": 18,
+   "opened": 93,
+   "opened_anonymous_api": 30,
+   "ref_ask_users": 50,
+   "ref_asks": 78,
+   "ref_codes_seen": 7,
    "ref_newcomers": 12,
-   "ref_newcomers_consented": 6,
-   "ref_shares": 15,
+   "ref_newcomers_consented": 5,
+   "ref_shares": 16,
    "second_profiles_in_new_total": 4,
-   "to_inside": 36,
-   "to_outside": 62
+   "to_inside": 50,
+   "to_outside": 55
   },
   "metrics": {
    "acceptance": {
     "api": {
-     "denominator": 86,
-     "numerator": 45,
+     "denominator": 93,
+     "numerator": 52,
      "target": "≥ 30 %",
-     "value": 0.5233
+     "value": 0.5591
     },
     "own": {
-     "denominator": 86,
-     "numerator": 45,
-     "value": 0.5233
+     "denominator": 93,
+     "numerator": 52,
+     "value": 0.5591
     }
    },
    "activation_invited": {
     "api": {
-     "denominator": 47,
-     "numerator": 24,
+     "denominator": 42,
+     "numerator": 19,
      "target": "≥ 60 %",
-     "value": 0.5106
+     "value": 0.4524
     },
     "own": {
-     "denominator": 47,
-     "numerator": 24,
-     "value": 0.5106
+     "denominator": 42,
+     "numerator": 19,
+     "value": 0.4524
     }
    },
    "invite_share": {
     "api": {
-     "denominator": 175,
-     "numerator": 99,
+     "denominator": 557,
+     "numerator": 108,
      "target": "≥ 15 %",
-     "value": 0.5657
+     "value": 0.1939
     },
     "own": {
-     "denominator": 633,
-     "numerator": 99,
-     "value": 0.1564
+     "denominator": 557,
+     "numerator": 108,
+     "value": 0.1939
     }
    },
    "new_via_friends": {
     "api": {
-     "denominator": 82,
-     "numerator": 31,
+     "denominator": 76,
+     "numerator": 25,
      "target": "≥ 20 %",
-     "value": 0.378
+     "value": 0.3289
     },
     "own": {
-     "denominator": 82,
-     "numerator": 31,
-     "value": 0.378
+     "denominator": 76,
+     "numerator": 25,
+     "value": 0.3289
     }
    },
    "onboarding_invited": {
     "api": {
-     "denominator": 25,
-     "numerator": 21,
+     "denominator": 20,
+     "numerator": 13,
      "target": "≥ 40 %",
-     "value": 0.84
+     "value": 0.65
     },
     "own": {
-     "denominator": 25,
-     "numerator": 21,
-     "value": 0.84
+     "denominator": 20,
+     "numerator": 13,
+     "value": 0.65
     }
    },
    "positive_experience": {
     "api": {
-     "denominator": 414,
-     "numerator": 299,
+     "denominator": 372,
+     "numerator": 278,
      "target": "≥ 70 %",
-     "value": 0.7222
+     "value": 0.7473
     },
     "own": {
-     "denominator": 414,
-     "numerator": 299,
-     "value": 0.7222
+     "denominator": 372,
+     "numerator": 278,
+     "value": 0.7473
     }
    },
    "recommendation": {
     "api": {
-     "denominator": 95,
-     "numerator": 9,
+     "denominator": 77,
+     "numerator": 7,
      "target": "≥ 10 % (ссылку открыли / показов просьбы)",
-     "value": 0.0947
+     "value": 0.0909
     },
     "own": {
-     "denominator": 95,
-     "numerator": 15,
-     "value": 0.1579
+     "denominator": 77,
+     "numerator": 16,
+     "value": 0.2078
     }
    },
    "together_going": {
     "api": {
-     "denominator": 175,
-     "numerator": 70,
+     "denominator": 557,
+     "numerator": 74,
      "target": "наблюдаем",
-     "value": 0.4
+     "value": 0.1329
     },
     "own": {
-     "denominator": 633,
-     "numerator": 70,
-     "value": 0.1106
+     "denominator": 557,
+     "numerator": 74,
+     "value": 0.1329
     }
    },
    "virality": {
     "api": {
-     "denominator": 77,
-     "numerator": 31,
+     "denominator": 71,
+     "numerator": 25,
      "target": "≥ 0,2",
-     "value": 0.4026
+     "value": 0.3521
     },
     "own": {
-     "denominator": 77,
-     "numerator": 31,
-     "value": 0.4026
+     "denominator": 71,
+     "numerator": 25,
+     "value": 0.3521
     }
    }
   },
-  "mismatch": [
-   "invite_share",
-   "together_going"
-  ]
+  "mismatch": []
  },
  "meta": {
-  "api_calls": 3913,
+  "api_calls": 3725,
   "archetypes": {
    "занятой": 6,
    "интеллектуал": 7,
@@ -388,23 +394,23 @@
    "completed": 45,
    "started": 50
   },
-  "churned": 2,
+  "churned": 3,
   "decisions": {
-   "иду": 451,
-   "не моё": 204
+   "иду": 420,
+   "не моё": 169
   },
   "evening": {
-   "cards_avg": 1.84,
-   "empty": 55,
-   "fallback_tomorrow": 40,
-   "go_share": 0.2652,
-   "opens": 132,
+   "cards_avg": 1.86,
+   "empty": 52,
+   "fallback_tomorrow": 52,
+   "go_share": 0.2556,
+   "opens": 133,
    "taps_le_3": 32,
    "taps_to_go_max": 5,
-   "taps_to_go_median": 2,
+   "taps_to_go_median": 2.0,
    "target_taps": 3,
    "with_decision": 50,
-   "with_go": 35
+   "with_go": 34
   },
   "first_go": {
    "of": 45,
@@ -412,23 +418,21 @@
    "users": 44
   },
   "go_per_week": {
-   "0": 0.8444,
+   "0": 0.8222,
    "1": 0.8222,
-   "2": 0.8444,
-   "3": 0.7111,
-   "4": 0.7333
+   "2": 0.8667,
+   "3": 0.7778,
+   "4": 0.6222
   },
   "learning": {
-   "isolation_checked": 2,
-   "isolation_ok": 2,
+   "isolation_checked": 3,
+   "isolation_ok": 3,
    "neg_passed": 4,
    "neg_ran": 4,
-   "not_run": {
-    "pos": 1
-   },
-   "pos_not_evaluable": 3,
-   "pos_passed": 0,
-   "pos_ran": 1
+   "not_run": {},
+   "pos_not_evaluable": 0,
+   "pos_passed": 5,
+   "pos_ran": 5
   },
   "onboarding": {
    "budget_on_step": 18,
@@ -447,56 +451,56 @@
     "0": 152,
     "1": 138,
     "2": 138,
-    "3": 136,
-    "4": 136
+    "3": 135,
+    "4": 130
    },
    "by_day": {
-    "today": 354,
-    "tomorrow": 148,
-    "week": 198
+    "today": 349,
+    "tomorrow": 145,
+    "week": 199
    },
    "by_segment": {
-    "all": 66,
-    "business": 59,
-    "leisure": 575
+    "all": 55,
+    "business": 47,
+    "leisure": 591
    },
-   "cards_avg": 5.96,
-   "empty": 195,
-   "per_user_week": 3.11,
+   "cards_avg": 5.38,
+   "empty": 168,
+   "per_user_week": 3.08,
    "planned_per_week": {
     "2": 5,
     "3": 37,
     "4": 8
    },
-   "total": 700,
-   "with_decision": 385,
-   "with_decision_share": 0.55
+   "total": 693,
+   "with_decision": 364,
+   "with_decision_share": 0.5253
   },
   "profiles": {
    "accounts_with_second": 5,
    "decisions_by_profile": [
     [
-     3,
-     7
+     5,
+     15
     ],
     [
-     9,
-     10
-    ],
-    [
-     19,
+     11,
      5
     ],
     [
-     15,
-     3
+     19,
+     0
     ],
     [
-     17,
+     6,
      11
+    ],
+    [
+     13,
+     7
     ]
    ],
-   "opens_second_share": 0.0386,
+   "opens_second_share": 0.0462,
    "planned_second": 7,
    "planned_second_abandoned": 2,
    "second_kinds": {
@@ -514,22 +518,48 @@
   },
   "rating": {
    "dist": {
-    "1": 8,
-    "2": 21,
-    "3": 57,
+    "1": 1,
+    "2": 22,
+    "3": 63,
     "4": 95,
-    "5": 122
+    "5": 115
    },
-   "mean": 4.0,
-   "n": 303,
-   "went": 303
+   "mean": 4.02,
+   "n": 296,
+   "went": 296
   },
   "retention": {
    "0": 1.0,
    "1": 1.0,
    "2": 1.0,
    "3": 0.9778,
-   "4": 0.9778
+   "4": 0.9333
+  },
+  "segments": {
+   "business_categories": [
+    "Бизнес-завтраки",
+    "Закрытые клубы",
+    "Конференции и форумы",
+    "Образование для управленцев"
+   ],
+   "business_items_avg": 4.9,
+   "business_nonempty": 41,
+   "business_opens": 47,
+   "business_opens_empty": 31,
+   "business_probes": 41,
+   "business_users": 11,
+   "child_adult_found": 0,
+   "child_items_checked": 268,
+   "child_probes": 9,
+   "child_profiles": 3,
+   "paged": 13,
+   "week_days_avg": 4.83,
+   "week_max_per_day": 5,
+   "week_multi_day": 186,
+   "week_opens": 196,
+   "week_over_per_day": 0,
+   "week_total_avg": 12.6,
+   "with_next_offset": 51
   }
  },
  "onboarding": {
@@ -560,11 +590,532 @@
   },
   "delete_account": {
    "main_gone": true,
-   "second": 1000000000062,
+   "second": 1000000000064,
    "second_decisions_left": 0,
    "second_gone": true,
    "u": 1000000000060
-  }
+  },
+  "segments": [
+   {
+    "business": [
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 7,
+      "u": 1000000000017
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 7,
+      "u": 1000000000008
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 7,
+      "u": 1000000000022
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 7,
+      "u": 1000000000009
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 7,
+      "u": 1000000000015
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 7,
+      "u": 1000000000031
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 7,
+      "u": 1000000000021
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 7,
+      "u": 1000000000012
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 7,
+      "u": 1000000000034
+     }
+    ],
+    "child": [],
+    "week": 0
+   },
+   {
+    "business": [
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000017
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000008
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000022
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000009
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000015
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000067
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000031
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000049
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000021
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000012
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы",
+       "Образование для управленцев"
+      ],
+      "days": 3,
+      "items": 8,
+      "u": 1000000000034
+     }
+    ],
+    "child": [
+     {
+      "adult": 0,
+      "examples": [],
+      "items": 22,
+      "pid": 1000000000055,
+      "u": 1000000000047
+     },
+     {
+      "adult": 0,
+      "examples": [],
+      "items": 22,
+      "pid": 1000000000054,
+      "u": 1000000000040
+     },
+     {
+      "adult": 0,
+      "examples": [],
+      "items": 22,
+      "pid": 1000000000064,
+      "u": 1000000000060
+     }
+    ],
+    "week": 1
+   },
+   {
+    "business": [
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000017
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000008
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000022
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000009
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000015
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000067
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000031
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000049
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000021
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 2,
+      "u": 1000000000012
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Закрытые клубы"
+      ],
+      "days": 1,
+      "items": 1,
+      "u": 1000000000034
+     }
+    ],
+    "child": [
+     {
+      "adult": 0,
+      "examples": [],
+      "items": 19,
+      "pid": 1000000000055,
+      "u": 1000000000047
+     },
+     {
+      "adult": 0,
+      "examples": [],
+      "items": 19,
+      "pid": 1000000000054,
+      "u": 1000000000040
+     },
+     {
+      "adult": 0,
+      "examples": [],
+      "items": 18,
+      "pid": 1000000000064,
+      "u": 1000000000060
+     }
+    ],
+    "week": 2
+   },
+   {
+    "business": [
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000017
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000008
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000009
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000015
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000067
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000031
+     },
+     {
+      "archetype": "нетворкер",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000049
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000021
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000012
+     },
+     {
+      "archetype": "занятой",
+      "categories": [
+       "Бизнес-завтраки",
+       "Конференции и форумы"
+      ],
+      "days": 2,
+      "items": 3,
+      "u": 1000000000034
+     }
+    ],
+    "child": [
+     {
+      "adult": 0,
+      "examples": [],
+      "items": 14,
+      "pid": 1000000000055,
+      "u": 1000000000047
+     },
+     {
+      "adult": 0,
+      "examples": [],
+      "items": 14,
+      "pid": 1000000000054,
+      "u": 1000000000040
+     },
+     {
+      "adult": 0,
+      "examples": [],
+      "items": 13,
+      "pid": 1000000000064,
+      "u": 1000000000060
+     }
+    ],
+    "week": 3
+   }
+  ]
  },
  "spec_metrics": [
   {
@@ -580,46 +1131,46 @@
    "id": "reaction",
    "name": "Реакция: открытия приложения хотя бы с одним решением",
    "note": "прежняя метрика считала подборки с решением; открытий в среднем 3,1 на человека в неделю",
-   "shown": "385 из 700 = 55 %",
+   "shown": "364 из 693 = 53 %",
    "status": "ok",
    "target": "≥ 40 %",
-   "value": 0.55
+   "value": 0.5253
   },
   {
    "id": "plan",
    "name": "План: доля пользователей с ≥1 «иду» в неделю (среднее по неделям)",
    "note": "знаменатель — все прошедшие онбординг",
-   "shown": "79 %; по неделям: 84 %, 82 %, 84 %, 71 %, 73 %",
+   "shown": "78 %; по неделям: 82 %, 82 %, 87 %, 78 %, 62 %",
    "status": "ok",
    "target": "≥ 25 %",
-   "value": 0.79108
+   "value": 0.78222
   },
   {
    "id": "retention",
    "name": "Удержание: открывали приложение на неделе 4 (8-недельное измерить нельзя)",
    "note": "удержание = хотя бы одно открытие приложения за неделю",
-   "shown": "98 %; по неделям: 100 %, 100 %, 100 %, 98 %, 98 %",
+   "shown": "93 %; по неделям: 100 %, 100 %, 100 %, 98 %, 93 %",
    "status": "na",
    "target": "8 нед. ≥ 50 %",
-   "value": 0.9778
+   "value": 0.9333
   },
   {
    "id": "rating",
    "name": "Качество: средняя оценка «сходил» (★ в плане)",
-   "note": "доля 4–5: 72 %",
-   "shown": "4,00 (n = 303)",
+   "note": "доля 4–5: 71 %",
+   "shown": "4,02 (n = 296)",
    "status": "ok",
    "target": "≥ 4,0",
-   "value": 4.0
+   "value": 4.02
   },
   {
    "id": "growth",
    "name": "Рост: доля новых через друзей (приглашения и ссылка-рекомендация)",
    "note": "source ∈ {invite, ref} среди новых профилей с согласием (в знаменателе и вторые профили аккаунтов); остальные метрики роста — в разделе 5",
-   "shown": "37,8 % (31 из 82)",
+   "shown": "32,9 % (25 из 76)",
    "status": "ok",
    "target": "≥ 20 %",
-   "value": 0.378
+   "value": 0.3289
   },
   {
    "id": "money",
@@ -646,41 +1197,41 @@
   }
  ],
  "volatile": {
-  "duration_s": 102.1,
+  "duration_s": 95.2,
   "jobs": [
    {
     "cycle": 0,
     "job": "build",
     "returned": 22,
-    "seconds": 0.547,
+    "seconds": 0.466,
     "t": "2026-10-21T19:00:00+00:00"
    },
    {
     "cycle": 1,
     "job": "build",
-    "returned": 57,
-    "seconds": 1.166,
+    "returned": 54,
+    "seconds": 0.947,
     "t": "2026-10-28T19:00:00+00:00"
    },
    {
     "cycle": 2,
     "job": "build",
-    "returned": 63,
-    "seconds": 1.139,
+    "returned": 59,
+    "seconds": 1.129,
     "t": "2026-11-04T19:00:00+00:00"
    },
    {
     "cycle": 3,
     "job": "build",
-    "returned": 69,
-    "seconds": 1.131,
+    "returned": 64,
+    "seconds": 1.209,
     "t": "2026-11-11T19:00:00+00:00"
    },
    {
     "cycle": 4,
     "job": "build",
-    "returned": 73,
-    "seconds": 1.61,
+    "returned": 66,
+    "seconds": 1.554,
     "t": "2026-11-18T19:00:00+00:00"
    }
   ]
@@ -688,111 +1239,147 @@
  "vs_previous": [
   {
    "metric": "Активация",
-   "note": "онбординг тот же: согласие, Шаг 1, Шаг 2",
+   "note": "",
    "now": "90 %",
    "was": "90 %"
   },
   {
-   "metric": "Реакция",
-   "note": "разные определения: рассылки нет, человек открывает сам",
-   "now": "55 % открытий приложения с решением",
-   "was": "58 % подборок с решением"
+   "metric": "Открытия приложения с решением",
+   "note": "",
+   "now": "53 %",
+   "was": "55 %"
   },
   {
    "metric": "«Иду» в неделю (среднее)",
    "note": "",
-   "now": "79 %",
-   "was": "44 %"
+   "now": "78 %",
+   "was": "79 %"
   },
   {
-   "metric": "Удержание на последней неделе",
-   "note": "было: активен в боте; стало: открыл приложение",
-   "now": "98 %",
-   "was": "60 %"
+   "metric": "Открывали приложение на последней неделе",
+   "note": "по построению модели открытий",
+   "now": "93 %",
+   "was": "98 %"
   },
   {
-   "metric": "Средняя оценка",
-   "note": "было: «Как прошло?» в чате; стало: ★ у «сходил» в плане",
-   "now": "4,00",
-   "was": "3,88"
+   "metric": "Средняя оценка «сходил»",
+   "note": "",
+   "now": "4,02",
+   "was": "4,00"
   },
   {
-   "metric": "Нажатий до первой подборки / ленты: min / медиана / max",
-   "note": "в приложении нет /start и «Принять»: галочка согласия и «Начать»",
+   "metric": "Нажатий до ленты: min / медиана / max",
+   "note": "",
    "now": "10 / 12 / 16",
-   "was": "8 / 13 / 16"
+   "was": "10 / 12 / 16"
   },
   {
    "metric": "Нажатий до первого «Иду» (медиана)",
    "note": "",
    "now": "17",
-   "was": "15"
+   "was": "17"
   },
   {
-   "metric": "Бросили онбординг (из 50)",
+   "metric": "Открытий на человека в неделю",
    "note": "",
-   "now": "5",
-   "was": "5"
+   "now": "3,1",
+   "was": "3,1"
+  },
+  {
+   "metric": "Лента пуста (доля открытий)",
+   "note": "в seed стало больше деловых событий",
+   "now": "24 %",
+   "was": "28 %"
+  },
+  {
+   "metric": "Вечер: открытий с «Иду»",
+   "note": "",
+   "now": "26 %",
+   "was": "27 %"
+  },
+  {
+   "metric": "Вечер: «Сегодня» пусто",
+   "note": "",
+   "now": "104 из 133",
+   "was": "95 из 132"
+  },
+  {
+   "metric": "Вечер: нажатий до «Иду» (медиана)",
+   "note": "цель 3",
+   "now": "2",
+   "was": "2"
+  },
+  {
+   "metric": "Обучение: три «не моё» убрали категорию",
+   "note": "",
+   "now": "4 из 4",
+   "was": "4 из 4"
+  },
+  {
+   "metric": "Обучение: три «сходил, 5» подняли категорию",
+   "note": "дефект Д1 пятого прогона",
+   "now": "5 из 5",
+   "was": "0 из 1"
   },
   {
    "metric": "Доля «иду» с приглашением",
    "note": "",
-   "now": "15,6 % (99 из 633)",
-   "was": "17,6 % (32 из 182)"
+   "now": "19,4 % (108 из 557)",
+   "was": "15,6 % (99 из 633)"
   },
   {
    "metric": "Принятие приглашения",
    "note": "",
-   "now": "52,3 % (45 из 86)",
-   "was": "53,1 % (17 из 32)"
+   "now": "55,9 % (52 из 93)",
+   "was": "52,3 % (45 из 86)"
   },
   {
    "metric": "Активация приглашённых",
    "note": "",
-   "now": "51,1 % (24 из 47)",
-   "was": "62,5 % (10 из 16)"
+   "now": "45,2 % (19 из 42)",
+   "was": "51,1 % (24 из 47)"
   },
   {
    "metric": "Онбординг приглашённых",
    "note": "",
-   "now": "84,0 % (21 из 25)",
-   "was": "100,0 % (10 из 10)"
+   "now": "65,0 % (13 из 20)",
+   "was": "84,0 % (21 из 25)"
   },
   {
    "metric": "Доля новых через друзей",
    "note": "",
-   "now": "37,8 % (31 из 82)",
-   "was": "19,3 % (11 из 57)"
+   "now": "32,9 % (25 из 76)",
+   "was": "37,8 % (31 из 82)"
   },
   {
    "metric": "Коэффициент виральности",
    "note": "",
-   "now": "40,3 % (31 из 77)",
-   "was": "21,6 % (11 из 51)"
+   "now": "35,2 % (25 из 71)",
+   "was": "40,3 % (31 из 77)"
   },
   {
    "metric": "Положительный опыт",
    "note": "",
-   "now": "72,2 % (299 из 414)",
-   "was": "65,2 % (45 из 69)"
+   "now": "74,7 % (278 из 372)",
+   "was": "72,2 % (299 из 414)"
   },
   {
    "metric": "Рекомендация",
    "note": "",
-   "now": "15,8 % (15 из 95)",
-   "was": "11,5 % (3 из 26)"
+   "now": "20,8 % (16 из 77)",
+   "was": "15,8 % (15 из 95)"
   },
   {
    "metric": "Совместные походы",
    "note": "",
-   "now": "11,1 % (70 из 633)",
-   "was": "15,4 % (28 из 182)"
+   "now": "13,3 % (74 из 557)",
+   "was": "11,1 % (70 из 633)"
   },
   {
    "metric": "Открытых дефектов, всего",
-   "note": "дефект про отправку 10 000 за 15 минут снят вместе с рассылкой",
-   "now": "2",
-   "was": "1"
+   "note": "",
+   "now": "0",
+   "was": "2"
   },
   {
    "metric": "  высокой серьёзности",
@@ -803,14 +1390,14 @@
   {
    "metric": "  средней",
    "note": "",
-   "now": "2",
-   "was": "0"
+   "now": "0",
+   "was": "2"
   },
   {
    "metric": "  низкой",
    "note": "",
    "now": "0",
-   "was": "1"
+   "was": "0"
   }
  ]
 }

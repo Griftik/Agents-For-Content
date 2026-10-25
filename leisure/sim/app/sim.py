@@ -99,6 +99,9 @@ class AppSim:
         self.push(at_local(FRI0 + timedelta(days=3), 12), PRIO_USER, "probe_pos_b")        # после дат событий первого уикенда
         self.push(at_local(START.date() + timedelta(days=1), 11), PRIO_USER, "probe_api")
         self.push(at_local(FRI0 + timedelta(days=7 * self.weeks + 2), 20), PRIO_USER, "probe_delete")
+        for w in (0, 1, 2, 3):                                                             # сегмент «Дело» и профиль ребёнка: четверг 12:00 каждой недели
+            if w <= self.weeks:
+                self.push(at_local(FRI0 + timedelta(days=7 * w - 1), 12), PRIO_USER, "probe_segments", w)
 
     def schedule_opens(self, u: AppUser) -> None:
         t0 = self.clock.now
@@ -178,6 +181,29 @@ class AppSim:
         out["deleted_profile_gone"] = st == 404
         self.scenarios["api_probe"] = out
 
+    async def on_probe_segments(self, w: int) -> None:
+        """«Дело» у персон-предпринимателей (нетворкер, занятой) на неделю не пусто; профиль ребёнка не получает взрослого (audience_child)."""
+        from leisure.core.config import scoring_config
+        from leisure.core.feed import adult_only
+
+        cfg = scoring_config()
+        biz = []
+        for u in self.users:
+            if u.status != "active" or u.p.archetype not in ("нетворкер", "занятой"):
+                continue
+            items = await self.driver.feed_events(u.profiles[0], "week", "business", 40)
+            biz.append({"u": u.uid, "archetype": u.p.archetype, "items": len(items), "days": len({it.get("day") for it in items}),
+                        "categories": sorted({(self.events.get(str(it["event"]["id"])) or {}).get("category") or "?" for it in items})})
+        kids = []
+        for u in self.users + list(self.social.guests.values() if self.social else []):
+            for ps in u.profiles:
+                if ps.kind != "child" or u.status != "active":
+                    continue
+                items = [it for seg in ("all", "business") for it in await self.driver.feed_events(ps, "week", seg, 40)]
+                bad = [str((it.get("event") or {}).get("slug")) for it in items if adult_only(self.events.get(str(it["event"]["id"])) or {}, cfg)]
+                kids.append({"u": u.uid, "pid": ps.pid, "items": len(items), "adult": len(bad), "examples": bad[:3]})
+        self.scenarios.setdefault("segments", []).append({"week": w, "business": biz, "child": kids})
+
     async def on_probe_delete(self, _=None) -> None:
         u = next((x for x in self.users if x.status == "active" and len(x.profiles) > 1 and x.uid not in self.probe_users), None)
         if u is None:
@@ -209,7 +235,7 @@ class AppSim:
             ps = u.prof
             self.probe_users.add(u.uid)
             other = next((x for x in u.profiles if x is not ps), None)
-            items = await self.driver.feed_events(ps)
+            items = await self.driver.feed_events(ps, "week", "all", 100, per_day=50)     # весь список без лимита на день
             top = await self.driver.top_categories(ps)
             cats = self._by_category(items)
             pick = next((c for c in top if c and len(cats.get(c, [])) >= 4), None)
@@ -233,7 +259,7 @@ class AppSim:
         for u in users:
             ps = u.prof
             self.probe_users.add(u.uid)
-            items = await self.driver.feed_events(ps)
+            items = await self.driver.feed_events(ps, "week", "all", 100, per_day=50)     # весь список без лимита на день
             top = await self.driver.top_categories(ps)
             soon = [it for it in items if (it.get("day") or "9999") <= horizon]
             cats = self._by_category(soon)
@@ -375,6 +401,22 @@ class AppSim:
                 "profile_isolation": {"ok": iso_ok, "bad": iso_bad}, "values_mismatch": val_bad}
 
     # ── метрики п. 11 под приложение ──
+    def _segment_metrics(self, opens: list[dict]) -> dict:
+        probes = self.scenarios.get("segments", [])
+        biz = [b for pr in probes for b in pr["business"]]
+        kids = [k for pr in probes for k in pr["child"]]
+        week = [o for o in opens if o["day"] == "week" and o["cards"]]
+        biz_opens = [o for o in opens if o["segment"] == "business"]
+        return {"business_probes": len(biz), "business_nonempty": sum(1 for b in biz if b["items"]), "business_items_avg": round(sum(b["items"] for b in biz) / len(biz), 1) if biz else None,
+                "business_categories": sorted({c for b in biz for c in b["categories"]}), "business_users": len({b["u"] for b in biz}),
+                "business_opens": len(biz_opens), "business_opens_empty": sum(1 for o in biz_opens if not o["cards"]),
+                "child_probes": len(kids), "child_items_checked": sum(k["items"] for k in kids) + sum(o.get("child_checked", 0) for o in opens),
+                "child_adult_found": sum(k["adult"] for k in kids) + sum(o.get("child_adult", 0) for o in opens), "child_profiles": len({k["pid"] for k in kids}),
+                "week_opens": len(week), "week_multi_day": sum(1 for o in week if o["days_in_feed"] >= 2), "week_days_avg": round(sum(o["days_in_feed"] for o in week) / len(week), 2) if week else None,
+                "week_max_per_day": max((o["max_per_day"] for o in week), default=0), "week_over_per_day": sum(1 for o in week if o["max_per_day"] > 5),
+                "paged": sum(1 for o in opens if o.get("paged")), "with_next_offset": sum(1 for o in opens if o.get("next_offset") is not None),
+                "week_total_avg": round(sum(o["total"] or 0 for o in week) / len(week), 1) if week else None}
+
     def app_metrics(self) -> dict:
         us = self.users
         done = [u for u in us if u.onb.get("completed")]
@@ -432,6 +474,7 @@ class AppSim:
                          "second_onboarding_taps": [u.profiles[1].onb.get("taps_total") for u in two],
                          "decisions_by_profile": [[len(p.decisions) for p in u.profiles] for u in two],
                          "opens_second_share": round(sum(1 for o in opens if o["pid"] != o["u"]) / len(opens), 4) if opens else None},
+            "segments": self._segment_metrics(opens),
             "learning": {"neg_ran": len(neg), "neg_passed": sum(1 for p in neg if p["passed"]), "pos_ran": len(pos), "pos_passed": sum(1 for p in pos if p["passed"]),
                          "pos_not_evaluable": len(pos_na),
                          "isolation_checked": len(iso), "isolation_ok": sum(1 for p in iso if p["isolated"]),

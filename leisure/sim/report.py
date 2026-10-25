@@ -84,7 +84,7 @@ def fex(d: dict, code: str, n: int = 2) -> list[str]:
     return d.get("findings", {}).get(code, {}).get("examples", [])[:n]
 
 
-def load_baseline(name: str = "baseline_v4.json") -> dict | None:
+def load_baseline(name: str = "baseline_v5.json") -> dict | None:
     p = Path(__file__).with_name(name)
     if not p.exists():
         return None
@@ -205,6 +205,22 @@ def build_defects(d: dict) -> tuple[list[dict], list[dict]]:
         [f"После DELETE основного профиля: основной {'удалён' if da.get('main_gone') else 'остался'}, второй {'удалён' if da.get('second_gone') else 'остался'}, решений второго осталось {da.get('second_decisions_left')}."],
         "leisure/api/services.py (delete_profile)", "Аккаунт с двумя профилями → DELETE /api/profile/{основной}.", int(bool(da) and (not da.get("second_gone") or da.get("second_decisions_left"))),
         f"DELETE основного профиля стёр аккаунт целиком: второй профиль {'удалён' if da.get('second_gone') else '—'}, решений второго осталось {da.get('second_decisions_left')}" if da else "проба не выполнялась (не нашлось аккаунта с двумя профилями)")
+    sg = m.get("segments", {})
+    chk("business", "средняя", "Сегмент «Дело» пуст у персон-предпринимателей", sg.get("business_probes", 0) > 0 and sg.get("business_nonempty", 0) < sg.get("business_probes", 0),
+        [f"Проб (нетворкеры и занятые, лента на неделю, segment=business): {sg.get('business_probes', 0)}, пустых {sg.get('business_probes', 0) - sg.get('business_nonempty', 0)}; "
+         f"в среднем {num(sg.get('business_items_avg'), 1)} карточек; категории: {', '.join(sg.get('business_categories', []))}."],
+        "leisure/core/feed.py (in_segment), leisure/seed (бизнес-категории)", "GET /api/feed?date=week&segment=business у настроенного профиля.", sg.get("business_probes", 0) - sg.get("business_nonempty", 0),
+        f"«Дело» на неделю у {sg.get('business_users', 0)} предпринимателей ({sg.get('business_probes', 0)} проб по четвергам): не пусто во всех, в среднем {num(sg.get('business_items_avg'), 1)} карточек "
+        f"({', '.join(sg.get('business_categories', []))}); открытий с направлением «Дело» {sg.get('business_opens', 0)}, из них пустых {sg.get('business_opens_empty', 0)}")
+    chk("child", "высокая", "Профиль ребёнка получает взрослые события (audience_child)", sg.get("child_adult_found", 0) > 0,
+        [f"Проверено карточек в лентах детских профилей: {sg.get('child_items_checked', 0)}, взрослых среди них {sg.get('child_adult_found', 0)}.", *[f"Лог: {x}" for x in fex(d, "child_adult_item", 2)]],
+        "leisure/core/feed.py (adult_only, audience_child в scoring.yaml)", "Профиль kind=child → GET /api/feed?date=week&segment=all и проверить категории, теги и названия по audience_child.",
+        sg.get("child_adult_found", 0), f"в лентах {sg.get('child_profiles', 0)} детских профилей проверено {sg.get('child_items_checked', 0)} карточек, взрослых (категории, теги, слова из audience_child) 0")
+    chk("perday", "средняя", "Лента на период отдаёт больше 5 карточек на день", sg.get("week_over_per_day", 0) > 0,
+        [f"Открытий «Неделя» с превышением: {sg.get('week_over_per_day', 0)}; максимум на день {sg.get('week_max_per_day', 0)}."],
+        "leisure/core/feed.py (per_day)", "GET /api/feed?date=week и посчитать карточки по дням.", sg.get("week_over_per_day", 0),
+        f"«Неделя»: {sg.get('week_opens', 0)} непустых открытий, дней в ленте в среднем {num(sg.get('week_days_avg'), 1)}, карточек на день не больше {sg.get('week_max_per_day', 0)}; "
+        f"догрузка страницы (offset=next_offset) {sg.get('paged', 0)} раз из {sg.get('with_next_offset', 0)} возможных, ошибок {fcount(d, 'feed_page_failed')}")
     nr = fcount(d, "feed_today_not_reachable")
     chk("reach", "средняя", "В «Сегодня» есть события, на которые уже не успеть", nr > 0, [f"Открытий с такими карточками: {nr}.", *[f"Лог: {x}" for x in fex(d, "feed_today_not_reachable", 2)]],
         "leisure/core/feed.py (can_make_it)", "Открыть «Сегодня» вечером и посмотреть `can_make_it`.", nr, "в «Сегодня» не было событий с can_make_it=false")
@@ -268,10 +284,10 @@ def build_usability(d: dict) -> list[dict]:
 
 # ───────────────────────── «было → стало» ─────────────────────────
 def compare_rows(d: dict, spec: list[dict], defects: list[dict]) -> list[list[str]] | None:
-    b = load_baseline("baseline_v4.json")
+    b = load_baseline("baseline_v5.json")
     if not b:
         return None
-    m = d["metrics"]
+    m, bm = d["metrics"], b.get("metrics", {})
 
     def bval(mid):
         return next((r["value"] for r in b.get("spec_metrics", []) if r["id"] == mid), None)
@@ -282,17 +298,25 @@ def compare_rows(d: dict, spec: list[dict], defects: list[dict]) -> list[list[st
     def p(x):
         return pct(x) if x is not None else "н/д"
 
-    bo, o = b.get("onboarding", {}), m["onboarding"]
+    bo, o = bm.get("onboarding", {}), m["onboarding"]
+    bev, ev = bm.get("evening", {}), m["evening"]
+    bl, ln = bm.get("learning", {}), m["learning"]
+    bop, op = bm.get("opens", {}), m["opens"]
     rows = [
-        ["Активация", p(bval("activation")), p(sval("activation")), "онбординг тот же: согласие, Шаг 1, Шаг 2"],
-        ["Реакция", f"{p(bval('reaction'))} подборок с решением", f"{p(sval('reaction'))} открытий приложения с решением", "разные определения: рассылки нет, человек открывает сам"],
+        ["Активация", p(bval("activation")), p(sval("activation")), ""],
+        ["Открытия приложения с решением", p(bval("reaction")), p(sval("reaction")), ""],
         ["«Иду» в неделю (среднее)", p(bval("plan")), p(sval("plan")), ""],
-        ["Удержание на последней неделе", p(bval("retention")), p(sval("retention")), "было: активен в боте; стало: открыл приложение"],
-        ["Средняя оценка", num(bval("rating"), 2), num(sval("rating"), 2), "было: «Как прошло?» в чате; стало: ★ у «сходил» в плане"],
-        ["Нажатий до первой подборки / ленты: min / медиана / max", f"{bo.get('taps_min')} / {num(bo.get('taps_median'), 0)} / {bo.get('taps_max')}",
-         f"{o['taps_min']} / {num(o['taps_median'], 0)} / {o['taps_max']}", "в приложении нет /start и «Принять»: галочка согласия и «Начать»"],
-        ["Нажатий до первого «Иду» (медиана)", num(b.get("first_go", {}).get("taps_median"), 0), num(m["first_go"]["taps_median"], 0), ""],
-        ["Бросили онбординг (из 50)", str(bo.get("started", 0) - bo.get("completed", 0)), str(m["activation"]["started"] - m["activation"]["completed"]), ""],
+        ["Открывали приложение на последней неделе", p(bval("retention")), p(sval("retention")), "по построению модели открытий"],
+        ["Средняя оценка «сходил»", num(bval("rating"), 2), num(sval("rating"), 2), ""],
+        ["Нажатий до ленты: min / медиана / max", f"{bo.get('taps_min')} / {num(bo.get('taps_median'), 0)} / {bo.get('taps_max')}", f"{o['taps_min']} / {num(o['taps_median'], 0)} / {o['taps_max']}", ""],
+        ["Нажатий до первого «Иду» (медиана)", num(bm.get("first_go", {}).get("taps_median"), 0), num(m["first_go"]["taps_median"], 0), ""],
+        ["Открытий на человека в неделю", num(bop.get("per_user_week"), 1), num(op["per_user_week"], 1), ""],
+        ["Лента пуста (доля открытий)", pct(ratio(bop.get("empty", 0), bop.get("total", 0))), pct(ratio(op["empty"], op["total"])), "в seed стало больше деловых событий"],
+        ["Вечер: открытий с «Иду»", p(bev.get("go_share")), p(ev["go_share"]), ""],
+        ["Вечер: «Сегодня» пусто", f"{bev.get('empty', 0) + bev.get('fallback_tomorrow', 0)} из {bev.get('opens', 0)}", f"{ev['empty'] + ev['fallback_tomorrow']} из {ev['opens']}", ""],
+        ["Вечер: нажатий до «Иду» (медиана)", num(bev.get("taps_to_go_median"), 0), num(ev["taps_to_go_median"], 0), "цель 3"],
+        ["Обучение: три «не моё» убрали категорию", f"{bl.get('neg_passed')} из {bl.get('neg_ran')}", f"{ln['neg_passed']} из {ln['neg_ran']}", ""],
+        ["Обучение: три «сходил, 5» подняли категорию", f"{bl.get('pos_passed')} из {bl.get('pos_ran')}", f"{ln['pos_passed']} из {ln['pos_ran']}", "дефект Д1 пятого прогона"],
     ]
     bg = (b.get("growth") or {}).get("metrics", {})
     g = (d.get("growth") or {}).get("metrics", {})
@@ -301,7 +325,7 @@ def compare_rows(d: dict, spec: list[dict], defects: list[dict]) -> list[list[st
             rows.append([name, growth_value(bg.get(k, {}).get("own")), growth_value(g.get(k, {}).get("own")), ""])
     sev_b = Counter(x["severity"] for x in b.get("defects", []))
     sev = Counter(x["severity"] for x in defects)
-    rows += [["Открытых дефектов, всего", str(len(b.get("defects", []))), str(len(defects)), "дефект про отправку 10 000 за 15 минут снят вместе с рассылкой"],
+    rows += [["Открытых дефектов, всего", str(len(b.get("defects", []))), str(len(defects)), ""],
              ["  высокой серьёзности", str(sev_b.get("высокая", 0)), str(sev.get("высокая", 0)), ""],
              ["  средней", str(sev_b.get("средняя", 0)), str(sev.get("средняя", 0)), ""],
              ["  низкой", str(sev_b.get("низкая", 0)), str(sev.get("низкая", 0)), ""]]
@@ -398,10 +422,10 @@ def render_md(d: dict, spec: list[dict], defects: list[dict], closed: list[dict]
          "дефекты и наблюдения ниже подтверждены журналом вызовов.", ""]
     cr = compare_rows(d, spec, defects)
     if cr:
-        L += ["## 0. Было → стало (против четвёртого прогона, `baseline_v4.json`)", "",
-              "Четвёртый прогон — бот и Mini App с рассылкой по четвергам; этот — приложение без рассылок: человек сам открывает ленту. Сопоставимы онбординг, «иду» в неделю, оценка и "
-              "метрики роста; «реакция» и «удержание» переопределены (в примечании). Тот же seed и те же 50 архетипов.", "",
-              table(["Показатель", "Четвёртый прогон (бот)", "Стало (приложение)", "Примечание"], cr), ""]
+        L += ["## 0. Было → стало (против пятого прогона, `baseline_v5.json`)", "",
+              "Пятый прогон — первое приложение версии 2; этот — после ТЗ-13: деловые события в seed, фильтр аудитории для профиля ребёнка, обучение от «сходил, 5», страницы ленты "
+              "(не больше 5 карточек на день), метрики роста по «иду когда-либо». Тот же seed и те же 50 персон; сравнение с ботом (четвёртый прогон) — в отчёте пятого.", "",
+              table(["Показатель", "Пятый прогон", "Стало", "Примечание"], cr), ""]
     L += ["## 1. Метрики п. 11 спеки в редакции приложения", "",
           table(["Метрика", "Значение", "Цель", "Статус", "Примечание"], [[r["name"], r["shown"], r["target"], STATUS_RU[r["status"]], r["note"]] for r in spec]), ""]
     a = m["activation"]
@@ -431,6 +455,13 @@ def render_md(d: dict, spec: list[dict], defects: list[dict], closed: list[dict]
           f". Онбординг второго профиля — нажатий {pr['second_onboarding_taps']}. Решений по профилям (основной, второй): {pr['decisions_by_profile']}; открытий со вторым профилем "
           f"{pct(pr['opens_second_share'])} от всех. В БД решения второго профиля лежат под его user_id: аккаунтов проверено {d['db']['profile_isolation']['ok'] + d['db']['profile_isolation']['bad']}, "
           f"перепутано {d['db']['profile_isolation']['bad']}.", "",
+          "### Направления, профиль ребёнка и страницы ленты", "",
+          f"«Дело» у предпринимателей (нетворкер, занятой — {m['segments']['business_users']} чел.): проб на неделю {m['segments']['business_probes']}, не пусто в {m['segments']['business_nonempty']}, "
+          f"в среднем {num(m['segments']['business_items_avg'], 1)} карточек, категории: {', '.join(m['segments']['business_categories']) or '—'}; открытий с «Дело» {m['segments']['business_opens']}, "
+          f"пустых {m['segments']['business_opens_empty']}. Детские профили ({m['segments']['child_profiles']}): проверено карточек {m['segments']['child_items_checked']}, взрослых по audience_child "
+          f"{m['segments']['child_adult_found']}. «Неделя»: непустых открытий {m['segments']['week_opens']}, дней в ленте в среднем {num(m['segments']['week_days_avg'], 1)}, из них с двумя и более днями "
+          f"{m['segments']['week_multi_day']}, карточек на день максимум {m['segments']['week_max_per_day']} (лимит 5), всего карточек после лимита в среднем {num(m['segments']['week_total_avg'], 1)}; "
+          f"страницу догружали {m['segments']['paged']} раз из {m['segments']['with_next_offset']} лент с продолжением.", "",
           "### Персональное обучение", "",
           f"Пробы на живых профилях (лента `date=week&segment=all`, первая пятёрка по категориям). Три «не моё» по категории из пятёрки: проб {ln['neg_ran']}, категория ушла из пятёрки в {ln['neg_passed']}. "
           f"Три «сходил, 5» по категории вне пятёрки (сравнение с профилем-двойником без этих решений): проб {ln['pos_ran']}, категория поднялась в {ln['pos_passed']}" + (f", ещё {ln.get('pos_not_evaluable', 0)} не оценить — после отметок событий категории в ленте не осталось" if ln.get("pos_not_evaluable") else "") + ". Обучение одного профиля "
@@ -446,7 +477,7 @@ def render_md(d: dict, spec: list[dict], defects: list[dict], closed: list[dict]
     if not defects:
         L += ["Открытых дефектов нет.", ""]
     L += ["### 3.2 Проверено и закрыто", "", table(["Проверка", "Что показал прогон"], [[x["title"], x["evidence"] or "—"] for x in closed]), "",
-          "Дефект четвёртого прогона «отправка дайджеста 10 000 пользователям не укладывается в 15 минут» снят вместе с рассылкой.", ""]
+          "Дефекты пятого прогона: Д1 (три «сходил, 5» не поднимали категорию) и Д2 (метрики роста делили на текущие «иду») — см. строки про обучение и метрики §4 выше.", ""]
     L += ["## 4. Наблюдения и юзабилити (по убыванию важности)", ""]
     for i, x in enumerate(usab, 1):
         L += [f"### У{i}. {x['title']}", "", *[f"- {line}" for line in x["evidence"]], f"- **Что сделать:** {x['advice']}", ""]

@@ -67,10 +67,15 @@ class AppApi:
         return await self.call("post", C.PROFILES, json={"user_id": uid, "name": name, "kind": kind})
 
     # ── лента, план, решения ──
-    async def feed(self, uid: int, date: str = "today", segment: str = "all", limit: int | None = 20) -> tuple[int, dict]:
+    async def feed(self, uid: int, date: str = "today", segment: str = "all", limit: int | None = 20, offset: int = 0,
+                   per_day: int | None = None) -> tuple[int, dict]:
         params: dict = {"user_id": uid, "date": date, "segment": segment}
+        if per_day:
+            params["per_day"] = per_day
         if limit is not None:
             params["limit"] = limit
+        if offset:
+            params["offset"] = offset
         return await self.call("get", C.GET_FEED, params=params)
 
     async def plan(self, uid: int) -> tuple[int, dict]:

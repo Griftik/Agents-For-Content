@@ -6,11 +6,14 @@
 from __future__ import annotations
 
 import random
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Callable
 from zoneinfo import ZoneInfo
 
 from leisure.core.catalog import ALL_CATS, propose_interests, proposed_categories
+from leisure.core.config import scoring_config
+from leisure.core.feed import adult_only
 
 from ..common import Findings
 from ..personas import Persona, make_persona, sigmoid
@@ -266,8 +269,9 @@ class AppDriver:
         day = self.pick_day(u, ps, local)
         seg = self.pick_segment(u, ps)
         self.tap(u, int(day != "today") + int(seg != "leisure"))
-        rec = {"u": u.uid, "pid": ps.pid, "t": now.isoformat(), "cycle": self.cycle_of(now), "evening": evening, "day": day, "segment": seg,
-               "cards": 0, "viewed": 0, "decisions": 0, "go": 0, "notmine": 0, "taps_to_go": None, "went": 0, "rated": 0}
+        rec = {"u": u.uid, "pid": ps.pid, "kind": ps.kind, "archetype": ps.p.archetype, "t": now.isoformat(), "cycle": self.cycle_of(now), "evening": evening,
+               "day": day, "segment": seg, "cards": 0, "viewed": 0, "decisions": 0, "go": 0, "notmine": 0, "taps_to_go": None, "went": 0, "rated": 0,
+               "total": None, "next_offset": None, "days_in_feed": 0, "max_per_day": 0, "paged": 0}
         self.opens.append(rec)
         u.opens.append(rec)
         u.active_cycles.add(rec["cycle"])
@@ -276,6 +280,15 @@ class AppDriver:
             self._note(u, "feed_failed", f"GET feed → {st} {str(fd)[:80]}")
             return rec
         items = list(fd.get("items") or [])
+        rec["total"], rec["next_offset"] = fd.get("total"), fd.get("next_offset")
+        if fd.get("next_offset") is not None and rng.random() < 0.3:          # долистал до конца страницы: догрузка
+            self.tap(u)
+            st2, fd2 = await self.api.feed(ps.pid, date=day, segment=seg, limit=20, offset=int(fd["next_offset"]))
+            if st2 == 200 and isinstance(fd2, dict):
+                items += list(fd2.get("items") or [])
+                rec["paged"] = 1
+            else:
+                self._note(u, "feed_page_failed", f"GET feed offset={fd.get('next_offset')} → {st2}")
         if evening or day == "today":
             bad = [it for it in items if it.get("can_make_it") is False]
             if bad:
@@ -287,6 +300,14 @@ class AppDriver:
             st, fd = await self.api.feed(ps.pid, date="tomorrow", segment=seg, limit=20)
             items = list(fd.get("items") or []) if st == 200 and isinstance(fd, dict) else []
         rec["cards"] = len(items)
+        per_day = Counter(it.get("day") for it in items)
+        rec["days_in_feed"], rec["max_per_day"] = len(per_day), max(per_day.values(), default=0)
+        if ps.kind == "child":
+            cfg = scoring_config()
+            bad = [str((it.get("event") or {}).get("slug")) for it in items if adult_only(self.events.get(str((it.get("event") or {}).get("id"))) or {}, cfg)]
+            rec["child_checked"], rec["child_adult"] = len(items), len(bad)
+            if bad:
+                self._note(u, "child_adult_item", f"в ленте профиля-ребёнка взрослое: {bad[:3]}")
         lo, hi = ps.p.view_range
         n_view = min(len(items), rng.randint(lo, hi) if not evening else rng.randint(3, 5))
         for it in items[:n_view]:
@@ -400,8 +421,12 @@ class AppDriver:
             out.append(ev.get("category"))
         return out
 
-    async def feed_events(self, ps: ProfileState, date_: str = "week", segment: str = "all", limit: int = 40) -> list[dict]:
-        st, fd = await self.api.feed(ps.pid, date=date_, segment=segment, limit=limit)
+    async def feed_events(self, ps: ProfileState, date_: str = "week", segment: str = "all", limit: int = 40, per_day: int | None = None) -> list[dict]:
+        return await self.feed_events_pid(ps.pid, date_, segment, limit, per_day)
+
+    async def feed_events_pid(self, pid: int, date_: str = "week", segment: str = "all", limit: int = 40, per_day: int | None = None) -> list[dict]:
+        """per_day=50 снимает лимит «5 карточек на день»: для проб обучения нужен весь ранжированный список, а не первая страница."""
+        st, fd = await self.api.feed(pid, date=date_, segment=segment, limit=limit, per_day=per_day)
         return list(fd.get("items") or []) if st == 200 and isinstance(fd, dict) else []
 
     async def top_categories_pid(self, pid: int, date_: str = "week", segment: str = "all", n: int = C.TOP_N) -> list[str]:
