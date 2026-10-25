@@ -15,9 +15,6 @@ from leisure.normalize.schema import EventIn
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Переходный период (docs/PIVOT-PWA.md): симулятор leisure/sim ещё ходит через обработчики бота, которых больше нет; QA переписывает
-# его под API и канал push. До этого его тесты не собираются.
-collect_ignore_glob = ["test_sim*.py"]
 FIXTURES = Path(__file__).with_name("fixtures")
 WEEKEND = ["2026-10-23", "2026-10-24", "2026-10-25"]
 

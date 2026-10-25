@@ -6,13 +6,13 @@
 from __future__ import annotations
 
 import random
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Callable
 from zoneinfo import ZoneInfo
 
-from leisure.core.catalog import ALL_CATS, proposed_categories
+from leisure.core.catalog import ALL_CATS, propose_interests, proposed_categories
 
-from ..actors import Findings
+from ..common import Findings
 from ..personas import Persona, make_persona, sigmoid
 from . import contract as C
 from .api import AppApi
@@ -76,12 +76,12 @@ class AppDriver:
         u.onb.setdefault("started", self.now().isoformat())
         u.onb.setdefault("taps_at_start", u.taps)
         st, js = await self.api.session()
-        if st != 200 or not isinstance(js, dict) or not js.get("user_id") or not js.get("profile_id"):
+        if st != 200 or not isinstance(js, dict) or not js.get("user_id"):
             self._note(u, "session_failed", f"POST /api/session → {st} {str(js)[:80]}")
             u.status = "abandoned"
             return "stuck"
-        u.uid, u.token, u.status = int(js["user_id"]), js.get("token"), "guest"
-        u.profiles = [ProfileState(pid=int(js["profile_id"]), kind="self", p=p)]
+        u.uid, u.status = int(js["user_id"]), "guest"
+        u.profiles = [ProfileState(pid=u.uid, kind="self", p=p, name=p.name)]              # основной профиль «я»: user_id = id аккаунта
         steps = u.onb.setdefault("steps", {})
         if p.abandon_step == "consent":
             steps["consent"] = 0
@@ -89,9 +89,9 @@ class AppDriver:
             u.onb["abandoned_at"] = "consent"
             return "abandoned"
         self.tap(u)                                         # галочка
-        st, _ = await self.api.put_profile(u.profiles[0].pid, consent=True, name=p.name)
-        if st != 200:
-            self._note(u, "consent_failed", f"PUT consent → {st}")
+        st, prof = await self.api.put_profile(u.uid, consent=True, name=p.name)
+        if st != 200 or not (isinstance(prof, dict) and prof.get("has_consent")):
+            self._note(u, "consent_failed", f"PUT consent → {st} has_consent={prof.get('has_consent') if isinstance(prof, dict) else None}")
             u.status = "abandoned"
             return "stuck"
         self.tap(u)                                         # «Начать»
@@ -137,9 +137,11 @@ class AppDriver:
         if st != 200:
             self._note(u, "values_failed", f"PUT values → {st}")
             return "stuck"
-        shown = proposed_categories(dict(weights))
-        base = dict(prof.get("interests") or {})
-        pre = {c: base.get(c, 1) for c in ALL_CATS}
+        shown = proposed_categories(dict(weights))                       # восемь предложенных направлений (как на экране веба)
+        pre = {c: int(v) for c, v in propose_interests(dict(weights)).items()}
+        srv = {c: int(v) for c, v in (prof.get("interests") or {}).items()} if isinstance(prof, dict) else {}
+        if srv and srv != pre:
+            onb["server_prefill_differs"] = True
         onb["prefill"] = {"counts": {}, "match": sum(1 for c in ALL_CATS if pre[c] == p.interest_targets[c]), "total": len(ALL_CATS),
                           "shown": len(shown), "shown_match": sum(1 for c in shown if pre[c] == p.interest_targets[c])}
         final = dict(pre)
@@ -184,6 +186,7 @@ class AppDriver:
             return "abandoned"
         self.tap(u)                                         # «Показать подборку →»
         st, prof = await self.api.put_profile(ps.pid, interests=final, params={"budget": p.budget if onb.get("budget_set") else 0}, onboarded=True)
+        prof = prof if isinstance(prof, dict) else {}
         steps["interests"] = u.taps - mark
         if st != 200 or not prof.get("onboarded"):
             self._note(u, "onboarded_failed", f"PUT onboarded → {st} onboarded={prof.get('onboarded') if isinstance(prof, dict) else None}")
@@ -199,11 +202,14 @@ class AppDriver:
         arch = rng.choice(SECOND_ARCH[kind])
         persona = make_persona(self.seed, 3000 + u.p.idx, arch, 50)
         self.tap(u)                                         # «+» в переключателе профилей
-        st, js = await self.api.create_profile(u.uid, "Ребёнок" if kind == "child" else "Мама", kind)
-        if st != 200 or not js.get("profile_id"):
-            self._note(u, "profile_create_failed", f"POST /api/profiles → {st} {str(js)[:80]}")
+        known = {x.pid for x in u.profiles}
+        pname = "Ребёнок" if kind == "child" else "Мама"
+        st, js = await self.api.create_profile(u.uid, pname, kind)
+        new = [x for x in (js.get("profiles") or []) if isinstance(js, dict) and x.get("user_id") not in known] if st == 200 else []
+        if st != 200 or len(new) != 1 or new[0].get("kind") != kind:
+            self._note(u, "profile_create_failed", f"POST /api/profiles → {st} {str(js)[:100]}")
             return False
-        ps = ProfileState(pid=int(js["profile_id"]), kind=kind, p=persona)
+        ps = ProfileState(pid=int(new[0]["user_id"]), kind=kind, p=persona, name=pname)
         u.profiles.append(ps)
         u.second = persona
         out = await self.onboard_profile(u, ps, ps.onb)
@@ -275,6 +281,11 @@ class AppDriver:
             if bad:
                 self._note(u, "feed_today_not_reachable", f"в «Сегодня» {len(bad)} событий, на которые не успеть (can_make_it=false)")
             items = [it for it in items if it.get("can_make_it") is not False]
+        if not items and day == "today" and rng.random() < 0.6:            # «Сегодня» пусто: переключился на «Завтра»
+            self.tap(u)
+            rec["fallback"] = "tomorrow"
+            st, fd = await self.api.feed(ps.pid, date="tomorrow", segment=seg, limit=20)
+            items = list(fd.get("items") or []) if st == 200 and isinstance(fd, dict) else []
         rec["cards"] = len(items)
         lo, hi = ps.p.view_range
         n_view = min(len(items), rng.randint(lo, hi) if not evening else rng.randint(3, 5))
@@ -283,6 +294,10 @@ class AppDriver:
             if ev is None:
                 continue
             rec["viewed"] += 1
+            if ps.decisions.get(str(it["event"]["id"]), {}).get("status") in (C.GO, C.MAYBE) or (it.get("decision") or {}).get("status") in (C.GO, C.MAYBE):
+                self.tap(u)                                 # уже в плане: листает дальше
+                rec["already_going"] = rec.get("already_going", 0) + 1
+                continue
             action = self.decide(u, ps, ps.p.fit(ev))
             if action is None:
                 self.tap(u)                                 # свайп мимо
@@ -310,7 +325,7 @@ class AppDriver:
         self.tap(u)
         status = C.GO if action == "go" else C.NOT_MINE
         reason = "не моё" if action == "notmine" else None
-        st, js = await self.api.decide(u.uid, ps.pid, eid, status, reason=reason, day=day if action == "go" else None)
+        st, js = await self.api.decide(ps.pid, eid, status, reason=reason, day=day if action == "go" else None)
         if st != 200 or not isinstance(js, dict) or js.get("status") != status:
             self._note(u, "decision_failed", f"POST decision {status} → {st} {str(js)[:80]}")
             return
@@ -339,18 +354,13 @@ class AppDriver:
         if st != 200 or not isinstance(plan, dict):
             self._note(u, "plan_failed", f"GET plan → {st}")
             return
-        today = self.now().astimezone(ZoneInfo(u.p.tz)).date()
-        for dkey, items in (plan.get("days") or {}).items():
-            try:
-                d = date.fromisoformat(dkey)
-            except ValueError:
-                continue
-            if d >= today:
-                continue
+        past = list(plan.get("past") or [])
+        for it in past:
+            items = [it]
             for it in items:
                 eid = str((it.get("event") or {}).get("id"))
                 ev = self.events.get(eid)
-                if ev is None or it.get("status") != C.GO or it.get("rating") or ps.decisions.get(eid, {}).get("marked"):
+                if ev is None or it.get("status") not in (C.GO, C.MAYBE) or it.get("rating") or ps.decisions.get(eid, {}).get("marked"):
                     continue
                 if rng.random() > p.p_rate:
                     continue
@@ -358,13 +368,13 @@ class AppDriver:
                 if rng.random() > p.p_attend:
                     self.tap(u)
                     if rng.random() < 0.7:
-                        await self.api.decide(u.uid, ps.pid, eid, C.SKIPPED)
+                        await self.api.decide(ps.pid, eid, C.SKIPPED)
                         ps.decisions[eid]["status"] = C.SKIPPED
                     continue
                 f = p.fit(ev)
                 rating = int(max(1, min(5, round(1 + 4 * f + p.rating_bias + rng.gauss(0.05, 0.9)))))
                 self.tap(u, 2)                              # «сходил» + звёзды
-                st, js = await self.api.decide(u.uid, ps.pid, eid, C.WENT, rating=rating)
+                st, js = await self.api.decide(ps.pid, eid, C.WENT, rating=rating)
                 if st != 200 or (isinstance(js, dict) and js.get("rating") not in (None, rating)):
                     self._note(u, "rating_failed", f"POST went/rating {rating} → {st} {str(js)[:80]}")
                     continue
@@ -403,16 +413,16 @@ class AppDriver:
     async def make_twin(self, u: AppUser, ps: ProfileState) -> dict | None:
         """«Двойник» профиля для проб обучения: новый гостевой аккаунт с теми же ценностями, интересами и бюджетом, но без решений. Контроль."""
         st, js = await self.api.session()
-        if st != 200 or not js.get("profile_id"):
+        if st != 200 or not js.get("user_id"):
             return None
-        pid = int(js["profile_id"])
+        pid = int(js["user_id"])
         prof = (await self.api.get_profile(ps.pid))[1] or {}
-        await self.api.put_profile(pid, consent=True, values=prof.get("values") or {}, interests=prof.get("interests") or {},
-                                   params=prof.get("params") or {}, onboarded=True)
-        return {"uid": int(js["user_id"]), "pid": pid}
+        await self.api.put_profile(pid, consent=True, name="Двойник", values=prof.get("values") or {}, interests=prof.get("interests") or {},
+                                   params={"budget": int((prof.get("params") or {}).get("budget") or 0)}, onboarded=True)
+        return {"uid": pid, "pid": pid}
 
     async def delete_account(self, u: AppUser) -> bool:
-        st, _ = await self.api.delete_account(u.uid)
+        st, _ = await self.api.delete_profile(u.uid)
         if st == 200:
             u.status = "deleted"
         return st == 200

@@ -1,0 +1,816 @@
+{
+ "api_calls": {
+  "DELETE /api/profile/{id} 200": 6,
+  "GET /api/decisions/{id} 200": 1,
+  "GET /api/feed 200": 1105,
+  "GET /api/feed 409": 1,
+  "GET /api/invites/{code} 200": 87,
+  "GET /api/metrics/growth 200": 1,
+  "GET /api/plan/{id} 200": 717,
+  "GET /api/plan/{id} 404": 1,
+  "GET /api/profile/{id} 200": 4,
+  "GET /api/profile/{id} 404": 9,
+  "POST /api/decisions 200": 1346,
+  "POST /api/decisions 400": 1,
+  "POST /api/invites 200": 115,
+  "POST /api/invites/{code}/accept 200": 56,
+  "POST /api/invites/{code}/accept 409": 26,
+  "POST /api/invites/{code}/accept 410": 8,
+  "POST /api/invites/{code}/open 200": 99,
+  "POST /api/profiles 200": 5,
+  "POST /api/session 200": 107,
+  "PUT /api/profile/{id} 200": 218
+ },
+ "closed_defects": [
+  {
+   "evidence": "вызовов API 3913, ответов 5xx 0",
+   "key": "api5xx",
+   "title": "API отвечает 5xx на обычные действия приложения"
+  },
+  {
+   "evidence": "решения, лента, план, профили и оценки записались с первого раза: неудачных вызовов 0",
+   "key": "appcalls",
+   "title": "Действие в приложении не записалось (ошибка API на решении, ленте, плане, профиле)"
+  },
+  {
+   "evidence": "нажатий сверено с БД 675, расхождений 0",
+   "key": "integrity",
+   "title": "Решение из приложения не совпадает с БД"
+  },
+  {
+   "evidence": "у 4 аккаунтов с двумя профилями решения лежат под своими user_id и привязаны к одному account_id",
+   "key": "isolation_db",
+   "title": "Решения второго профиля попадают в основной (или наоборот)"
+  },
+  {
+   "evidence": "проб 4, категория ушла из первой пятёрки ленты профиля в 4",
+   "key": "learn_neg",
+   "title": "После трёх «не моё» категория остаётся в первой пятёрке ленты"
+  },
+  {
+   "evidence": "проверок 2, лента второго профиля не изменилась в 2",
+   "key": "learn_iso",
+   "title": "Обучение одного профиля меняет ленту другого профиля того же аккаунта"
+  },
+  {
+   "evidence": "пятёрка ценностей совпала у всех проверенных профилей (расхождений 0)",
+   "key": "values",
+   "title": "Пятёрка ценностей профиля в БД не совпадает с выбранной на «Шаге 1»"
+  },
+  {
+   "evidence": "лента до онбординга → 409 not_onboarded",
+   "key": "feed409",
+   "title": "Лента отдаётся профилю без онбординга"
+  },
+  {
+   "evidence": "«сходил» до дня события → 400: отметить «сходил» или «не сходил» можно после дня события (2026-10-24)",
+   "key": "went400",
+   "title": "«Сходил» принимается до дня события"
+  },
+  {
+   "evidence": "DELETE основного профиля стёр аккаунт целиком: второй профиль удалён, решений второго осталось 0",
+   "key": "delete",
+   "title": "Удаление аккаунта оставляет второй профиль или его решения"
+  },
+  {
+   "evidence": "в «Сегодня» не было событий с can_make_it=false",
+   "key": "reach",
+   "title": "В «Сегодня» есть события, на которые уже не успеть"
+  },
+  {
+   "evidence": "контракт §6 соблюдён: проверок 216, нарушений 0",
+   "key": "invitecontract",
+   "title": "API приглашений нарушает контракт GROWTH.md §6"
+  },
+  {
+   "evidence": "«вдвоём с Имя» в плане пригласившего: 34 из 35; имя с <, > или & показано корректно 0 раз, неверно 0",
+   "key": "companion",
+   "title": "Пригласивший не видит «вдвоём с Имя» в плане"
+  },
+  {
+   "evidence": "ref_ask пришёл 96 раз у 59 профилей, раньше срока 0; source=ref по ссылке верно 6",
+   "key": "refmoment",
+   "title": "Момент рекомендации в ответе на оценку работает не по правилу"
+  }
+ ],
+ "db": {
+  "decision_integrity": {
+   "checked": 675,
+   "mismatch": 0,
+   "missing": 0
+  },
+  "profile_isolation": {
+   "bad": 0,
+   "ok": 4
+  },
+  "profiles": {
+   "consent_only": 7,
+   "no_consent": 0,
+   "onboarded": 75,
+   "total": 82
+  },
+  "values_mismatch": 0
+ },
+ "defects": [
+  {
+   "count": 1,
+   "id": "Д1",
+   "severity": "средняя",
+   "title": "Три «сходил, 5» не поднимают категорию в ленте профиля",
+   "where": "leisure/core/affinity.py (decision_weights «сходил», rating_scale), leisure/core/feed.py"
+  },
+  {
+   "count": 2,
+   "id": "Д2",
+   "severity": "средняя",
+   "title": "Метрики роста API расходятся с формулами GROWTH.md §4",
+   "where": "leisure/api/invites.py (growth_metrics: going)"
+  }
+ ],
+ "findings": {},
+ "first_go": {
+  "of": 45,
+  "taps_median": 17.0,
+  "users": 44
+ },
+ "growth": {
+  "checks": {
+   "accept_gone_410": 8,
+   "accept_ok": 45,
+   "consent_not_given": 2,
+   "consent_required_409": 26,
+   "declined_ok": 11,
+   "friend_without_app": 1,
+   "invite_contract_ok": 99,
+   "invite_idempotent": 16,
+   "inviter_sees_companion": 34,
+   "ref_no_profile_without_consent": 6,
+   "ref_source_ok": 6,
+   "together_name_ok": 35,
+   "view_ok": 72,
+   "view_past": 15
+  },
+  "compare": {
+   "activation": {
+    "invited": {
+     "den": 47,
+     "num": 24
+    },
+    "organic": {
+     "den": 50,
+     "num": 45
+    }
+   },
+   "onboarding": {
+    "invited": {
+     "den": 25,
+     "num": 21
+    },
+    "organic": {
+     "den": 49,
+     "num": 45
+    }
+   },
+   "ratings": {
+    "invited_decisions": {
+     "mean": 3.87,
+     "n": 23,
+     "share_4_5": 0.7826
+    },
+    "invited_users_all": {
+     "mean": 3.99,
+     "n": 96,
+     "share_4_5": 0.7083
+    },
+    "organic": {
+     "mean": 4.04,
+     "n": 305,
+     "share_4_5": 0.7279
+    },
+    "solo": {
+     "mean": 4.04,
+     "n": 281,
+     "share_4_5": 0.726
+    },
+    "together": {
+     "mean": 4.02,
+     "n": 44,
+     "share_4_5": 0.7727
+    }
+   }
+  },
+  "funnel": {
+   "accepted": 45,
+   "consent_409": 26,
+   "declined": 11,
+   "going": 35,
+   "going_ever": 633,
+   "going_now": 175,
+   "guests_active": 21,
+   "guests_opened_app": 24,
+   "guests_total": 52,
+   "inviters": 39,
+   "invites": 99,
+   "maybe": 10,
+   "new_accepted": 24,
+   "new_openers": 47,
+   "notified": 34,
+   "offers_round1": 24,
+   "offers_round2": 7,
+   "offers_yes1": 17,
+   "offers_yes2": 5,
+   "onboarding_done": 27,
+   "onboarding_started": 28,
+   "opened": 86,
+   "opened_anonymous_api": 29,
+   "ref_ask_users": 59,
+   "ref_asks": 96,
+   "ref_codes_seen": 9,
+   "ref_newcomers": 12,
+   "ref_newcomers_consented": 6,
+   "ref_shares": 15,
+   "second_profiles_in_new_total": 4,
+   "to_inside": 36,
+   "to_outside": 62
+  },
+  "metrics": {
+   "acceptance": {
+    "api": {
+     "denominator": 86,
+     "numerator": 45,
+     "target": "≥ 30 %",
+     "value": 0.5233
+    },
+    "own": {
+     "denominator": 86,
+     "numerator": 45,
+     "value": 0.5233
+    }
+   },
+   "activation_invited": {
+    "api": {
+     "denominator": 47,
+     "numerator": 24,
+     "target": "≥ 60 %",
+     "value": 0.5106
+    },
+    "own": {
+     "denominator": 47,
+     "numerator": 24,
+     "value": 0.5106
+    }
+   },
+   "invite_share": {
+    "api": {
+     "denominator": 175,
+     "numerator": 99,
+     "target": "≥ 15 %",
+     "value": 0.5657
+    },
+    "own": {
+     "denominator": 633,
+     "numerator": 99,
+     "value": 0.1564
+    }
+   },
+   "new_via_friends": {
+    "api": {
+     "denominator": 82,
+     "numerator": 31,
+     "target": "≥ 20 %",
+     "value": 0.378
+    },
+    "own": {
+     "denominator": 82,
+     "numerator": 31,
+     "value": 0.378
+    }
+   },
+   "onboarding_invited": {
+    "api": {
+     "denominator": 25,
+     "numerator": 21,
+     "target": "≥ 40 %",
+     "value": 0.84
+    },
+    "own": {
+     "denominator": 25,
+     "numerator": 21,
+     "value": 0.84
+    }
+   },
+   "positive_experience": {
+    "api": {
+     "denominator": 414,
+     "numerator": 299,
+     "target": "≥ 70 %",
+     "value": 0.7222
+    },
+    "own": {
+     "denominator": 414,
+     "numerator": 299,
+     "value": 0.7222
+    }
+   },
+   "recommendation": {
+    "api": {
+     "denominator": 95,
+     "numerator": 9,
+     "target": "≥ 10 % (ссылку открыли / показов просьбы)",
+     "value": 0.0947
+    },
+    "own": {
+     "denominator": 95,
+     "numerator": 15,
+     "value": 0.1579
+    }
+   },
+   "together_going": {
+    "api": {
+     "denominator": 175,
+     "numerator": 70,
+     "target": "наблюдаем",
+     "value": 0.4
+    },
+    "own": {
+     "denominator": 633,
+     "numerator": 70,
+     "value": 0.1106
+    }
+   },
+   "virality": {
+    "api": {
+     "denominator": 77,
+     "numerator": 31,
+     "target": "≥ 0,2",
+     "value": 0.4026
+    },
+    "own": {
+     "denominator": 77,
+     "numerator": 31,
+     "value": 0.4026
+    }
+   }
+  },
+  "mismatch": [
+   "invite_share",
+   "together_going"
+  ]
+ },
+ "meta": {
+  "api_calls": 3913,
+  "archetypes": {
+   "занятой": 6,
+   "интеллектуал": 7,
+   "мастер": 3,
+   "нетворкер": 6,
+   "родитель": 5,
+   "спортсмен": 5,
+   "тусовщик": 6,
+   "экономный": 5,
+   "эстет": 7
+  },
+  "db_name": "leisure_sim",
+  "events_seeded": 177,
+  "product": "app-v2",
+  "seed": 20261024,
+  "start": "2026-10-20T00:00:00+00:00",
+  "users": 50,
+  "weeks": 4
+ },
+ "metrics": {
+  "activation": {
+   "abandoned_at": {
+    "consent": 1,
+    "interests": 3,
+    "values": 1
+   },
+   "completed": 45,
+   "started": 50
+  },
+  "churned": 2,
+  "decisions": {
+   "иду": 451,
+   "не моё": 204
+  },
+  "evening": {
+   "cards_avg": 1.84,
+   "empty": 55,
+   "fallback_tomorrow": 40,
+   "go_share": 0.2652,
+   "opens": 132,
+   "taps_le_3": 32,
+   "taps_to_go_max": 5,
+   "taps_to_go_median": 2,
+   "target_taps": 3,
+   "with_decision": 50,
+   "with_go": 35
+  },
+  "first_go": {
+   "of": 45,
+   "taps_median": 17.0,
+   "users": 44
+  },
+  "go_per_week": {
+   "0": 0.8444,
+   "1": 0.8222,
+   "2": 0.8444,
+   "3": 0.7111,
+   "4": 0.7333
+  },
+  "learning": {
+   "isolation_checked": 2,
+   "isolation_ok": 2,
+   "neg_passed": 4,
+   "neg_ran": 4,
+   "not_run": {
+    "pos": 1
+   },
+   "pos_not_evaluable": 3,
+   "pos_passed": 0,
+   "pos_ran": 1
+  },
+  "onboarding": {
+   "budget_on_step": 18,
+   "interest_edits_median": 4,
+   "server_prefill_differs": 45,
+   "shown_match_avg": 3.04,
+   "taps_le_12": 26,
+   "taps_le_9": 0,
+   "taps_max": 16,
+   "taps_median": 12,
+   "taps_min": 10,
+   "used_all_screen": 45
+  },
+  "opens": {
+   "by_cycle": {
+    "0": 152,
+    "1": 138,
+    "2": 138,
+    "3": 136,
+    "4": 136
+   },
+   "by_day": {
+    "today": 354,
+    "tomorrow": 148,
+    "week": 198
+   },
+   "by_segment": {
+    "all": 66,
+    "business": 59,
+    "leisure": 575
+   },
+   "cards_avg": 5.96,
+   "empty": 195,
+   "per_user_week": 3.11,
+   "planned_per_week": {
+    "2": 5,
+    "3": 37,
+    "4": 8
+   },
+   "total": 700,
+   "with_decision": 385,
+   "with_decision_share": 0.55
+  },
+  "profiles": {
+   "accounts_with_second": 5,
+   "decisions_by_profile": [
+    [
+     3,
+     7
+    ],
+    [
+     9,
+     10
+    ],
+    [
+     19,
+     5
+    ],
+    [
+     15,
+     3
+    ],
+    [
+     17,
+     11
+    ]
+   ],
+   "opens_second_share": 0.0386,
+   "planned_second": 7,
+   "planned_second_abandoned": 2,
+   "second_kinds": {
+    "child": 3,
+    "parent": 2
+   },
+   "second_onboarding_taps": [
+    8,
+    9,
+    12,
+    9,
+    13
+   ],
+   "share": 0.1111
+  },
+  "rating": {
+   "dist": {
+    "1": 8,
+    "2": 21,
+    "3": 57,
+    "4": 95,
+    "5": 122
+   },
+   "mean": 4.0,
+   "n": 303,
+   "went": 303
+  },
+  "retention": {
+   "0": 1.0,
+   "1": 1.0,
+   "2": 1.0,
+   "3": 0.9778,
+   "4": 0.9778
+  }
+ },
+ "onboarding": {
+  "budget_on_step": 18,
+  "completed": 45,
+  "interest_edits_median": 4,
+  "server_prefill_differs": 45,
+  "shown_match_avg": 3.04,
+  "started": 50,
+  "taps_le_12": 26,
+  "taps_le_9": 0,
+  "taps_max": 16,
+  "taps_median": 12,
+  "taps_min": 10,
+  "used_all_screen": 45
+ },
+ "scenarios": {
+  "api_probe": {
+   "deleted_profile_gone": true,
+   "feed_before_onboarding": {
+    "detail": "not_onboarded",
+    "status": 409
+   },
+   "went_before_day": {
+    "detail": "отметить «сходил» или «не сходил» можно после дня события (2026-10-24)",
+    "status": 400
+   }
+  },
+  "delete_account": {
+   "main_gone": true,
+   "second": 1000000000062,
+   "second_decisions_left": 0,
+   "second_gone": true,
+   "u": 1000000000060
+  }
+ },
+ "spec_metrics": [
+  {
+   "id": "activation",
+   "name": "Активация: дошли до ленты (онбординг)",
+   "note": "95 % ДИ 79–96 %",
+   "shown": "45 из 50 = 90 %",
+   "status": "ok",
+   "target": "≥ 70 %",
+   "value": 0.9
+  },
+  {
+   "id": "reaction",
+   "name": "Реакция: открытия приложения хотя бы с одним решением",
+   "note": "прежняя метрика считала подборки с решением; открытий в среднем 3,1 на человека в неделю",
+   "shown": "385 из 700 = 55 %",
+   "status": "ok",
+   "target": "≥ 40 %",
+   "value": 0.55
+  },
+  {
+   "id": "plan",
+   "name": "План: доля пользователей с ≥1 «иду» в неделю (среднее по неделям)",
+   "note": "знаменатель — все прошедшие онбординг",
+   "shown": "79 %; по неделям: 84 %, 82 %, 84 %, 71 %, 73 %",
+   "status": "ok",
+   "target": "≥ 25 %",
+   "value": 0.79108
+  },
+  {
+   "id": "retention",
+   "name": "Удержание: открывали приложение на неделе 4 (8-недельное измерить нельзя)",
+   "note": "удержание = хотя бы одно открытие приложения за неделю",
+   "shown": "98 %; по неделям: 100 %, 100 %, 100 %, 98 %, 98 %",
+   "status": "na",
+   "target": "8 нед. ≥ 50 %",
+   "value": 0.9778
+  },
+  {
+   "id": "rating",
+   "name": "Качество: средняя оценка «сходил» (★ в плане)",
+   "note": "доля 4–5: 72 %",
+   "shown": "4,00 (n = 303)",
+   "status": "ok",
+   "target": "≥ 4,0",
+   "value": 4.0
+  },
+  {
+   "id": "growth",
+   "name": "Рост: доля новых через друзей (приглашения и ссылка-рекомендация)",
+   "note": "source ∈ {invite, ref} среди новых профилей с согласием (в знаменателе и вторые профили аккаунтов); остальные метрики роста — в разделе 5",
+   "shown": "37,8 % (31 из 82)",
+   "status": "ok",
+   "target": "≥ 20 %",
+   "value": 0.378
+  },
+  {
+   "id": "money",
+   "name": "Деньги: конверсия в Pro, платящий организатор",
+   "note": "платные функции не реализованы",
+   "shown": "не измеряется",
+   "status": "na",
+   "target": "≥ 5 % / неделя 6",
+   "value": null
+  }
+ ],
+ "usability": [
+  {
+   "id": "У1",
+   "title": "Предложенные восемь направлений слабо совпадают с тем, что хочет человек"
+  },
+  {
+   "id": "У2",
+   "title": "«Освободился вечер»: в будний вечер «Сегодня» часто пусто"
+  },
+  {
+   "id": "У3",
+   "title": "Пустая лента"
+  }
+ ],
+ "volatile": {
+  "duration_s": 102.1,
+  "jobs": [
+   {
+    "cycle": 0,
+    "job": "build",
+    "returned": 22,
+    "seconds": 0.547,
+    "t": "2026-10-21T19:00:00+00:00"
+   },
+   {
+    "cycle": 1,
+    "job": "build",
+    "returned": 57,
+    "seconds": 1.166,
+    "t": "2026-10-28T19:00:00+00:00"
+   },
+   {
+    "cycle": 2,
+    "job": "build",
+    "returned": 63,
+    "seconds": 1.139,
+    "t": "2026-11-04T19:00:00+00:00"
+   },
+   {
+    "cycle": 3,
+    "job": "build",
+    "returned": 69,
+    "seconds": 1.131,
+    "t": "2026-11-11T19:00:00+00:00"
+   },
+   {
+    "cycle": 4,
+    "job": "build",
+    "returned": 73,
+    "seconds": 1.61,
+    "t": "2026-11-18T19:00:00+00:00"
+   }
+  ]
+ },
+ "vs_previous": [
+  {
+   "metric": "Активация",
+   "note": "онбординг тот же: согласие, Шаг 1, Шаг 2",
+   "now": "90 %",
+   "was": "90 %"
+  },
+  {
+   "metric": "Реакция",
+   "note": "разные определения: рассылки нет, человек открывает сам",
+   "now": "55 % открытий приложения с решением",
+   "was": "58 % подборок с решением"
+  },
+  {
+   "metric": "«Иду» в неделю (среднее)",
+   "note": "",
+   "now": "79 %",
+   "was": "44 %"
+  },
+  {
+   "metric": "Удержание на последней неделе",
+   "note": "было: активен в боте; стало: открыл приложение",
+   "now": "98 %",
+   "was": "60 %"
+  },
+  {
+   "metric": "Средняя оценка",
+   "note": "было: «Как прошло?» в чате; стало: ★ у «сходил» в плане",
+   "now": "4,00",
+   "was": "3,88"
+  },
+  {
+   "metric": "Нажатий до первой подборки / ленты: min / медиана / max",
+   "note": "в приложении нет /start и «Принять»: галочка согласия и «Начать»",
+   "now": "10 / 12 / 16",
+   "was": "8 / 13 / 16"
+  },
+  {
+   "metric": "Нажатий до первого «Иду» (медиана)",
+   "note": "",
+   "now": "17",
+   "was": "15"
+  },
+  {
+   "metric": "Бросили онбординг (из 50)",
+   "note": "",
+   "now": "5",
+   "was": "5"
+  },
+  {
+   "metric": "Доля «иду» с приглашением",
+   "note": "",
+   "now": "15,6 % (99 из 633)",
+   "was": "17,6 % (32 из 182)"
+  },
+  {
+   "metric": "Принятие приглашения",
+   "note": "",
+   "now": "52,3 % (45 из 86)",
+   "was": "53,1 % (17 из 32)"
+  },
+  {
+   "metric": "Активация приглашённых",
+   "note": "",
+   "now": "51,1 % (24 из 47)",
+   "was": "62,5 % (10 из 16)"
+  },
+  {
+   "metric": "Онбординг приглашённых",
+   "note": "",
+   "now": "84,0 % (21 из 25)",
+   "was": "100,0 % (10 из 10)"
+  },
+  {
+   "metric": "Доля новых через друзей",
+   "note": "",
+   "now": "37,8 % (31 из 82)",
+   "was": "19,3 % (11 из 57)"
+  },
+  {
+   "metric": "Коэффициент виральности",
+   "note": "",
+   "now": "40,3 % (31 из 77)",
+   "was": "21,6 % (11 из 51)"
+  },
+  {
+   "metric": "Положительный опыт",
+   "note": "",
+   "now": "72,2 % (299 из 414)",
+   "was": "65,2 % (45 из 69)"
+  },
+  {
+   "metric": "Рекомендация",
+   "note": "",
+   "now": "15,8 % (15 из 95)",
+   "was": "11,5 % (3 из 26)"
+  },
+  {
+   "metric": "Совместные походы",
+   "note": "",
+   "now": "11,1 % (70 из 633)",
+   "was": "15,4 % (28 из 182)"
+  },
+  {
+   "metric": "Открытых дефектов, всего",
+   "note": "дефект про отправку 10 000 за 15 минут снят вместе с рассылкой",
+   "now": "2",
+   "was": "1"
+  },
+  {
+   "metric": "  высокой серьёзности",
+   "note": "",
+   "now": "0",
+   "was": "0"
+  },
+  {
+   "metric": "  средней",
+   "note": "",
+   "now": "2",
+   "was": "0"
+  },
+  {
+   "metric": "  низкой",
+   "note": "",
+   "now": "0",
+   "was": "1"
+  }
+ ]
+}

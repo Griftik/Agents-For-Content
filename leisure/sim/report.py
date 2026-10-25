@@ -1,28 +1,35 @@
-"""Метрики и отчёт по результатам прогона: REPORT.md (для людей) и report.json (для сравнения прогонов).
+"""Метрики и отчёт по прогону симулятора приложения «Успею» (версия 2): REPORT.md для людей и report.json для сравнения прогонов.
 
-Все числа считаются из словаря результатов runner.run_simulation(); модуль не ходит ни в БД, ни в сеть.
-В report.json блок "volatile" (длительность, время задач) меняется от запуска к запуску, остальное — воспроизводимо.
-"""
+Все числа считаются из словаря результатов app.sim.run_app_simulation(); модуль не ходит ни в БД, ни в сеть. В report.json блок
+"volatile" меняется от запуска к запуску, остальное воспроизводимо при том же seed."""
 from __future__ import annotations
 
 import json
 import math
 import statistics
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
-STEP_ORDER = ["consent", "values", "interests"]
-STEP_RU = {
-    "consent": "согласие и политика", "values": "Шаг 1 из 2 · пять ценностей из 19", "interests": "Шаг 2 из 2 · интересы",
-}
-MIN_ONBOARDING_TAPS = 9    # онбординг v2: /start, «Принять и начать», 5 ценностей, «Дальше», «Показать подборку»
-TARGET_TAPS = 12           # web/FLOW-ONBOARDING.md, раздел 1: «не больше 12 нажатий у типичного пользователя; 9 при "ничего не меняю"»
-SEND_RATE = 25             # сообщений в секунду (worker/send.py)
-ANSWER_RU = {"values": "ценности", "company": "компания", "times": "время", "budget": "бюджет", "aesthetics": "эстетика"}
+TARGET_TAPS = 12            # web/FLOW-ONBOARDING.md: не больше 12 нажатий у типичного, 9 при «ничего не меняю»
+MIN_TAPS = 8                # согласие 1, «Начать» 1, пять ценностей, «Показать подборку» 1 (9 — с бюджетом строкой)
+EVENING_TARGET_TAPS = 3     # «освободился вечер»: до «Иду» не больше трёх нажатий
 STATUS_RU = {"ok": "достигнута", "fail": "не достигнута", "na": "нельзя оценить"}
+SEV_ORDER = {"высокая": 0, "средняя": 1, "низкая": 2}
+DAY_RU = {"today": "Сегодня", "tomorrow": "Завтра", "week": "Неделя"}
+SEG_RU = {"leisure": "Досуг", "business": "Дело", "all": "Всё"}
+GROWTH_NAMES = {"invite_share": "Доля «иду» с приглашением", "acceptance": "Принятие приглашения", "activation_invited": "Активация приглашённых",
+                "onboarding_invited": "Онбординг приглашённых", "new_via_friends": "Доля новых через друзей", "virality": "Коэффициент виральности",
+                "positive_experience": "Положительный опыт", "recommendation": "Рекомендация", "together_going": "Совместные походы"}
+GROWTH_FORMULA = {"invite_share": "приглашений / решений «иду»", "acceptance": "открывших с «иду» или «может быть» / всех открывших",
+                  "activation_invited": "согласие + решение / открывших без профиля", "onboarding_invited": "полный профиль за 2 недели / принявших",
+                  "new_via_friends": "source ∈ {invite, ref, share} / все новые", "virality": "новых через друзей / активных",
+                  "positive_experience": "оценок 4–5 / всех оценок", "recommendation": "нажали «Поделиться» / показов момента",
+                  "together_going": "«иду» вдвоём / всех «иду»"}
+GROWTH_TARGET = {"invite_share": 0.15, "acceptance": 0.30, "activation_invited": 0.60, "onboarding_invited": 0.40, "new_via_friends": 0.20,
+                 "virality": 0.2, "positive_experience": 0.70, "recommendation": 0.10, "together_going": None}
 
 
-# ───────────────────────── мелкие помощники ─────────────────────────
+# ───────────────────────── помощники ─────────────────────────
 def plural(n: int, one: str, few: str, many: str) -> str:
     n = abs(int(n))
     if 11 <= n % 100 <= 19:
@@ -35,8 +42,8 @@ def cnt(n: int, one: str, few: str, many: str) -> str:
     return f"{n} {plural(n, one, few, many)}"
 
 
-def ratio(a: float, b: float) -> float | None:
-    return a / b if b else None
+def ratio(a, b) -> float | None:
+    return (a / b) if b else None
 
 
 def pct(x: float | None, d: int = 0) -> str:
@@ -45,10 +52,6 @@ def pct(x: float | None, d: int = 0) -> str:
 
 def num(x: float | None, d: int = 1) -> str:
     return "н/д" if x is None else f"{x:.{d}f}".replace(".", ",")
-
-
-def med(xs: list[float]) -> float | None:
-    return statistics.median(xs) if xs else None
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float] | None:
@@ -69,751 +72,26 @@ def ci(k: int, n: int) -> str:
 def table(headers: list[str], rows: list[list]) -> str:
     out = ["| " + " | ".join(headers) + " |", "|" + "|".join("---" for _ in headers) + "|"]
     for r in rows:
-        out.append("| " + " | ".join(str(c) for c in r) + " |")
+        out.append("| " + " | ".join(str(x) for x in r) + " |")
     return "\n".join(out)
 
 
 def fcount(d: dict, code: str) -> int:
-    return int(d["findings"].get(code, {}).get("count", 0))
-
-
-def fusers(d: dict, code: str) -> int:
-    return int(d["findings"].get(code, {}).get("users", 0))
+    return int(d.get("findings", {}).get(code, {}).get("count", 0))
 
 
 def fex(d: dict, code: str, n: int = 2) -> list[str]:
-    return list(d["findings"].get(code, {}).get("examples", []))[:n]
+    return d.get("findings", {}).get(code, {}).get("examples", [])[:n]
 
 
-# ───────────────────────── метрики ─────────────────────────
-def build_metrics(d: dict) -> dict:
-    P, D, T, C = d["personas"], d["digests"], d["decisions"], d["commands"]
-    weeks = int(d["meta"]["weeks"])
-    m: dict = {}
-    started = len(P)
-    done = [p for p in P if p["completed"]]
-    alive = [p for p in done if p["status"] != "deleted"]
-
-    # ── онбординг и воронка ──
-    def reached(p: dict) -> int:
-        if p["completed"]:
-            return len(STEP_ORDER)
-        a = p.get("abandoned_at") or (p.get("stuck") or "").split(":")[0]
-        return STEP_ORDER.index(a) + 1 if a in STEP_ORDER else 1
-
-    funnel = []
-    for i, st in enumerate(STEP_ORDER):
-        r = sum(1 for p in P if reached(p) >= i + 1)
-        left = sum(1 for p in P if not p["completed"] and reached(p) == i + 1)
-        funnel.append({"step": st, "reached": r, "left": left})
-    taps = [p["onboarding_taps"] for p in done if p["onboarding_taps"] is not None]
-    clean = [p["onboarding_taps"] for p in done if p["onboarding_taps"] is not None and not p["redo"] and not p["misclick"]]
-    step_means: dict[str, float] = {}
-    for st in STEP_ORDER:
-        vals = [p["steps_taps"].get(st, 0) for p in done if p.get("steps_taps")]
-        step_means[st] = statistics.mean(vals) if vals else 0.0
-    edits = [p["interest_edits"] for p in done if p.get("interest_edits") is not None]
-    refiners = [p for p in done if p.get("refine_ops") is not None]
-    no_edit = [p["onboarding_taps"] for p in done if p.get("interest_edits") == 0 and p["onboarding_taps"] is not None]
-    m["refine"] = {"personas_with_menu": sum(1 for p in done if p.get("refine")), "opened": len(refiners),
-                   "taps_median": med([p["refine_taps"] for p in refiners if p.get("refine_taps")]),
-                   "taps_max": max((p["refine_taps"] for p in refiners if p.get("refine_taps")), default=None),
-                   "rebuilt": sum(1 for p in refiners if p.get("refine_rebuilt")),
-                   "ops": dict(Counter(op for p in refiners for op in (p["refine_ops"] or []))),
-                   "used_all_screen": sum(1 for p in done if p.get("used_all_screen")),
-                   "all_taps_median": med([p["onboarding_taps"] + (p.get("refine_taps") or 0) for p in done if p["onboarding_taps"] is not None])}
-    m["onboarding"] = {
-        "no_interest_edit_median": med(no_edit), "no_interest_edit_n": len(no_edit), "taps_le_target": sum(1 for t in taps if t <= TARGET_TAPS),
-        "started": started, "completed": len(done), "funnel": funnel, "taps_min": min(taps) if taps else None,
-        "taps_median": med(taps), "taps_max": max(taps) if taps else None, "taps_mean": statistics.mean(taps) if taps else None,
-        "taps_clean_median": med(clean), "taps_clean_min": min(clean) if clean else None, "taps_clean_max": max(clean) if clean else None,
-        "step_means": step_means, "theoretical_min": MIN_ONBOARDING_TAPS, "interest_edits_median": med(edits),
-        "interest_edits_max": max(edits) if edits else None,
-        "interest_share_of_taps": ratio(step_means.get("interests", 0), statistics.mean(taps)) if taps else None,
-        "weights_share_of_taps": ratio(step_means.get("weights", 0), statistics.mean(taps)) if taps else None,
-        "prefill": prefill_stats(P),
-        "screens": d.get("onboarding_screens", []),
-        "interest_buttons": next((p["interest_buttons"] for p in P if p.get("interest_buttons")), None),
-        "interest_rows": next((p["interest_rows"] for p in P if p.get("interest_rows")), None),
-        "weight_prompts": next((p["weight_prompts"] for p in P if p.get("weight_prompts")), None),
-        "back_screens": sum(1 for p in P for v in (p.get("screens_back") or {}).values() if v),
-        "all_screens_checked": sum(len(p.get("screens_back") or {}) for p in P),
-    }
-    m["activation"] = ratio(len(done), started)
-
-    # ── подборки ──
-    sent = [x for x in D if x["origin"] in ("first", "weekly", "reset")]
-    by_week: dict[int, dict] = {}
-    for w in range(weeks + 1):
-        ds = [x for x in sent if x["week"] == w]
-        if not ds:
-            by_week[w] = {"digests": 0}
-            continue
-        by_week[w] = {
-            "digests": len(ds), "cards": statistics.mean(x["cards"] for x in ds), "slots": statistics.mean(x["slot_cards"] for x in ds),
-            "empty": statistics.mean(max(0, 5 - x["slot_cards"]) for x in ds), "horizon": statistics.mean(x["horizon_cards"] for x in ds),
-            "opened": sum(1 for x in ds if x["opened"]), "reacted": sum(1 for x in ds if x["decisions"] > 0),
-            "go": sum(1 for x in ds if x["go"] > 0),
-        }
-    reacted = sum(1 for x in sent if x["decisions"] > 0)
-    m["reaction"] = ratio(reacted, len(sent))
-    m["digests"] = {"sent": len(sent), "reacted": reacted, "opened": sum(1 for x in sent if x["opened"]), "by_week": by_week,
-                    "first": sum(1 for x in sent if x["origin"] == "first"), "manual": sum(1 for x in D if x["origin"] == "manual"),
-                    "avg_cards": statistics.mean(x["cards"] for x in sent) if sent else None,
-                    "avg_empty": statistics.mean(max(0, 5 - x["slot_cards"]) for x in sent) if sent else None,
-                    "with_empty": sum(1 for x in sent if x["slot_cards"] < 5), "multi_day_cards": sum(x.get("multi_day_cards", 0) for x in sent),
-                    "total_cards": sum(x["cards"] for x in sent), "already_started": sum(x.get("already_started", 0) for x in D),
-                    "resent_no_status": sum(x.get("resent_no_status", 0) for x in D),
-                    "messy_time": sum(x.get("messy_time", 0) for x in D), "all_cards": sum(x["cards"] for x in D),
-                    "plan_messy_lines": sum(p.get("messy_lines", 0) for p in d["plan_pushes"]),
-                    "plan_lines": sum(p.get("lines", 0) for p in d["plan_pushes"]),
-                    "no_interest_button": all(not x.get("has_interest_button") for x in D) if D else None}
-    # тишина: человек был в базе, а подборки в эту неделю не получил
-    silent = total_weeks = 0
-    for p in alive:
-        if p["blocked"]:
-            continue                                   # заблокировавшим подборка не доходит по другой причине (см. дефект про блокировку)
-        for c in range(1, weeks + 1):
-            total_weeks += 1
-            silent += int(c not in p["digest_cycles"])
-    alive_ids = {p["user_id"] for p in alive if not p["blocked"]}
-    nothing = {(u, w) for u, w in d.get("empty_sends", []) if u in alive_ids}
-    m["silent"] = {"user_weeks": total_weeks, "silent": silent, "share": ratio(silent, total_weeks), "logged_nothing": len(nothing),
-                   "empty_notices": len(d.get("empty_notices", []))}
-
-    # ── решения ──
-    dec = [t for t in T if t["kind"] == "decision"]
-    cnt = Counter(t["status"] for t in dec)
-    reasons = Counter(t["reason"] for t in T if t["kind"] == "reason")
-    n_skip = cnt.get("мимо", 0)
-    with_reason = sum(v for k, v in reasons.items() if k)
-    m["decisions"] = {"total": len(dec), "by_status": dict(cnt), "reasons": dict(reasons), "skip_total": n_skip,
-                      "skip_with_reason": with_reason, "skip_no_reason_button": reasons.get("", 0),
-                      "skip_unanswered": fcount(d, "reason_not_answered"),
-                      "wanted_interest": sum(1 for t in T if t["kind"] == "wanted_interest"),
-                      "wanted_interest_users": len({t["u"] for t in T if t["kind"] == "wanted_interest"})}
-
-    # ── «иду»: у скольких и после скольких нажатий ──
-    first_go = [p["first_go_taps"] for p in done if p["first_go_taps"] is not None]
-    after_onb = [p["first_go_taps"] - p["onboarding_taps"] for p in done if p["first_go_taps"] is not None and p["onboarding_taps"] is not None]
-    go_users = {p["user_id"] for p in done if p["first_go_taps"] is not None}
-    m["first_go"] = {"users": len(go_users), "of": len(done), "taps_min": min(first_go) if first_go else None,
-                     "taps_median": med(first_go), "taps_max": max(first_go) if first_go else None,
-                     "after_onb_median": med(after_onb), "after_onb_min": min(after_onb) if after_onb else None,
-                     "in_first_digest": len({t["u"] for t in dec if t["status"] == "иду" and t.get("origin") == "first"})}
-    # ── «иду» в неделю, план ──
-    plan_rows = []
-    go_by_week = []
-    for w in range(weeks + 1):
-        gu = {t["u"] for t in dec if t["status"] == "иду" and t.get("week") == w and t.get("origin") in ("first", "weekly", "reset", "manual")}
-        go_by_week.append(len(gu))
-        plan_rows.append(ratio(len(gu), len(done)))
-    plan_users = {p["u"] for p in d["plan_pushes"]}
-    cmd_plan_users = {c["u"] for c in C if c["cmd"] == "/plan" and not c.get("empty")}
-    m["plan"] = {"go_users_by_week": go_by_week, "share_by_week": plan_rows,
-                 "mean": statistics.mean([x for x in plan_rows if x is not None]) if any(x is not None for x in plan_rows) else None,
-                 "reached_go": len(go_users), "got_push": len(plan_users), "used_cmd": len(cmd_plan_users),
-                 "reached_any": len(go_users | plan_users | cmd_plan_users), "pushes": len(d["plan_pushes"]),
-                 "plan_cmd_total": sum(1 for c in C if c["cmd"] == "/plan"), "plan_cmd_empty": sum(1 for c in C if c["cmd"] == "/plan" and c.get("empty")),
-                 "plan_max_line": max((c.get("max_line", 0) for c in C if c["cmd"] == "/plan"), default=0),
-                 "plan_lines_median": med([c["lines"] for c in C if c["cmd"] == "/plan"])}
-
-    # ── удержание ──
-    ret = []
-    for w in range(weeks + 1):
-        k = sum(1 for p in done if w in p["active_cycles"])
-        ret.append({"week": w, "active": k, "share": ratio(k, len(done))})
-    proj = None
-    if weeks >= 3 and ret[1]["share"] and ret[weeks]["share"]:
-        r = (ret[weeks]["share"] / ret[1]["share"]) ** (1.0 / (weeks - 1))
-        proj = min(1.0, ret[weeks]["share"] * r ** (8 - weeks))
-    m["retention"] = {"by_week": ret, "last": ret[weeks]["share"] if ret else None, "projected_week8": proj,
-                      "churned": sum(1 for p in done if p["churn_cycle"] is not None), "blocked": sum(1 for p in done if p["blocked"])}
-
-    # ── оценки ──
-    rt = [t["rating"] for t in T if t["kind"] == "rating"]
-    prompts = sum(f["n"] for f in d["feedback_sent"])
-    m["rating"] = {"n": len(rt), "mean": statistics.mean(rt) if rt else None, "dist": dict(sorted(Counter(rt).items())),
-                   "prompts": prompts, "answered": ratio(len(rt), prompts)}
-
-    # ── повторы между дайджестами ──
-    m["repeats"] = repeats_stats(d, sent, dec)
-
-    # ── отправка и скоринг в масштабе (п. 10 спеки) ──
-    msgs = [x["cards"] + 1 for x in sent]
-    avg_msgs = statistics.mean(msgs) if msgs else None
-    m["scale"] = {"avg_messages_per_digest": avg_msgs,
-                  "minutes_for_10k": (avg_msgs * 10000 / SEND_RATE / 60) if avg_msgs else None,
-                  "max_users_in_15min": int(15 * 60 * SEND_RATE / avg_msgs) if avg_msgs else None}
-    m["plan_reminders"] = d["db"].get("plan_reminders", {})
-    m["spec_table"] = spec_table(m, d, weeks)
-    m["norms"] = norms_table(m, d, sent)
-    return m
-
-
-def norms_table(m: dict, d: dict, sent: list[dict]) -> list[dict]:
-    """Операционные показатели против того, что спека требует числом (п. 3.1, 3.2, 8, 10)."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
-    rows: list[dict] = []
-
-    def add(name, value, norm, status, note=""):
-        rows.append({"name": name, "value": value, "norm": norm, "status": status, "note": note})
-
-    n = len(sent)
-    c57 = sum(1 for x in sent if 5 <= x["cards"] <= 7)
-    add("Подборка из 5–7 карточек (п. 3.2)", f"{c57} из {n} = {pct(ratio(c57, n))}; в среднем {num(m['digests']['avg_cards'], 1)}", "все", "na" if not n else "ok" if c57 == n else "fail",
-        "по неделям среднее: " + ", ".join(f"{num(v['cards'], 1)}" for v in m["digests"]["by_week"].values() if v.get("digests")))
-    full = sum(1 for x in sent if x["slot_cards"] >= 5)
-    add("Все 5 слотов уикенда заполнены (п. 8)", f"{full} из {n} = {pct(ratio(full, n))}", "все", "na" if not n else "ok" if full == n else "fail",
-        "в seed нет событий на 23.10, а на следующие уикенды их 4–18 на все категории — пустые слоты в основном недобор базы")
-    mx = max((x["cards"] + 1 for x in sent), default=0)
-    add("Не больше 7 сообщений за раз (п. 8)", f"максимум {mx}", "≤ 7", "na" if not n else "ok" if mx <= 7 else "fail")
-    tz = {p["user_id"]: p["tz"] for p in d["personas"]}
-    weekly = [x for x in d["digests"] if x["origin"] == "weekly"]
-    on_time = 0
-    for x in weekly:
-        loc = datetime.fromisoformat(x["t"]).astimezone(ZoneInfo(tz.get(x["u"], "Europe/Moscow")))
-        on_time += int(loc.weekday() == 3 and loc.hour == 19)
-    add("Еженедельная подборка уходит в чт 19:00 по поясу человека (п. 3.2, 8)", f"{on_time} из {len(weekly)} = {pct(ratio(on_time, len(weekly)))}", "все",
-        "na" if not weekly else "ok" if on_time == len(weekly) else "fail",
-        "часовые повторные запуски дубли не создали" if not any(c > 1 for c in Counter((x['u'], x['week']) for x in weekly).values()) else "есть дубли")
-    rp = m["repeats"]
-    add("Не повторять показанное без реакции и после «мимо» (п. 8)", f"нарушений {rp['violate_no_reaction_3'] + rp['violate_skip']} из {rp['repeated']} повторов", "0",
-        "ok" if rp["violate_no_reaction_3"] + rp["violate_skip"] == 0 else "fail", "повторов всего " + pct(rp["share"], 1) + " показов")
-    sc = m["scale"]
-    add("Отправка 10 000 человек за 15 минут (п. 10)", f"≈ {num(sc['minutes_for_10k'], 0)} мин при 25 сообщ./с", "≤ 15 мин",
-        "na" if not sc["minutes_for_10k"] else "ok" if sc["minutes_for_10k"] <= 15 else "fail", f"{num(sc['avg_messages_per_digest'], 1)} сообщений на человека")
-    di = d["db"]["decision_integrity"]
-    add("Нажатия сохраняются в БД (F6, F9)", f"{di['checked'] - di['missing'] - di['mismatch']} из {di['checked']}", "все", "ok" if not di["missing"] and not di["mismatch"] else "fail")
-    o = m["onboarding"]
-    ok_t = o["taps_median"] is not None and o["taps_median"] <= TARGET_TAPS
-    add("Нажатий до первой подборки (FLOW-ONBOARDING, разд. 1)", f"min {o['taps_min']}, медиана {num(o['taps_median'], 0)}, max {o['taps_max']}; "
-        f"≤ {TARGET_TAPS}: {o['taps_le_target']} из {o['completed']}", f"медиана ≤ {TARGET_TAPS}", "na" if o["taps_median"] is None else "ok" if ok_t else "fail",
-        f"минимум по коду {o['theoretical_min']}; без правок интересов {('медиана ' + num(o['no_interest_edit_median'], 0) + f" (n={o['no_interest_edit_n']})") if o['no_interest_edit_n'] else 'не обошёлся никто'}; "
-        f"правки интересов — {num(o['interest_edits_median'], 0)} нажатий в медиане")
-    rf = m["refine"]
-    add("«Уточнить под себя» — необязательный блок", f"открыли {rf['opened']} из {o['completed']}; нажатий в медиане {num(rf['taps_median'], 0)}", "необязательно", "na",
-        f"пересобрали подборку {rf['rebuilt']}; с «Уточнить» вместе до готового профиля — медиана {num(rf['all_taps_median'], 0)}")
-    return rows
-
-
-def prefill_stats(P: list[dict]) -> dict:
-    ps = [p["prefill"] for p in P if p.get("prefill")]
-    if not ps:
-        return {"personas": 0}
-    n = len(ps)
-
-    def avg(k: int) -> float:
-        return sum(p["counts"].get(str(k), p["counts"].get(k, 0)) for p in ps) / n
-
-    return {"personas": n, "avg_level3": avg(3), "avg_level2": avg(2), "avg_level1": avg(1), "avg_level0": avg(0),
-            "match_share": sum(p["match"] for p in ps) / max(1, sum(p["total"] for p in ps)),
-            "shown_match_share": sum(p.get("shown_match", 0) for p in ps) / max(1, sum(p.get("shown", 6) for p in ps)),
-            "shown_match_avg": sum(p.get("shown_match", 0) for p in ps) / n}
-
-
-def repeats_stats(d: dict, sent: list[dict], dec: list[dict]) -> dict:
-    by_user: dict[int, list[dict]] = defaultdict(list)
-    for x in sent:
-        if x["week"] is not None:
-            by_user[x["u"]].append(x)
-    hist: dict[tuple, list[tuple[str, str]]] = defaultdict(list)       # (u, event) -> [(t, status)]
-    for t in sorted(dec, key=lambda t: t["t"]):
-        hist[(t["u"], t["event_id"])].append((t["t"], t["status"]))
-    total = repeated = 0
-    cls: Counter = Counter()
-    viol_noreact = viol_skip = viol_first = 0
-    seen_weeks: dict[tuple, int] = {}
-    seen_origin: dict[tuple, str] = {}
-    for u, ds in by_user.items():
-        ds.sort(key=lambda x: (x["week"], x["t"]))
-        seen_weeks = {}
-        for x in ds:
-            for eid in x["event_ids"]:
-                total += 1
-                key = (u, eid)
-                if key in seen_weeks and seen_weeks[key] != x["week"]:
-                    repeated += 1
-                    last = None
-                    for t, st in hist.get(key, []):
-                        if t <= x["t"]:
-                            last = st
-                    gap = x["week"] - seen_weeks[key]
-                    label = "без реакции" if last is None else last
-                    cls[label] += 1
-                    if last is None and gap <= 3:
-                        viol_noreact += 1
-                        viol_first += int(seen_origin.get(key) in ("first", "reset"))
-                    if last in ("мимо", "интересно"):
-                        viol_skip += 1
-                seen_weeks[key] = x["week"]
-                seen_origin[key] = x["origin"]
-    return {"appearances": total, "repeated": repeated, "share": ratio(repeated, total), "classes": dict(cls),
-            "violate_no_reaction_3": viol_noreact, "violate_skip": viol_skip, "violate_from_first": viol_first}
-
-
-def spec_table(m: dict, d: dict, weeks: int) -> list[dict]:
-    o, dg, pl, rt, rk = m["onboarding"], m["digests"], m["plan"], m["retention"], m["rating"]
-    rows = []
-
-    def add(mid, name, value, shown, target, status, note=""):
-        rows.append({"id": mid, "name": name, "value": value, "shown": shown, "target": target, "status": status, "note": note})
-
-    a = m["activation"]
-    add("activation", "Активация: дошли до конца онбординга", a, f"{o['completed']} из {o['started']} = {pct(a)}", "≥ 70 %",
-        "na" if a is None else "ok" if a >= 0.70 else "fail", ci(o["completed"], o["started"]))
-    r = m["reaction"]
-    add("reaction", "Реакция: дайджесты хотя бы с одним решением", r, f"{dg['reacted']} из {dg['sent']} = {pct(r)}", "≥ 40 %",
-        "na" if r is None else "ok" if r >= 0.40 else "fail", ci(dg["reacted"], dg["sent"]))
-    pm = pl["mean"]
-    add("plan", "План: доля пользователей с ≥1 «иду» в неделю (среднее по неделям)", pm, f"{pct(pm)}; по неделям: " +
-        ", ".join(pct(x) for x in pl["share_by_week"]), "≥ 25 %", "na" if pm is None else "ok" if pm >= 0.25 else "fail",
-        "знаменатель — все прошедшие онбординг")
-    last = rt["last"]
-    add("retention", f"Удержание: активны на неделе {weeks} (8-недельное измерить нельзя)", last,
-        f"{pct(last)}; по неделям: " + ", ".join(pct(x['share']) for x in rt["by_week"]), "8 нед. ≥ 50 %", "na",
-        f"экстраполяция на неделю 8 по спаду недель 1–{weeks}: {pct(rt['projected_week8'])} (ориентир, не измерение)" if rt["projected_week8"] is not None
-        else "горизонт короче 8 недель")
-    q = rk["mean"]
-    add("rating", "Качество: средняя оценка «как прошло»", q, f"{num(q, 2)} (n = {rk['n']})", "≥ 4,0", "na" if q is None else "ok" if q >= 4.0 else "fail",
-        f"оценили {pct(rk['answered'])} из {rk['prompts']} запросов")
-    gm = (d.get("growth") or {}).get("metrics", {}).get("new_via_friends", {}).get("own")
-    if gm and gm["value"] is not None:
-        add("growth", "Рост: доля новых через друзей (приглашения и ссылка-рекомендация)", gm["value"], f"{pct(gm['value'], 1)} ({gm['numerator']} из {gm['denominator']})", "≥ 20 %",
-            "ok" if gm["value"] >= 0.2 else "fail", "source ∈ {invite, ref, share} среди новых с согласием; остальные метрики роста — в разделе 5")
-    else:
-        add("growth", "Рост: доля новых из «Отправить другу»", None, "не измеряется", "≥ 20 %", "na",
-            "кнопка «Другу» — URL, бот не видит нажатий и переходов; метрика требует редиректа через сервер")
-    add("money", "Деньги: конверсия в Pro, платящий организатор", None, "не измеряется", "≥ 5 % / неделя 6", "na", "платные функции не реализованы")
-    return rows
-
-
-# ───────────────────────── дефекты и юзабилити ─────────────────────────
-def load_baseline(name: str = "baseline.json") -> dict | None:
+def load_baseline(name: str = "baseline_v4.json") -> dict | None:
     p = Path(__file__).with_name(name)
+    if not p.exists():
+        return None
     try:
         return json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except ValueError:
         return None
-
-
-# Дефекты прошлого прогона (report.json из коммита «Симулятор 50 пользователей: итоговая версия»): ключ проверки → прежний номер.
-PREV_ID = {"day": "Д1", "remind": "Д2", "resurrect": "Д3", "params": "Д4", "interest": "Д5", "links": "Д6", "double": "Д7", "rewrite": "Д8",
-           "opened": "Д9", "fault": "Д10", "blocked": "Д11", "stale": "Д12", "text": "Д13", "started": "Д14", "url": "Д15", "scale": "Д16",
-           "noback": "Д17", "localhost": "Д18"}
-# Порядок вывода открытых дефектов: по серьёзности, внутри — по важности.
-DEF_ORDER = ["invitecontract", "growthmetrics", "step1", "notified", "refmoment", "notifyhtml", "day", "remind", "resurrect", "params", "interest", "links", "double", "rewrite", "opened", "repeat", "stale", "text", "fault",
-             "blocked", "persistent", "nudge", "rebuilt", "started", "url", "scale", "noback", "localhost"]
-USAB_ORDER = ["onboarding", "proposal", "defaults", "skip", "thin", "time", "resent", "text", "started", "interests", "days", "noback", "interest", "digest_btn", "pre"]
-
-
-def fcount_v(d: dict, code: str) -> int:
-    return int((d.get("violations", {}).get(code) or {}).get("count", 0))
-
-
-def build_defects(m: dict, d: dict) -> tuple[list[dict], list[dict]]:
-    """(открытые, закрытые). Каждая проверка отвечает по данным прогона: дефект выводится только если он воспроизвёлся."""
-    db = d["db"]
-    dd, dr, pr = db.get("decision_day", {}), db.get("digest_rows", {}), db.get("plan_reminders", {})
-    fp = d["scenarios"].get("fault_probe", {})
-    base = load_baseline() or {}
-    base_cnt = {x["id"]: x.get("count") for x in base.get("defects", [])}
-    opened: list[dict] = []
-    closed: list[dict] = []
-
-    base_rem = sum(v.get("reminded", 0) for k, v in base.get("plan_reminders", {}).items() if isinstance(v, dict) and k in ("Пт", "Сб", "Вс", "Пн–Чт"))
-    base_going = sum(v.get("going", 0) for k, v in base.get("plan_reminders", {}).items() if isinstance(v, dict) and k in ("Пт", "Сб", "Вс", "Пн–Чт"))
-
-    def was(key: str) -> str:
-        """«(было N)» — только там, где прежний count был размером дефекта (число случаев), а не знаменателем."""
-        if key == "remind":
-            return f" (было {base_rem} из {base_going})"
-        if key == "opened":
-            return f" (было opened=true у 0 из {base_cnt.get('Д9')})"
-        c = base_cnt.get(PREV_ID.get(key, ""))
-        return f" (было {c})" if c is not None and key in ("day", "interest", "links", "double", "rewrite", "url", "started", "text") else ""
-
-    def chk(key, sev, title, is_open, what, where, repro, count, closed_text=""):
-        if is_open:
-            opened.append({"key": key, "id": key, "severity": sev, "title": title, "what": what, "where": where, "repro": repro, "count": count})
-        else:
-            closed.append({"key": key, "prev": PREV_ID.get(key, ""), "prev2": PREV2_DEF.get(key, ""), "prev4": PREV4_DEF.get(key, ""), "title": title, "evidence": closed_text})
-
-    # Д1 день решения
-    chk("day", "высокая", "«Иду» сохраняется на другой день, чем показан на карточке", dd.get("mismatch", 0) > 0,
-        [f"В БД день решения отличается от дня на последней карточке события у {dd.get('mismatch', 0)} из {dd.get('checked', 0)} решений «иду» "
-         f"({pct(ratio(dd.get('mismatch', 0), dd.get('checked', 0)))}): раньше карточного — {dd.get('earlier', 0)}, позже — {dd.get('later', 0)}, "
-         f"из них повторных решений — {dd.get('redecided', 0)}.",
-         *([f"Из лога: {dd['story']}"] if dd.get("story") else []), *[f"Пример: {x}" for x in dd.get("examples", [])[:2]]],
-        "leisure/api/services.py (set_decision: выбор Decision.day), leisure/bot/callbacks.py (день в callback_data)",
-        "Нажать «Иду» на карточке многодневного события и сравнить `decisions.day` с днём на карточке.", dd.get("mismatch", 0),
-        f"расхождений дня 0 из {dd.get('checked', 0)} решений «иду»{was('day')}; день едет в callback_data карточки и обновляется при повторном решении")
-    # Д2 напоминания и оценки
-    groups = {k: v for k, v in pr.items() if isinstance(v, dict) and "going" in v and k in ("Пт", "Сб", "Вс", "Пн–Чт")}
-    going = sum(v["going"] for v in groups.values())
-    rem_ok = sum(v["reminded"] for v in groups.values())
-    ask_ok = sum(v.get("asked_rating", 0) for v in groups.values())
-    low = [k for k, v in groups.items() if v["going"] and v["reminded"] < 0.9 * v["going"]]
-    rows = "; ".join(f"{k} {v['reminded']}/{v['going']}" for k, v in groups.items())
-    sd = pr.get("same_day_after_9", {})
-    chk("remind", "высокая", "Напоминание и запрос оценки получает меньшинство «Иду»", bool(going and (low or ask_ok < 0.9 * going)),
-        [f"«План на сегодня» в день события пришёл по {rem_ok} из {going} «иду» ({pct(ratio(rem_ok, going))}): {rows}; «Как прошло?» на следующий день — "
-         f"по {ask_ok} ({pct(ratio(ask_ok, going))}). Хуже всего: {', '.join(low) or '—'}."],
-        "leisure/worker/schedules.py (job_plan_today, job_how_was_it), leisure/api/services.py (decisions_to_remind, decisions_to_ask)",
-        "Нажать «Иду» на событие в воскресенье и проверить, что в воскресенье 09:00 пришёл план.", going - rem_ok,
-        f"напоминание в день события: {rem_ok} из {going} ({rows}); «Как прошло?» на следующий день: {ask_ok} из {going}; «иду» на сегодня после 09:00 "
-        f"получили напоминание на часовом запуске: {sd.get('reminded', 0)} из {sd.get('going', 0)}; флаги на решении: "
-        f"reminded_at {pr.get('flags', {}).get('reminded_at', 0)}, feedback_asked_at {pr.get('flags', {}).get('feedback_asked_at', 0)} из {pr.get('flags', {}).get('total', 0)}{was('remind')}")
-    # Д3 воскрешение профиля
-    dels = [s for s in d["scenarios"].get("delete", []) if "stale_tap" in s]
-    res = [s for s in dels if s.get("profile_after_tap")]
-    chk("resurrect", "высокая", "После /delete нажатие на старую кнопку воссоздаёт профиль и решение без согласия", bool(fcount(d, "profile_resurrected") or res),
-        [f"Из {len(dels)} нажавших на старую карточку после «Да, удалить всё» у {len(res)} профиль и решение появились снова.",
-         *[f"Лог: {x}" for x in fex(d, "profile_resurrected", 1)]],
-        "leisure/api/services.py (set_decision), leisure/bot/decisions.py", "/delete → «Да, удалить всё» → «Иду» на старой карточке → SELECT * FROM profiles.", len(res),
-        f"нажатий на старые карточки после /delete: {len(dels)}, профилей воссоздано 0, ответ «{(dels[0]['stale_tap']['toast'] if dels else '—')}»{was('resurrect')}")
-    # Д4 параметры без влияния
-    sens = d.get("sensitivity", {})
-    ch = sens.get("changed", {})
-    names = {"company": "компания", "kids": "«с детьми»"}
-    zero = [k for k in names if sens.get("personas") and not ch.get(k, 0)]
-    ctl = (f"Контроль: бюджет — {ch.get('budget (контроль)', 0)}, эстетика — {ch.get('aesthetics (контроль)', 0)}, время — {ch.get('times (контроль)', 0)}")
-    chk("params", "средняя", ("Не влияют на подборку: " + ", ".join(names[k] for k in zero)) if zero else "Заметка, компания и «с детьми» не влияют на подборку", bool(zero),
-        [f"Пересчёт подборки четверга для {sens.get('personas', 0)} профилей при смене одного параметра: " +
-         ", ".join(f"{names[k]} — {ch.get(k, 0)}" for k in names) + f" профилей изменили состав. {ctl}.",
-         "Ответ сохраняется, но нигде не используется."],
-        "leisure/core/scoring.py читает aesthetics, adults30, budget, times и правила «с детьми» из scoring.yaml",
-        "Два профиля, отличающихся только этим параметром, → `GET /api/digest/{id}/preview` даёт одинаковый состав.", len(zero),
-        "пункты «Заметка» и «район» убраны из бота (меню «Уточнить», /profile); компания и «с детьми» меняют состав: " + ", ".join(f"{names[k]} — {ch.get(k, 0)}" for k in names) + f" из {sens.get('personas', 0)}")
-    # Д5 кнопка «Интересно»
-    n_int = m["decisions"]["by_status"].get("интересно", 0)
-    chk("interest", "средняя", "На карточке нет кнопки «Интересно» (требование F6)", bool(m["digests"]["no_interest_button"]),
-        [f"В {m['digests']['sent']} подборках ни одной карточки с «Интересно»: {m['decisions']['wanted_interest']} попыток нажать."],
-        "leisure/worker/messages.py (card_keyboard)", "Получить подборку и посмотреть клавиатуру карточки.", m["decisions"]["wanted_interest"],
-        f"кнопка есть на карточках; нажата {n_int} раз ({pct(ratio(n_int, m['decisions']['total']))} решений), попыток без кнопки {m['decisions']['wanted_interest']}{was('interest')}")
-    # Д6 ссылки после «Мимо»
-    chk("links", "средняя", "После «Мимо» с карточки пропадают «Подробнее», «Другу», «Весь дайджест»", fcount(d, "links_lost_after_click") > 0,
-        [f"{cnt(fcount(d, 'links_lost_after_click'), 'раз', 'раза', 'раз')} у {fusers(d, 'links_lost_after_click')} человек.",
-         *[f"Лог: {x}" for x in fex(d, "links_lost_after_click", 2)]], "leisure/bot/decisions.py (card_rows)",
-        "Нажать «Мимо» на последней карточке и выбрать причину.", fcount(d, "links_lost_after_click"),
-        f"после «Мимо» ссылок потеряно 0 из {m['decisions']['skip_total']} отказов{was('links')}")
-    # Д7 двойной тап
-    chk("double", "средняя", "Двойной тап по кнопке карточки даёт «Что-то пошло не так» и ERROR в логе", fcount(d, "error_toast") > 0,
-        [f"{fcount(d, 'error_toast')} случаев у {fusers(d, 'error_toast')} человек.", *[f"Лог: {x}" for x in fex(d, "double_tap_error", 1)]],
-        "leisure/bot/decisions.py (_edit_markup)", "Быстро нажать «Иду» дважды.", fcount(d, "error_toast"),
-        f"двойных тапов {fcount(d, 'double_tap_ok') + fcount(d, 'double_tap_error')}, ошибок 0, ERROR в логе 0{was('double')}")
-    # Д8 среда затирает items
-    chk("rewrite", "средняя", "Среда 22:00 перезаписывает состав уже отправленного дайджеста", dr.get("items_differ", 0) > 0,
-        [f"{dr.get('items_differ', 0)} из {dr.get('rows_sent', 0)} строк digests: Digest.items не совпадает с тем, что реально ушло. "
-         f"Следствие: {m['repeats']['violate_from_first']} повторов вопреки правилу «показанное без реакции не повторять».",
-         *[f"Пример: {x}" for x in dr.get("examples", [])[:2]]],
-        "leisure/worker/schedules.py (job_build_digests) → leisure/api/services.py (save_digest)",
-        "Онбординг во вторник, среда 22:00, сравнить digests.items с сообщением.", dr.get("items_differ", 0),
-        f"расхождений 0 из {dr.get('rows_sent', 0)} строк digests{was('rewrite')}")
-    # Д9 opened/decisions_count
-    dec_n = db.get("decisions_with_activity", 0)
-    bad9 = dr.get("rows_sent", 0) and dec_n and dr.get("opened_true", 0) == 0 and dr.get("decisions_count_nonzero", 0) == 0
-    chk("opened", "средняя", "Digest.opened и Digest.decisions_count никогда не заполняются", bool(bad9),
-        [f"Из {dr.get('rows_sent', 0)} дайджестов opened=true у 0, decisions_count>0 у 0, хотя в decisions {dec_n} строк."],
-        "leisure/db/models.py (Digest.opened, decisions_count)", "Нажать «Иду», SELECT opened, decisions_count FROM digests.", dr.get("rows_sent", 0),
-        f"opened=true у {dr.get('opened_true', 0)} из {dr.get('rows_sent', 0)} дайджестов, decisions_count>0 у {dr.get('decisions_count_nonzero', 0)}, "
-        f"сумма decisions_count {dr.get('decisions_count_sum', 0)} при {dec_n} решениях{was('opened')}")
-    # повторы вопреки правилам (не из затёртых подборок)
-    rp = m["repeats"]
-    extra = rp["violate_no_reaction_3"] - rp["violate_from_first"] + rp["violate_skip"]
-    chk("repeat", "средняя", "Событие вернулось в подборку вопреки правилам исключения (п. 8)", extra > 0,
-        [f"Повторно показано в течение 3 уикендов без реакции: {rp['violate_no_reaction_3'] - rp['violate_from_first']}; после «мимо»/«интересно»: {rp['violate_skip']}."],
-        "leisure/api/services.py (recently_shown_ids), leisure/core/recommend.py", "См. раздел повторов.", extra,
-        f"нарушений правила исключения {rp['violate_no_reaction_3'] + rp['violate_skip']} из {rp['repeated']} повторов")
-    # Д12 старые кнопки после рестарта
-    after = d["scenarios"].get("fsm_restart", {}).get("after", [])
-    chk("stale", "средняя", "После перезапуска бота старые кнопки онбординга молчат", fcount(d, "stale_button_dead") > 0,
-        [f"{fcount(d, 'stale_button_dead')} из {len(after)} нажатий на старый экран после рестарта остались без ответа.", *[f"Лог: {x}" for x in fex(d, "stale_button_dead", 1)]],
-        "leisure/bot/onboarding.py (обработчики с состоянием)", "Начать онбординг, перезапустить бота, нажать кнопку на старом экране.", fcount(d, "stale_button_dead"),
-        f"{sum(1 for x in after if x.get('handled') and x.get('answered'))} из {len(after)} нажатий на старые экраны после рестарта обработаны и подтверждены "
-        f"(экран онбординга хранит состояние в профиле, FSM не нужен){was('stale')}")
-    # Д13 текст и команды
-    chk("text", "средняя", "Свободный текст и команды на шагах онбординга: молчание или «съеденная» команда", bool(fcount(d, "text_ignored") or fcount(d, "command_eaten_by_notes")),
-        [f"Текст без ответа: {fcount(d, 'text_ignored')}, команда принята за текст в меню «Уточнить»: {fcount(d, 'command_eaten_by_notes')}."],
-        "leisure/bot/onboarding.py", "На шаге ценностей написать текст; в меню «Уточнить под себя» — /help.", fcount(d, "text_ignored") + fcount(d, "command_eaten_by_notes"),
-        f"текст на шагах с кнопками получил подсказку {fcount(d, 'text_answered')} раз из {fcount(d, 'text_answered') + fcount(d, 'text_ignored')}, "
-        f"/help в меню «Уточнить» отработал как команда {fcount(d, 'command_in_notes_ok')} из {fcount(d, 'command_in_notes_ok') + fcount(d, 'command_eaten_by_notes')}{was('text')}")
-    # Д10 сбои доставки
-    once, pers, ra, bl = fp.get("server_error_once", {}), fp.get("server_error_persistent", {}), fp.get("retry_after", {}), fp.get("blocked", {})
-    chk("fault", "средняя", "Временный сбой Telegram (5xx, сеть) теряет карточку подборки", bool(once.get("lost")),
-        [f"Проба: 502 на втором из трёх сообщений — доставлено {once.get('delivered')}, потеряно {once.get('lost')}."], "leisure/worker/send.py (send_with_bot)",
-        "См. Sim.fault_probe.", 1,
-        f"разовый 502 → повтор, доставлено {len(once.get('delivered', []))} из 3; 429 → доставлено {len(ra.get('delivered', []))} из 3; результат — SendResult{was('fault')}")
-    rpb = d["scenarios"].get("resend_probe", {})
-    chk("persistent", "низкая", "Карточка, не доставленная после всех повторов, не досылается",
-        bool(rpb.get("ran")) and (rpb.get("flagged_after", 0) > 0 or rpb.get("resent", 0) < rpb.get("flagged_first", 0)),
-        [f"Проба: u{rpb.get('uid')}, четыре 502 подряд на первой карточке четверговой рассылки — помечено недоставленных {rpb.get('flagged_first')}, "
-         f"после следующего часового запуска дослано {rpb.get('resent')}, пометок осталось {rpb.get('flagged_after')}."],
-        "leisure/worker/schedules.py (_mark_undelivered, _resend_missing)", "См. Sim._resend_before: сбой на карточке в рассылке, затем следующий `job_send_digests`.", 1,
-        (f"проба на рассылке: у u{rpb.get('uid')} 4 подряд 502 на первой карточке подборки из {rpb.get('items')} → недоставленных {rpb.get('flagged_first')} "
-         f"(у человека пришло {rpb.get('cards_first')}), на следующем часовом запуске дослано {rpb.get('resent')}, пометок {rpb.get('flagged_after')}, "
-         f"карточек теперь {rpb.get('cards_after')}" if rpb.get("ran") else "проба не выполнялась (нет рассылки в четверг первой недели)")
-        + f"; на уровне `send_with_bot` стойкий 502 по-прежнему оставляет сообщение недоставленным (undelivered {pers.get('undelivered')}), досылка — в воркере")
-    # Подсказка про бюджет после второго «Мимо — дорого»
-    npb = d["scenarios"].get("nudge_probe", {})
-    bad = fcount(d, "nudge_missing") + fcount(d, "nudge_unexpected")
-    chk("nudge", "низкая", "Подсказка про бюджет не приходит после второго «Мимо — дорого» (или приходит без повода)", bad > 0,
-        [f"Не пришла {fcount(d, 'nudge_missing')}, пришла без повода {fcount(d, 'nudge_unexpected')}.", *[f"Лог: {x}" for x in fex(d, "nudge_missing", 2) + fex(d, "nudge_unexpected", 2)]],
-        "leisure/bot/decisions.py (_budget_nudge_due, on_card_button)", "Бюджет «не важно», два раза «Мимо» → «Дорого» на разных событиях.", bad,
-        (f"проба u{npb.get('uid')}: два «Мимо — дорого» подряд при бюджете «не важно» → подсказка пришла {fcount(d, 'nudge_ok')} раз, с кнопкой «Уточнить под себя»; "
-         f"повторно и без повода не приходила ({fcount(d, 'nudge_unexpected')}); из подсказки бюджет задали {fcount(d, 'nudge_followed')}") if npb else "проба не выполнялась")
-    # Новый: пересобранная подборка не пишется в Digest.items
-    rb = db.get("rebuilt", {})
-    chk("rebuilt", "низкая", "Пересобранная подборка не записывается в Digest.items", bool(rb.get("not_logged")),
-        [f"После «Пересобрать подборку» (в «Уточнить под себя») человеку показано {rb.get('cards', 0)} карточек в {rb.get('digests', 0)} подборках; "
-         f"{rb.get('not_logged', 0)} из них ({rb.get('new_events', 0)} новых событий) не попали в `Digest.items` — в БД лежит только первая, прежняя подборка.",
-         "`recently_shown_ids` берёт показанное из `Digest.items`, поэтому такие события без реакции в следующие уикенды не считаются показанными и могут прийти снова; "
-         "`Digest.items` не совпадает с тем, что человек видел.",
-         *([f"Пример: {rb['example']}"] if rb.get("example") else [])],
-        "leisure/bot/onboarding.py (_digest_for: save_digest только при first=True), leisure/api/services.py (recently_shown_ids)",
-        "Пройти онбординг, в «Уточнить под себя» сменить бюджет, нажать «Пересобрать подборку» и сравнить карточки с `digests.items` этого уикенда.",
-        rb.get("not_logged", 0),
-        f"пересобранных подборок {rb.get('digests', 0)}, показано карточек {rb.get('cards', 0)} ({rb.get('new_events', 0)} новых событий), не попавших в `Digest.items`: {rb.get('not_logged', 0)}")
-    # Д11 блокировка
-    blk = db.get("blocked", [])
-    chk("blocked", "средняя", "Заблокировавший бота остаётся активным и получает попытки отправки", db.get("profiles_active_after_block", 0) > 0,
-        [f"{len(blk)} заблокировавших; активных после блокировки: {db.get('profiles_active_after_block', 0)}; отклонённых вызовов {sum(b['failed_sends'] for b in blk)}."],
-        "leisure/worker/send.py, leisure/worker/schedules.py", "Заблокировать бота и посмотреть логи воркера.", len(blk),
-        f"заблокировавших {len(blk)}, рассылки выключены у {len(blk) - db.get('profiles_active_after_block', 0)}; отклонённых вызовов {sum(b['failed_sends'] for b in blk)}; "
-        f"проба: после Forbidden остальные сообщения не отправляются (blocked={bl.get('blocked')}){was('blocked')}")
-    # Д14 начавшиеся события
-    chk("started", "низкая", "Подборка пришла с событиями, которые уже начались", m["digests"]["already_started"] > 0,
-        [f"{cnt(m['digests']['already_started'], 'карточка', 'карточки', 'карточек')}.", *[f"Лог: {x}" for x in fex(d, "card_already_started", 2)]],
-        "leisure/bot/onboarding.py, leisure/bot/commands.py, leisure/api/services.py", "Пройти онбординг в воскресенье вечером.", m["digests"]["already_started"],
-        f"карточек с начавшимися событиями 0 при {sum(1 for p in d['personas'] if p['completed'] and p.get('onboard_offset_h', 0) >= 96)} онбордингах в сб–вс{was('started')}")
-    # Д15 длинные URL
-    v = d.get("violations", {}).get("button_url_long")
-    chk("url", "низкая", "URL кнопок длиннее 2 048 символов", bool(v),
-        [f"{cnt(v['count'], 'карточка', 'карточки', 'карточек') if v else ''} с URL > 2048 символов."], "leisure/core/links.py", "Собрать подборку, посмотреть длину url «Другу».",
-        v["count"] if v else 0, f"URL кнопок длиннее 2048 символов: 0{was('url')}")
-    # Д16 масштаб
-    sc = m["scale"]
-    chk("scale", "низкая", "Отправка дайджеста 10 000 пользователям не укладывается в 15 минут (п. 10)", bool(sc["minutes_for_10k"] and sc["minutes_for_10k"] > 15),
-        [f"В среднем {num(sc['avg_messages_per_digest'], 1)} сообщений на подборку, лимит {SEND_RATE} сообщ./с → 10 000 человек ≈ {num(sc['minutes_for_10k'], 0)} мин; "
-         f"за 15 минут успеть можно ≈ {sc['max_users_in_15min']} человек."],
-        "leisure/worker/send.py (SEND_INTERVAL = 1/25), leisure/worker/schedules.py (digest_messages)", "Число сообщений на подборку × 10 000 / 25.", 1,
-        f"≈ {num(sc['minutes_for_10k'], 0)} мин")
-    # Д17 нет «Назад»
-    mm = db.get("profile_mismatch", {})
-    n_back = m["onboarding"]["back_screens"]
-    chk("noback", "низкая", "Ошибку в ответе онбординга исправить нельзя — сохраняется неверный профиль", n_back == 0 and m["onboarding"]["all_screens_checked"] > 0,
-        [f"«Назад» на {n_back} из {m['onboarding']['all_screens_checked']} экранов; у {sum(1 for p in d['personas'] if p.get('misclick') and p['misclick'].get('recovery') == 'continue')} "
-         f"нажавших не ту кнопку в БД лежат неверные ответы: {', '.join(f'{ANSWER_RU.get(k, k)} — {v}' for k, v in sorted(mm.items())) or '—'}."],
-        "leisure/bot/onboarding.py (шаги без «Назад»)", "Выбрать бюджет «до 1 000 ₽» по ошибке и дойти до конца.", sum(mm.values()),
-        f"«← Назад» на {n_back} из {m['onboarding']['all_screens_checked']} проверенных экранов; профилей с неверными ответами из-за ошибки: {sum(mm.values())}")
-    # Д18 localhost
-    lh = fp.get("localhost", {})
-    chk("localhost", "низкая", "WEB_BASE_URL=localhost делает онбординг невозможным", bool(lh) and (lh.get("url_buttons", 0) > 0 or not lh.get("sent")),
-        ["При localhost URL-кнопки уходят в Telegram и отклоняются."], "leisure/bot/onboarding.py", "Запустить бота без WEB_BASE_URL.", 1,
-        f"проба с WEB_BASE_URL=localhost: URL-кнопок {lh.get('url_buttons', 0)}, ссылка на политику в тексте: {'да' if lh.get('link_in_text') else 'нет'}, "
-        f"сообщение доставлено: {'да' if lh.get('sent') else 'нет'}{was('localhost')}")
-    # ── рост через друзей (docs/GROWTH.md) ──
-    g = d.get("growth")
-    if g:
-        ck, mism = g["checks"], g["mismatch"]
-        f = g["funnel"]
-        chk("growthmetrics", "средняя", "Метрики роста не учитывают открывших без согласия (расходятся с формулами GROWTH.md §4)", bool(mism),
-            [f"Не совпали с расчётом симулятора: {', '.join(GROWTH_NAMES[k] for k in mism)}.",
-             *[f"{GROWTH_NAMES[k]}: симулятор {growth_value(g['metrics'][k]['own'])}, API {growth_value(g['metrics'][k]['api'])}." for k in mism],
-             f"Причина для «принятия» и «активации приглашённых»: человек без профиля и согласия при открытии не получает строки в `invite_accepts`, в журнал пишется только "
-             f"`growth_events(invite_open)` (таких {f.get('opened_anonymous_api')}), и в знаменатель они не попадают; «рекомендация» не видит открытий ссылки без согласия "
-             f"(ссылку открыли {f.get('ref_codes_seen')} раз, с согласием — {f.get('ref_codes_opened')})."],
-            "leisure/api/invites.py (growth_metrics, web_open: log_open_without_consent)",
-            "Открыть приглашение человеком без профиля и не принимать его: `GET /api/metrics/growth` → `acceptance.denominator` не вырос, `counts.opened_without_consent` вырос.",
-            len(mism),
-            f"принятие {growth_value(g['metrics']['acceptance']['own'])} и активация приглашённых {growth_value(g['metrics']['activation_invited']['own'])} совпадают с API "
-            f"(в знаменателях и открывшие без согласия, всего открывших {f.get('opened')}); «рекомендация» по ссылкам, которые открыли: симулятор {f.get('ref_codes_seen')}, "
-            f"API {growth_value(g['metrics']['recommendation']['api'])}; нажатий «Поделиться» сервер не видит ({f.get('ref_shares')})")
-        chk("notifyhtml", "низкая", "Уведомление пригласившему не экранирует имя друга и название события (HTML)", fcount_v(d, "html_warning") > 0 and bool(ck.get("inviter_notified")),
-            [f"В тексте «идёт с тобой» не экранированы `&`, `<`, `>`: нарушений формата Bot API {fcount_v(d, 'html_warning')}.",
-             *[f"Пример: {x}" for x in d["violations"].get("html_warning", {}).get("examples", [])[:2]],
-             "Имя берётся из профиля Telegram и бывает любым, название — из источника; при `<` Telegram отклонит сообщение, и повторные попытки `job_invite_notifications` будут падать каждую минуту."],
-            "leisure/worker/messages.py (invite_joined_text, invite_joined_many_text)", "Принять приглашение на событие с `&` или `<` в названии (или с таким именем в профиле) и посмотреть текст уведомления.",
-            fcount_v(d, "html_warning"),
-            f"нарушений формата Bot API в уведомлениях 0; доставлено {ck.get('inviter_notified', 0)}, из них при <, > или & в имени друга или названии события {ck.get('notified_special_chars', 0)}")
-        sk = d["db"].get("step1_skipped_profiles", 0)
-        n_sk = fcount(d, "step1_skipped")
-        chk("step1", "средняя", "После согласия в Mini App бот на /start пропускает «Шаг 1» и оставляет ценности по умолчанию", n_sk > 0,
-            [f"{cnt(n_sk, 'человек', 'человека', 'человек')} приняли приглашение в Mini App (согласие там), потом нажали /start в боте и сразу получили «Шаг 2 из 2»: пять ценностей не выбирались, "
-             f"в профиле {sk} остались значения по умолчанию, подборка строится не по их ценностям.", *[f"Лог: {x}" for x in fex(d, "step1_skipped", 2)]],
-            "leisure/bot/onboarding.py (start: top_values(p) == TOP_N у профиля с согласием из Mini App)",
-            "Принять приглашение в Mini App с согласием, затем в боте /start: первым экраном приходит «Шаг 2 из 2».", n_sk,
-            f"/start у профиля с согласием из Mini App открывает «Шаг 1 из 2»: {fcount(d, 'step1_after_miniapp')} человек, «Шаг 2» без выбора ценностей — {n_sk}")
-        bad = ck.get("invite_contract_bad", 0) + ck.get("accept_bad", 0) + ck.get("view_bad", 0) + ck.get("together_name_bad", 0) + ck.get("accept_failed", 0) + ck.get("declined_has_decision", 0)
-        chk("invitecontract", "высокая", "API приглашений нарушает контракт GROWTH.md §6", bad > 0 or g["n_api_errors"] > 0,
-            [f"Нарушений контракта: {bad}, ответов 5xx: {g['n_api_errors']}.", *[f"Пример: {x}" for k in ("invite_contract_bad", "accept_bad", "view_bad", "accept_failed") for x in g["examples"].get(k, [])[:1]]],
-            "leisure/api/invites.py, leisure/api/routers/invites.py", "См. раздел 5.4 отчёта.", bad + g["n_api_errors"],
-            f"контракт §6 соблюдён: проверок {ck.get('invite_contract_ok', 0) + ck.get('accept_ok', 0) + ck.get('view_ok', 0)}, 5xx {g['n_api_errors']}")
-        chk("notified", "средняя", "Пригласивший не получает уведомление «идёт с тобой»", ck.get("inviter_not_notified", 0) > 0,
-            [f"Не получили {ck.get('inviter_not_notified', 0)} из {f['going']} «иду» по приглашениям.", *[f"Пример: {x}" for x in g["examples"].get("inviter_not_notified", [])[:2]]],
-            "leisure/api/invites.py (notify_inviter, _deliver), leisure/worker/schedules.py (job_invite_notifications)", "Принять приглашение «Иду» и посмотреть чат пригласившего.",
-            ck.get("inviter_not_notified", 0), f"уведомлений доставлено {ck.get('inviter_notified', 0)}, не доставлено {ck.get('inviter_not_notified', 0)}")
-        late = ck.get("ref_ask_too_soon", 0) + ck.get("ref_ask_missing", 0) + ck.get("ref_ask_on_low_rating", 0) + ck.get("ref_ask_no_button", 0) + ck.get("ref_source_bad", 0)
-        chk("refmoment", "средняя", "Момент рекомендации: просьба чаще раза в 14 дней, пропущена, на низкую оценку или без ссылки", late > 0,
-            [f"Слишком рано {ck.get('ref_ask_too_soon', 0)}, пропущена {ck.get('ref_ask_missing', 0)}, на оценку 1–2 {ck.get('ref_ask_on_low_rating', 0)}, без кнопки {ck.get('ref_ask_no_button', 0)}, "
-             f"неверный source по ссылке {ck.get('ref_source_bad', 0)}.", *[f"Пример: {x}" for k in ("ref_ask_too_soon", "ref_ask_missing", "ref_source_bad") for x in g["examples"].get(k, [])[:1]]],
-            "leisure/bot/decisions.py (_ref_moment), leisure/api/invites.py (ref_ask_due)", "Поставить две оценки 4–5 в течение 14 дней.", late,
-            f"просьб {f['ref_asks']} у {f['ref_ask_users']} человек, раньше срока 0, source=ref по ссылке верно {ck.get('ref_source_ok', 0)}")
-    return opened, closed
-
-
-# Второй прогон (baseline_v2.json): открытые тогда пункты, которые к третьему закрыты. Нумерация — по тому отчёту.
-PREV2_UID = {"proposal": "У2", "defaults": "У3", "skip": "У4"}
-PREV2_TITLE = {"proposal": "Предложенные шесть направлений слабо совпадают с тем, что хочет человек",
-               "defaults": "Не открывшие «Уточнить под себя» остаются с умолчаниями, которые им не подходят",
-               "skip": "«Мимо»: причины в два шага, а блок остаётся на карточке, если не отвечать"}
-PREV2_DEF = {"params": "Д1", "persistent": "Д2", "rebuilt": "Д3"}
-PREV4_DEF = {"growthmetrics": "Д1", "step1": "Д2", "notifyhtml": "Д3"}      # открытые в четвёртом прогоне (baseline_v4.json)
-PREV_UID = {"onboarding": "У1", "interests": "У2", "days": "У3", "noback": "У4", "interest": "У5", "skip": "У6", "thin": "У7", "time": "У8",
-            "digest_btn": "У9", "text": "У10", "resent": "У11", "pre": "У12", "started": "У13"}
-
-
-def build_usability(m: dict, d: dict) -> tuple[list[dict], list[dict]]:
-    """(открытые, закрытые прежние). Проблема выводится, только если воспроизвелась в этом прогоне."""
-    o, dg, dec = m["onboarding"], m["digests"], m["decisions"]
-    base = load_baseline() or {}
-    prev_title = {x["id"]: x["title"] for x in base.get("usability", [])}
-    opened: list[dict] = []
-    closed: list[dict] = []
-
-    def item(key, title, is_open, evidence, advice, closed_text=""):
-        if is_open:
-            opened.append({"key": key, "id": key, "priority": 0, "title": title, "evidence": evidence, "advice": advice})
-        elif PREV_UID.get(key):
-            closed.append({"key": key, "prev": PREV_UID[key], "title": prev_title.get(PREV_UID[key], title), "evidence": closed_text})
-        elif PREV2_UID.get(key):
-            closed.append({"key": key, "prev": "", "prev2": PREV2_UID[key], "title": PREV2_TITLE[key], "evidence": closed_text})
-
-    P = d["personas"]
-    done = [p for p in P if p["completed"]]
-    pf = o["prefill"]
-    rf = m["refine"]
-    ig = d["db"].get("intent_gap", {})
-    # У1: длина онбординга
-    n_screens = len(o["screens"])
-    long_ = bool(o["taps_median"] and o["taps_median"] > TARGET_TAPS)
-    item("onboarding", "Онбординг: нажатий до подборки больше целевых 12", long_,
-         [f"До первой подборки: min {o['taps_min']}, медиана {num(o['taps_median'], 0)}, max {o['taps_max']}; в пределах {TARGET_TAPS} уложились {o['taps_le_target']} из {o['completed']}. "
-          f"Минимум по коду {o['theoretical_min']}; без правок интересов " + (f"медиана {num(o['no_interest_edit_median'], 0)} (n={o['no_interest_edit_n']})." if o['no_interest_edit_n'] else "не обошёлся никто."),
-          f"Остальное — правки интересов: в медиане {num(o['interest_edits_median'], 0)} нажатий (макс. {o['interest_edits_max']}), на экран интересов в среднем "
-          f"{num(o['step_means'].get('interests'), 1)} нажатия; «Все направления» открыли {rf['used_all_screen']} из {o['completed']}.",
-          f"Не дошли {o['started'] - o['completed']} из {o['started']}; номера шагов честные: «Шаг 1 из 2», «Шаг 2 из 2» ({n_screens} экранов до сохранения)."],
-         "Предлагать направления точнее (см. следующий пункт) и добавлять своё без захода в «Все направления».",
-         f"нажатий до подборки: min {o['taps_min']}, медиана {num(o['taps_median'], 0)}, max {o['taps_max']}; «Шаг 1 из 2», «Шаг 2 из 2» вместо 18 экранов с ложной нумерацией")
-    # новое: качество предложенных шести
-    weak = bool(pf.get("personas")) and pf["shown_match_share"] < 0.6
-    item("proposal", "Предложенные восемь направлений слабо совпадают с тем, что хочет человек", weak,
-         [f"Из восьми предложенных в интерес персоны попало в среднем {num(pf.get('shown_match_avg'), 1)} ({pct(pf.get('shown_match_share'))}); по всем 19 направлениям предзаполнение совпало в {pct(pf.get('match_share'))}.",
-          f"Лишнее приходится убирать, нужное — искать в «Все направления»: правок в медиане {num(o['interest_edits_median'], 0)}."],
-         "Ранжировать направления по ценностям точнее; дать «Другое?» с быстрым добавлением двух-трёх направлений.")
-    item("interests", "Список интересов: 19 кнопок в столбик и цикл из четырёх состояний", False, [], "",
-         f"8 направлений + «Все направления» (кисть вместо цикла); на экран интересов в среднем {num(o['step_means'].get('interests'), 1)} нажатия (было 9,7)")
-    # У3: день
-    picks = fcount(d, "day_picked")
-    item("days", "Нельзя выбрать другой день у события, идущего несколько дней", bool(dg["multi_day_cards"]) and picks == 0,
-         [f"{dg['multi_day_cards']} многодневных карточек, ряда «Пт / Сб / Вс» нет."], "Ряд кнопок дня.",
-         f"ряд «Пт / Сб / Вс» есть на многодневных карточках ({dg['multi_day_cards']} из {dg['total_cards']}); день выбирали {picks} раз, расхождений дня в БД {d['db'].get('decision_day', {}).get('mismatch', 0)}")
-    bs, ac = o["back_screens"], o["all_screens_checked"]
-    item("noback", "Нельзя вернуться или отменить шаг онбординга", ac > 0 and bs == 0,
-         [f"«Назад» на {bs} из {ac} экранов."], "Кнопка «← Назад».",
-         f"«← Назад» на {bs} из {ac} проверенных экранов; ошибку в ценностях исправили через «Назад» {fcount(d, 'misclick_fixed_with_back')} чел.")
-    item("interest", "Нет кнопки «Интересно» на карточке (F6)", bool(dec["wanted_interest"]), [f"{dec['wanted_interest']} попыток нажать."], "",
-         f"«Интересно» нажато {dec['by_status'].get('интересно', 0)} раз ({pct(ratio(dec['by_status'].get('интересно', 0), dec['total']))} решений)")
-    # У6: причины «Мимо»
-    reasons = dec["reasons"]
-    first3 = sum(reasons.get(k, 0) for k in ("не моё", "дорого", "далеко"))
-    hidden = sum(v for k, v in reasons.items() if k and k not in ("не моё", "дорого", "далеко"))
-    tot_r = first3 + hidden
-    nc, cl = fcount(d, "reasons_not_collapsed"), fcount(d, "reasons_collapsed")
-    first4 = sum(reasons.get(k, 0) for k in ("не моё", "дорого", "далеко", "уже был"))
-    hidden = sum(v for k, v in reasons.items() if k and k not in ("не моё", "дорого", "далеко", "уже был"))
-    tot_r = first4 + hidden
-    item("skip", "«Мимо»: блок причин остаётся на карточке после следующего действия", dec["skip_total"] > 0 and nc > 0,
-         [f"{dec['skip_total']} нажатий «Мимо»: причину выбрали {dec['skip_with_reason']}, блок оставили без ответа {dec['skip_unanswered']}; после следующего действия блок остался у {nc}, свернулся у {cl}."],
-         "Сворачивать блок причин при следующем действии человека.",
-         f"«Уже был» в первом ряду: за «Ещё…» осталось {hidden} из {tot_r} выбранных причин ({pct(ratio(hidden, tot_r))}); блок без ответа ({dec['skip_unanswered']}) свернулся при следующем действии "
-         f"{cl} раз из {cl + nc}")
-    silent = m["silent"]
-    thin = [v["empty"] for v in dg["by_week"].values() if v.get("digests")]
-    item("thin", "Подборки худеют к концу прогона", bool(silent["user_weeks"]) and bool(thin) and max(thin) - min(thin) >= 1,
-         ["Пустых слотов из 5 по неделям: " + ", ".join(f"неделя {w} — {num(v['empty'], 1)}" for w, v in dg["by_week"].items() if v.get("digests")) + ".",
-          f"Человеко-недель без подборки: {silent['silent']} из {silent['user_weeks']} ({pct(silent['share'])}); сообщение «ничего не нашлось» получено {silent['empty_notices']} раз."],
-         "Показывать лучшее из «на горизонте»; в проде база будет богаче seed.")
-    item("time", "Время события — сырой текст источника, а не время выбранного дня", bool(dg["messy_time"] or dg["plan_messy_lines"]),
-         [f"{dg['messy_time']} из {dg['all_cards']} карточек ({pct(ratio(dg['messy_time'], dg['all_cards']))}) показывают расписание сразу на несколько дат; "
-          f"в «Плане на сегодня» {dg['plan_messy_lines']} из {dg['plan_lines']} строк."], "Подставлять время выбранного дня.",
-         f"время выбранного дня на карточке и в плане; сырое расписание в {dg['messy_time']} из {dg['all_cards']} карточек и {dg['plan_messy_lines']} из {dg['plan_lines']} строк плана")
-    plan_btn = sum(1 for c in d["commands"] if c.get("via") == "button")
-    item("digest_btn", "«Весь дайджест» висит только на последней карточке", False, [], "",
-         f"«Весь дайджест» и «Мой план» стоят под заголовком подборки; «Мой план» нажали {plan_btn} раз")
-    item("text", "Свободный текст в чат игнорируется", bool(fcount(d, "text_ignored")), [f"{fcount(d, 'text_ignored')} раз без ответа."], "",
-         f"ответ на текст получен {fcount(d, 'text_answered')} раз из {fcount(d, 'text_answered') + fcount(d, 'text_ignored')}")
-    item("resent", "Повторно присланная карточка не показывает прежнее решение", bool(dg["resent_no_status"]),
-         [f"{cnt(dg['resent_no_status'], 'карточка', 'карточки', 'карточек')} без отметки ●."], "Рисовать ● из БД.",
-         "карточек с принятым решением без отметки ●: 0 (было 25); «Прежний ответ» в тексте карточки")
-    item("pre", "/plan приходит одним моноширинным блоком", bool(m["plan"]["plan_cmd_total"] and m["plan"]["plan_max_line"] > 120),
-         [f"Строки в /plan до {m['plan']['plan_max_line']} символов."], "Плоский текст с переносами.",
-         f"/plan обычным текстом и карточками; самая длинная строка {m['plan']['plan_max_line']} символов, `<pre>` нет")
-    item("started", "Подборка показывает уже начавшиеся события", bool(dg["already_started"]), [f"{dg['already_started']} карточек."], "Отсекать по времени начала.",
-         f"карточек с начавшимися событиями {dg['already_started']} при {sum(1 for p in done if p.get('onboard_offset_h', 0) >= 96)} онбордингах в сб–вс")
-    # умолчания у тех, кто не открыл «Уточнить»: бюджет теперь спрашивают на «Шаге 2», остальное (время, эстетика) — в «Уточнить»
-    nr = ig.get("not_refined", {"n": 0, "with_gap": 0, "fields": {}})
-    exp_skip = Counter()
-    ref_of = {p["user_id"]: p.get("refine_ops") is not None for p in P}
-    budget_of = {p["user_id"]: p for p in P}
-    for t in d["decisions"]:
-        if t["kind"] == "reason" and t.get("reason") == "дорого":
-            exp_skip["refined" if ref_of.get(t["u"]) else "not_refined"] += 1
-    bgap = nr["fields"].get("budget", 0)
-    other = {k: v for k, v in nr["fields"].items() if k != "budget"}
-    nstep = sum(1 for p in done if p.get("budget_on_step"))
-    ndear = sum(1 for p in done if p.get("budget_set") is None and p.get("nudge_seen"))
-    item("defaults", "Бюджет «не важно» по умолчанию не подходит тем, кто не открыл «Уточнить под себя»", nr["n"] > 0 and bgap > 0.2 * nr["n"],
-         [f"Из {nr['n']} прошедших онбординг без «Уточнить» бюджет в профиле расходится с ответом у {bgap} ({pct(ratio(bgap, nr['n']))}); строкой на «Шаге 2» бюджет задали {nstep}.",
-          f"Причина «дорого» в «Мимо»: у не открывших «Уточнить» {exp_skip['not_refined']}, у открывших {exp_skip['refined']}; подсказка про бюджет показана {fcount(d, 'nudge_ok')} раз."],
-         "Спрашивать бюджет на «Шаге 2» для всех, а не только по желанию, или усилить подсказку после «Мимо — дорого».",
-         f"бюджет задан на «Шаге 2» строкой из трёх кнопок у {nstep} человек (одно нажатие, ● на выбранной, экран остаётся); у не открывших «Уточнить» бюджет расходится у {bgap} из {nr['n']}; "
-         f"подсказка после второго «Мимо — дорого»: показана {fcount(d, 'nudge_ok')}, пропущена {fcount(d, 'nudge_missing')}, из неё бюджет задали {fcount(d, 'nudge_followed')}; "
-         f"остальные расхождения умолчаний (" + (", ".join(f"{ANSWER_RU.get(k, {'kids': 'с детьми'}.get(k, k))} — {v}" for k, v in sorted(other.items(), key=lambda kv: -kv[1])) or "нет") + ") остаются в «Уточнить»")
-    _ = ndear
-    _ = budget_of
-    return opened, closed
-
-
-def renumber(defects: list[dict], usab: list[dict], closed: list[dict]) -> None:
-    """Идентификаторы Д1…/У1… присваиваются после сортировки; ссылки вида @ключ@ в текстах заменяются на присвоенный номер."""
-    order = {k: i for i, k in enumerate(DEF_ORDER)}
-    defects.sort(key=lambda x: order.get(x["key"], 99))
-    ids = {x["key"]: f"Д{i}" for i, x in enumerate(defects, 1)}
-    for x in defects:
-        x["id"] = ids[x["key"]]
-    uo = {k: i for i, k in enumerate(USAB_ORDER)}
-    usab.sort(key=lambda x: uo.get(x["key"], 99))
-    for i, x in enumerate(usab, 1):
-        x["id"], x["priority"] = f"У{i}", i
-    for x in closed:
-        x["id"] = x["prev"]
-
-
-# ───────────────────────── вывод ─────────────────────────
-# ───────────────────────── рост через друзей (docs/GROWTH.md §4) ─────────────────────────
-GROWTH_NAMES = {"invite_share": "Доля «иду» с приглашением", "acceptance": "Принятие приглашения", "activation_invited": "Активация приглашённых",
-                "onboarding_invited": "Онбординг приглашённых", "new_via_friends": "Доля новых через друзей", "virality": "Коэффициент виральности",
-                "positive_experience": "Положительный опыт", "recommendation": "Рекомендация", "together_going": "Совместные походы"}
-GROWTH_FORMULA = {"invite_share": "приглашений / решений «иду»", "acceptance": "открывших с «иду» или «может быть» / всех открывших",
-                  "activation_invited": "согласие + решение / открывших без профиля", "onboarding_invited": "полный профиль за 2 недели / принявших",
-                  "new_via_friends": "source ∈ {invite, ref, share} / все новые", "virality": "новых через друзей / активных",
-                  "positive_experience": "оценок 4–5 / всех оценок", "recommendation": "нажали «Поделиться» / показов момента",
-                  "together_going": "«иду» вдвоём / всех «иду»"}
-GROWTH_TARGET = {"invite_share": 0.15, "acceptance": 0.30, "activation_invited": 0.60, "onboarding_invited": 0.40, "new_via_friends": 0.20,
-                 "virality": 0.2, "positive_experience": 0.70, "recommendation": 0.10, "together_going": None}
 
 
 def growth_value(x: dict | None) -> str:
@@ -822,67 +100,259 @@ def growth_value(x: dict | None) -> str:
     return f"{pct(x['value'], 1) if x['value'] is not None else 'н/д'} ({x['numerator']} из {x['denominator']})"
 
 
+# ───────────────────────── метрики п. 11 в редакции приложения ─────────────────────────
+def spec_table(d: dict) -> list[dict]:
+    m, weeks = d["metrics"], d["meta"]["weeks"]
+    g = d.get("growth") or {}
+    rows: list[dict] = []
+
+    def add(mid, name, value, shown, target, status, note=""):
+        rows.append({"id": mid, "name": name, "value": value, "shown": shown, "target": target, "status": status, "note": note})
+
+    a = m["activation"]
+    act = ratio(a["completed"], a["started"])
+    add("activation", "Активация: дошли до ленты (онбординг)", act, f"{a['completed']} из {a['started']} = {pct(act)}", "≥ 70 %",
+        "ok" if act is not None and act >= 0.7 else "fail", ci(a["completed"], a["started"]))
+    o = m["opens"]
+    r = o["with_decision_share"]
+    add("reaction", "Реакция: открытия приложения хотя бы с одним решением", r, f"{o['with_decision']} из {o['total']} = {pct(r)}", "≥ 40 %",
+        "na" if r is None else "ok" if r >= 0.4 else "fail", f"прежняя метрика считала подборки с решением; открытий в среднем {num(o['per_user_week'], 1)} на человека в неделю")
+    gp = [v for k, v in sorted(m["go_per_week"].items(), key=lambda kv: int(kv[0]))]
+    pm = sum(gp) / len(gp) if gp else None
+    add("plan", "План: доля пользователей с ≥1 «иду» в неделю (среднее по неделям)", pm, f"{pct(pm)}; по неделям: " + ", ".join(pct(x) for x in gp), "≥ 25 %",
+        "na" if pm is None else "ok" if pm >= 0.25 else "fail", "знаменатель — все прошедшие онбординг")
+    rt = [v for k, v in sorted(m["retention"].items(), key=lambda kv: int(kv[0]))]
+    last = rt[-1] if rt else None
+    add("retention", f"Удержание: открывали приложение на неделе {weeks} (8-недельное измерить нельзя)", last,
+        f"{pct(last)}; по неделям: " + ", ".join(pct(x) for x in rt), "8 нед. ≥ 50 %", "na", "удержание = хотя бы одно открытие приложения за неделю")
+    q = m["rating"]["mean"]
+    add("rating", "Качество: средняя оценка «сходил» (★ в плане)", q, f"{num(q, 2)} (n = {m['rating']['n']})", "≥ 4,0", "na" if q is None else "ok" if q >= 4.0 else "fail",
+        f"доля 4–5: {pct(ratio(sum(v for k, v in m['rating']['dist'].items() if int(k) >= 4), m['rating']['n']))}")
+    gm = (g.get("metrics") or {}).get("new_via_friends", {}).get("own") if g else None
+    if gm and gm["value"] is not None:
+        add("growth", "Рост: доля новых через друзей (приглашения и ссылка-рекомендация)", gm["value"], f"{pct(gm['value'], 1)} ({gm['numerator']} из {gm['denominator']})", "≥ 20 %",
+            "ok" if gm["value"] >= 0.2 else "fail", "source ∈ {invite, ref} среди новых профилей с согласием (в знаменателе и вторые профили аккаунтов); остальные метрики роста — в разделе 5")
+    else:
+        add("growth", "Рост: доля новых через друзей", None, "не измерялась", "≥ 20 %", "na", "прогон без графа друзей")
+    add("money", "Деньги: конверсия в Pro, платящий организатор", None, "не измеряется", "≥ 5 % / неделя 6", "na", "платные функции не реализованы")
+    return rows
+
+
+# ───────────────────────── дефекты и наблюдения ─────────────────────────
+def build_defects(d: dict) -> tuple[list[dict], list[dict]]:
+    m, g = d["metrics"], d.get("growth") or {}
+    ck = g.get("checks", {}) if g else {}
+    gx = g.get("examples", {}) if g else {}
+    sc = d.get("scenarios", {})
+    db = d.get("db", {})
+    opened: list[dict] = []
+    closed: list[dict] = []
+
+    def chk(key, sev, title, is_open, what, where, repro, count, closed_text=""):
+        (opened if is_open else closed).append({"key": key, "severity": sev, "title": title, "what": what, "where": where, "repro": repro, "count": count, "evidence": closed_text})
+
+    api = d.get("api", {})
+    chk("api5xx", "высокая", "API отвечает 5xx на обычные действия приложения", api.get("n_errors", 0) > 0,
+        [f"Ответов 5xx: {api.get('n_errors', 0)}.", *[f"Пример: {x['path']} → {x['status']} {x['body'][:80]}" for x in api.get("errors", [])[:3]]],
+        "leisure/api", "Повторить вызов из примера.", api.get("n_errors", 0), f"вызовов API {d['meta'].get('api_calls')}, ответов 5xx 0")
+    bad_calls = fcount(d, "decision_failed") + fcount(d, "feed_failed") + fcount(d, "plan_failed") + fcount(d, "rating_failed") + fcount(d, "onboarded_failed") \
+        + fcount(d, "consent_failed") + fcount(d, "session_failed") + fcount(d, "profile_create_failed") + fcount(d, "values_failed")
+    chk("appcalls", "высокая", "Действие в приложении не записалось (ошибка API на решении, ленте, плане, профиле)", bad_calls > 0,
+        [f"Неудачных вызовов: {bad_calls}.", *[f"Лог: {x}" for k in ("decision_failed", "feed_failed", "plan_failed", "rating_failed", "onboarded_failed", "profile_create_failed") for x in fex(d, k, 1)]],
+        "leisure/api/routers (decisions, feed, digest, profiles, accounts)", "См. примеры из лога.", bad_calls,
+        "решения, лента, план, профили и оценки записались с первого раза: неудачных вызовов 0")
+    di = db.get("decision_integrity", {})
+    chk("integrity", "высокая", "Решение из приложения не совпадает с БД", (di.get("missing", 0) + di.get("mismatch", 0)) > 0,
+        [f"Не найдено в БД {di.get('missing', 0)}, расходится статус или оценка {di.get('mismatch', 0)} из {di.get('checked', 0)}."],
+        "leisure/api/services.py (set_decision)", "Сравнить `decisions` с журналом симулятора.", di.get("missing", 0) + di.get("mismatch", 0),
+        f"нажатий сверено с БД {di.get('checked', 0)}, расхождений 0")
+    pi = db.get("profile_isolation", {})
+    chk("isolation_db", "высокая", "Решения второго профиля попадают в основной (или наоборот)", pi.get("bad", 0) > 0,
+        [f"Аккаунтов с перепутанными решениями: {pi.get('bad', 0)} из {pi.get('ok', 0) + pi.get('bad', 0)}."],
+        "leisure/api/services.py (set_decision, create_profile)", "Два профиля в аккаунте, решить по каждому, сравнить `decisions.user_id`.", pi.get("bad", 0),
+        f"у {pi.get('ok', 0)} аккаунтов с двумя профилями решения лежат под своими user_id и привязаны к одному account_id")
+    ln = m["learning"]
+    chk("learn_neg", "средняя", "После трёх «не моё» категория остаётся в первой пятёрке ленты", ln["neg_ran"] > 0 and ln["neg_passed"] < ln["neg_ran"],
+        [f"Проб {ln['neg_ran']}, категория ушла из пятёрки в {ln['neg_passed']}.", *[f"Пример: {p['category']}: до {p['before']}, после {p['after']}" for p in d["probes"] if p["kind"] == "neg" and p.get("ran") and not p.get("passed")][:2]],
+        "leisure/core/affinity.py, leisure/core/feed.py (hidden_by_learning)", "Три «не моё» по событиям одной категории → GET /api/feed?date=week.",
+        ln["neg_ran"] - ln["neg_passed"], f"проб {ln['neg_ran']}, категория ушла из первой пятёрки ленты профиля в {ln['neg_passed']}")
+    pos_fail = [p for p in d["probes"] if p["kind"] == "pos" and "passed" in p and not p["passed"]]
+    pos_na = ln.get("pos_not_evaluable", 0)
+    chk("learn_pos", "средняя", "Три «сходил, 5» не поднимают категорию в ленте профиля", ln["pos_ran"] > 0 and ln["pos_passed"] < ln["pos_ran"],
+        [f"Проб {ln['pos_ran']}, поднялась в {ln['pos_passed']}" + (f" (ещё {pos_na} не оценить: после отметок событий категории в ленте не осталось)" if pos_na else "") +
+         ". Сравнение с «двойником» (тот же профиль без этих решений): " +
+         "; ".join(f"{p['category']}: профиль {[c for c in p['after']]}, двойник {[c for c in p.get('twin_after', [])]}" for p in pos_fail[:2]),
+         *[f"Баллы первых карточек: профиль {p.get('after_scores', [])[:5]}, двойник {p.get('twin_scores', [])[:5]}" for p in pos_fail[:1]]],
+        "leisure/core/affinity.py (decision_weights «сходил», rating_scale), leisure/core/feed.py", "«Иду» на три события категории вне пятёрки, после даты — «сходил» с оценкой 5, сравнить GET /api/feed с профилем-двойником.",
+        len(pos_fail), f"проб {ln['pos_ran']}, категория поднялась выше, чем у двойника, в {ln['pos_passed']}")
+    chk("learn_iso", "средняя", "Обучение одного профиля меняет ленту другого профиля того же аккаунта", ln["isolation_checked"] > 0 and ln["isolation_ok"] < ln["isolation_checked"],
+        [f"Проверок {ln['isolation_checked']}, лента второго профиля не изменилась в {ln['isolation_ok']}."],
+        "leisure/api/services.py (recompute_affinity по user_id профиля)", "Три «не моё» в профиле «я», сравнить первую пятёрку ленты профиля «ребёнок» до и после.",
+        ln["isolation_checked"] - ln["isolation_ok"], f"проверок {ln['isolation_checked']}, лента второго профиля не изменилась в {ln['isolation_ok']}")
+    vm = db.get("values_mismatch", 0)
+    chk("values", "средняя", "Пятёрка ценностей профиля в БД не совпадает с выбранной на «Шаге 1»", vm > 0, [f"Профилей с другой пятёркой: {vm}."],
+        "leisure/api/services.py (update_profile: values)", "Пройти Шаг 1 и сравнить `profiles.values` (вес 5).", vm, f"пятёрка ценностей совпала у всех проверенных профилей (расхождений {vm})")
+    ap = sc.get("api_probe", {})
+    fb = ap.get("feed_before_onboarding", {})
+    chk("feed409", "низкая", "Лента отдаётся профилю без онбординга", bool(fb) and fb.get("status") != 409, [f"GET /api/feed до онбординга → {fb.get('status')}."],
+        "leisure/api/routers/feed.py", "Согласие без Шага 1–2 → GET /api/feed.", 1 if fb and fb.get("status") != 409 else 0, f"лента до онбординга → {fb.get('status')} {fb.get('detail')}")
+    wb = ap.get("went_before_day", {})
+    chk("went400", "средняя", "«Сходил» принимается до дня события", bool(wb) and wb.get("status") != 400, [f"POST «сходил» на будущее событие → {wb.get('status')}."],
+        "leisure/api/services.py (set_decision: DecisionTooEarly)", "«Сходил» с оценкой на событие завтрашнего дня.", 1 if wb and wb.get("status") != 400 else 0,
+        f"«сходил» до дня события → {wb.get('status')}: {wb.get('detail')}")
+    da = sc.get("delete_account", {})
+    chk("delete", "средняя", "Удаление аккаунта оставляет второй профиль или его решения", bool(da) and (not da.get("second_gone") or da.get("second_decisions_left")),
+        [f"После DELETE основного профиля: основной {'удалён' if da.get('main_gone') else 'остался'}, второй {'удалён' if da.get('second_gone') else 'остался'}, решений второго осталось {da.get('second_decisions_left')}."],
+        "leisure/api/services.py (delete_profile)", "Аккаунт с двумя профилями → DELETE /api/profile/{основной}.", int(bool(da) and (not da.get("second_gone") or da.get("second_decisions_left"))),
+        f"DELETE основного профиля стёр аккаунт целиком: второй профиль {'удалён' if da.get('second_gone') else '—'}, решений второго осталось {da.get('second_decisions_left')}" if da else "проба не выполнялась (не нашлось аккаунта с двумя профилями)")
+    nr = fcount(d, "feed_today_not_reachable")
+    chk("reach", "средняя", "В «Сегодня» есть события, на которые уже не успеть", nr > 0, [f"Открытий с такими карточками: {nr}.", *[f"Лог: {x}" for x in fex(d, "feed_today_not_reachable", 2)]],
+        "leisure/core/feed.py (can_make_it)", "Открыть «Сегодня» вечером и посмотреть `can_make_it`.", nr, "в «Сегодня» не было событий с can_make_it=false")
+    if g:
+        mism = g.get("mismatch", [])
+        fn = g["funnel"]
+        chk("growthmetrics", "средняя", "Метрики роста API расходятся с формулами GROWTH.md §4", bool(mism),
+            [f"Не совпали: {', '.join(GROWTH_NAMES[k] for k in mism)}.", *[f"{GROWTH_NAMES[k]}: симулятор {growth_value(g['metrics'][k]['own'])}, API {growth_value(g['metrics'][k]['api'])}." for k in mism],
+             f"В версии 2 «иду» после даты события превращается в «сходил» / «не сходил»: сейчас в БД «иду» {fn.get('going_now')}, а «иду» когда-либо — {fn.get('going_ever')}. "
+             "`growth_metrics` делит на текущие «иду», поэтому доля «иду» с приглашением и совместные походы растут по мере отметок в плане; симулятор делит на «иду» когда-либо."],
+            "leisure/api/invites.py (growth_metrics: going)", "Отметить «сходил» несколько «иду» и сравнить GET /api/metrics/growth до и после.", len(mism), "все девять метрик §4 совпали с расчётом симулятора")
+        bad = sum(ck.get(k, 0) for k in ("invite_contract_bad", "accept_bad", "view_bad", "together_name_bad", "accept_failed", "declined_has_decision", "open_failed", "invite_create_failed"))
+        chk("invitecontract", "высокая", "API приглашений нарушает контракт GROWTH.md §6", bad > 0 or g.get("n_api_errors", 0) > 0,
+            [f"Нарушений контракта: {bad}, ответов 5xx: {g.get('n_api_errors', 0)}.", *[f"Пример: {x}" for k in ("invite_contract_bad", "accept_bad", "view_bad", "accept_failed", "together_name_bad") for x in gx.get(k, [])[:1]]],
+            "leisure/api/invites.py, leisure/api/routers/invites.py", "См. раздел 5.4.", bad + g.get("n_api_errors", 0),
+            f"контракт §6 соблюдён: проверок {ck.get('invite_contract_ok', 0) + ck.get('accept_ok', 0) + ck.get('view_ok', 0)}, нарушений 0")
+        chk("companion", "средняя", "Пригласивший не видит «вдвоём с Имя» в плане", ck.get("inviter_not_notified", 0) > 0,
+            [f"Не увидели {ck.get('inviter_not_notified', 0)} из {g['funnel']['going']} «иду» по приглашениям.", *[f"Пример: {x}" for x in gx.get("inviter_not_notified", [])[:2]]],
+            "leisure/api/services.py (plan: companions), leisure/api/invites.py (companion_names)", "Принять приглашение «Иду» и открыть план пригласившего.",
+            ck.get("inviter_not_notified", 0), f"«вдвоём с Имя» в плане пригласившего: {ck.get('inviter_sees_companion', 0)} из {g['funnel']['going']}; имя с <, > или & показано корректно {ck.get('companion_special_chars', 0)} раз, неверно {ck.get('companion_name_bad', 0)}")
+        late = sum(ck.get(k, 0) for k in ("ref_ask_too_soon", "ref_ask_missing", "ref_ask_on_low_rating", "ref_ask_bad", "ref_source_bad", "ask_reason_missing"))
+        chk("refmoment", "средняя", "Момент рекомендации в ответе на оценку работает не по правилу", late > 0,
+            [f"Слишком рано {ck.get('ref_ask_too_soon', 0)}, пропущен {ck.get('ref_ask_missing', 0)}, на оценку 1–2 {ck.get('ref_ask_on_low_rating', 0)}, без ссылки {ck.get('ref_ask_bad', 0)}, "
+             f"нет ask_reason на 1–2 {ck.get('ask_reason_missing', 0)}, source по ссылке неверен {ck.get('ref_source_bad', 0)}.",
+             *[f"Пример: {x}" for k in ("ref_ask_too_soon", "ref_ask_missing", "ref_source_bad", "ask_reason_missing") for x in gx.get(k, [])[:1]]],
+            "leisure/api/routers/decisions.py (ref_ask, ask_reason), leisure/api/invites.py (ref_ask_due, apply_ref_code)", "Две оценки 4–5 в течение 14 дней; оценка 2.", late,
+            f"ref_ask пришёл {g['funnel']['ref_asks']} раз у {g['funnel']['ref_ask_users']} профилей, раньше срока 0; source=ref по ссылке верно {ck.get('ref_source_ok', 0)}")
+    opened.sort(key=lambda x: SEV_ORDER[x["severity"]])
+    for i, x in enumerate(opened, 1):
+        x["id"] = f"Д{i}"
+    return opened, closed
+
+
+def build_usability(d: dict) -> list[dict]:
+    m = d["metrics"]
+    o, ev, op = m["onboarding"], m["evening"], m["opens"]
+    out: list[dict] = []
+
+    def item(key, title, is_open, evidence, advice):
+        if is_open:
+            out.append({"key": key, "title": title, "evidence": evidence, "advice": advice})
+
+    item("onboarding", "Онбординг: нажатий до ленты больше целевых 12", bool(o["taps_median"] and o["taps_median"] > TARGET_TAPS),
+         [f"min {o['taps_min']}, медиана {num(o['taps_median'], 0)}, max {o['taps_max']}; в пределах 12 уложились {o['taps_le_12']} из {m['activation']['completed']}, в 9 — {o['taps_le_9']}.",
+          f"Правок направлений в медиане {num(o['interest_edits_median'], 0)}; «Все направления» открыли {o['used_all_screen']}; из восьми предложенных в интерес попало в среднем {num(o['shown_match_avg'], 1)}."],
+         "Предлагать направления точнее и дать быстрое добавление без экрана «Все направления».")
+    item("proposal", "Предложенные восемь направлений слабо совпадают с тем, что хочет человек", o["shown_match_avg"] < 4.8,
+         [f"Из восьми в интерес персоны попало в среднем {num(o['shown_match_avg'], 1)} ({pct(ratio(o['shown_match_avg'], 8))}); правок в медиане {num(o['interest_edits_median'], 0)}."],
+         "Ранжировать направления по ценностям точнее.")
+    item("evening_empty", "«Освободился вечер»: в будний вечер «Сегодня» часто пусто", ev["opens"] > 0 and ev["empty"] + ev["fallback_tomorrow"] > 0.3 * ev["opens"],
+         [f"Из {ev['opens']} вечерних открытий лента «Сегодня» была пустой в {ev['empty'] + ev['fallback_tomorrow']} ({pct(ratio(ev['empty'] + ev['fallback_tomorrow'], ev['opens']))}); "
+          f"в {ev['fallback_tomorrow']} человек переключился на «Завтра». В seed события по будням редки (после первого уикенда 4–18 событий на неделю)."],
+         "Пока база бедна, показывать в «Сегодня» ближайшие дни с подписью «Завтра» и «Послезавтра», а не пустой экран.")
+    item("empty_feed", "Пустая лента", op["total"] > 0 and op["empty"] > 0.15 * op["total"],
+         [f"Из {op['total']} открытий лента пуста в {op['empty']} ({pct(ratio(op['empty'], op['total']))}); по дням: " + ", ".join(f"{DAY_RU.get(k, k)} — {v}" for k, v in op["by_day"].items()) + "."],
+         "Коллекторы: больше событий по будням; интерфейс: предлагать другой день, а не пустоту.")
+    item("evening_taps", "«Освободился вечер»: до «Иду» больше трёх нажатий", bool(ev["taps_to_go_median"] and ev["taps_to_go_median"] > EVENING_TARGET_TAPS),
+         [f"Медиана {num(ev['taps_to_go_median'], 0)}, максимум {ev['taps_to_go_max']}; в три уложились {ev['taps_le_3']} из {ev['with_go']}."], "Показывать лучшее первым, крупная карточка на экран.")
+    return out
+
+
+# ───────────────────────── «было → стало» ─────────────────────────
+def compare_rows(d: dict, spec: list[dict], defects: list[dict]) -> list[list[str]] | None:
+    b = load_baseline("baseline_v4.json")
+    if not b:
+        return None
+    m = d["metrics"]
+
+    def bval(mid):
+        return next((r["value"] for r in b.get("spec_metrics", []) if r["id"] == mid), None)
+
+    def sval(mid):
+        return next((r["value"] for r in spec if r["id"] == mid), None)
+
+    def p(x):
+        return pct(x) if x is not None else "н/д"
+
+    bo, o = b.get("onboarding", {}), m["onboarding"]
+    rows = [
+        ["Активация", p(bval("activation")), p(sval("activation")), "онбординг тот же: согласие, Шаг 1, Шаг 2"],
+        ["Реакция", f"{p(bval('reaction'))} подборок с решением", f"{p(sval('reaction'))} открытий приложения с решением", "разные определения: рассылки нет, человек открывает сам"],
+        ["«Иду» в неделю (среднее)", p(bval("plan")), p(sval("plan")), ""],
+        ["Удержание на последней неделе", p(bval("retention")), p(sval("retention")), "было: активен в боте; стало: открыл приложение"],
+        ["Средняя оценка", num(bval("rating"), 2), num(sval("rating"), 2), "было: «Как прошло?» в чате; стало: ★ у «сходил» в плане"],
+        ["Нажатий до первой подборки / ленты: min / медиана / max", f"{bo.get('taps_min')} / {num(bo.get('taps_median'), 0)} / {bo.get('taps_max')}",
+         f"{o['taps_min']} / {num(o['taps_median'], 0)} / {o['taps_max']}", "в приложении нет /start и «Принять»: галочка согласия и «Начать»"],
+        ["Нажатий до первого «Иду» (медиана)", num(b.get("first_go", {}).get("taps_median"), 0), num(m["first_go"]["taps_median"], 0), ""],
+        ["Бросили онбординг (из 50)", str(bo.get("started", 0) - bo.get("completed", 0)), str(m["activation"]["started"] - m["activation"]["completed"]), ""],
+    ]
+    bg = (b.get("growth") or {}).get("metrics", {})
+    g = (d.get("growth") or {}).get("metrics", {})
+    for k, name in GROWTH_NAMES.items():
+        if k in bg or k in g:
+            rows.append([name, growth_value(bg.get(k, {}).get("own")), growth_value(g.get(k, {}).get("own")), ""])
+    sev_b = Counter(x["severity"] for x in b.get("defects", []))
+    sev = Counter(x["severity"] for x in defects)
+    rows += [["Открытых дефектов, всего", str(len(b.get("defects", []))), str(len(defects)), "дефект про отправку 10 000 за 15 минут снят вместе с рассылкой"],
+             ["  высокой серьёзности", str(sev_b.get("высокая", 0)), str(sev.get("высокая", 0)), ""],
+             ["  средней", str(sev_b.get("средняя", 0)), str(sev.get("средняя", 0)), ""],
+             ["  низкой", str(sev_b.get("низкая", 0)), str(sev.get("низкая", 0)), ""]]
+    return rows
+
+
+# ───────────────────────── рост через друзей ─────────────────────────
 def growth_rows(g: dict) -> list[list[str]]:
     rows = []
     for k, name in GROWTH_NAMES.items():
         v = g["metrics"][k]
-        own = v["own"]
-        t = GROWTH_TARGET[k]
-        if t is None:
-            status = "наблюдаем"
-        elif own["value"] is None:
-            status = "нельзя оценить"
-        else:
-            status = "достигнута" if own["value"] >= t else "не достигнута"
-        target = "наблюдаем" if t is None else f"≥ {pct(t)}" if k != "virality" else "≥ 0,2"
-        val = growth_value(own).replace("(", "(", 1)
-        if k == "virality" and own["value"] is not None:
-            val = f"{num(own['value'], 2)} ({own['numerator']} из {own['denominator']})"
-        rows.append([name, GROWTH_FORMULA[k], target, val, status, growth_value(v["api"]) if k != "virality" else (growth_value(v["api"]) if not v["api"] else
-                     f"{num(v['api']['value'], 2)} ({v['api']['numerator']} из {v['api']['denominator']})")])
+        own, t = v["own"], GROWTH_TARGET[k]
+        status = "наблюдаем" if t is None else "нельзя оценить" if own["value"] is None else "достигнута" if own["value"] >= t else "не достигнута"
+        target = "наблюдаем" if t is None else "≥ 0,2" if k == "virality" else f"≥ {pct(t)}"
+        fmt = (lambda x: f"{num(x['value'], 2)} ({x['numerator']} из {x['denominator']})" if x and x["value"] is not None else growth_value(x)) if k == "virality" else growth_value
+        rows.append([name, GROWTH_FORMULA[k], target, fmt(own), status, fmt(v["api"])])
     return rows
 
 
 def growth_lines(d: dict) -> list[str]:
     g = d.get("growth")
     if not g:
-        return []
-    f, cmp_, ck = g["funnel"], g["compare"], g["checks"]
-    fr = g["friends"]
-    guests = g["guests"]
+        return ["## 5. Рост через друзей", "", "Прогон без графа друзей (`--no-social`).", ""]
+    f, cmp_, ck, fr = g["funnel"], g["compare"], g["checks"], g["friends"]
     L = ["## 5. Рост через друзей (docs/GROWTH.md)", "",
          f"Граф дружбы: у каждой из {len(d['personas'])} персон 2–5 друзей (в среднем {num(fr['avg'], 1)}), из них {fr['inside']} внутри сервиса и {fr['outside']} вне его "
-         "(новые персоны близкого, но другого архетипа). После «иду» персона зовёт друга с вероятностью от общительности и от того, подходит ли событие другу; "
-         "друг принимает с вероятностью от скоринга события под его скрытый вкус. Приглашают и принимают через API Mini App (FastAPI TestClient: `POST /api/invites`, "
-         "`GET /api/invites/{code}`, `POST …/open`, `POST …/accept`, `PUT /api/profile`), через бота идут только уведомление пригласившему, «План на сегодня», «Как прошло?» "
-         "и момент рекомендации после оценки 4–5. Приглашённые и пришедшие по ссылке-рекомендации в основные метрики п. 11 не входят.", "",
+         "(новые персоны близкого, но другого архетипа). После «иду» персона зовёт друга с вероятностью от общительности и от того, подходит ли событие другу; друг принимает "
+         "с вероятностью от скоринга события под его скрытый вкус. Всё через API приложения: `POST /api/invites`, у друга — гостевая сессия, `GET /api/invites/{code}`, `POST …/open`, "
+         "`POST …/accept` (согласие при первом касании), затем предложение онбординга и `PUT /api/profile`. «Имя идёт с тобой» пригласивший видит в плане (`companions`), момент "
+         "рекомендации — `ref_ask` в ответе на оценку 4–5. Гости в основные метрики п. 11 не входят.", "",
          "### 5.1 Метрики таблицы §4", "",
-         "«Симулятор» считает по формулам GROWTH.md из своего журнала и БД; «API» — ответ `GET /api/metrics/growth`. Расхождение — признак ошибки в метрике продукта (см. дефекты).", "",
-         table(["Метрика", "Формула §4", "Цель", "Симулятор", "Статус", "API"], growth_rows(g)), ""]
-    f0 = g["funnel"]
-    L += [f"Рекомендация: «Поделиться» нажали {g['metrics']['recommendation']['own']['numerator']} из {g['metrics']['recommendation']['own']['denominator']} показов, но это URL-кнопка, и сервер нажатий не видит. "
-          f"API считает ссылки-рекомендации, которые кто-то открыл (с согласием или без): симулятор по тому же правилу — {f0.get('ref_codes_seen')} из {g['metrics']['recommendation']['own']['denominator']}, "
-          f"API — {growth_value(g['metrics']['recommendation']['api'])}. Показатели «Симулятор» и «API» в строке различаются по определению, а не из-за ошибки.", ""]
+         "«Симулятор» считает по формулам GROWTH.md из своего журнала и БД; «API» — ответ `GET /api/metrics/growth`.", "",
+         table(["Метрика", "Формула §4", "Цель", "Симулятор", "Статус", "API"], growth_rows(g)), "",
+         f"Рекомендация: «Поделиться» нажали {g['metrics']['recommendation']['own']['numerator']} из {g['metrics']['recommendation']['own']['denominator']} показов — это системный диалог, сервер нажатий не видит "
+         f"и считает ссылки, которые кто-то открыл: симулятор по тому же правилу {f.get('ref_codes_seen')}, API {growth_value(g['metrics']['recommendation']['api'])}. "
+         f"В знаменателе «доли новых через друзей» у API все профили с согласием, включая вторые профили аккаунтов ({f.get('second_profiles_in_new_total')}).", ""]
     if g["mismatch"]:
         L += ["Расходятся с API: " + ", ".join(GROWTH_NAMES[k] for k in g["mismatch"]) + ".", ""]
     L += ["### 5.2 Воронка приглашений", "",
           table(["Шаг", "Значение"], [
-              ["Приглашений создано (на событие)", f"{f['invites']}; позвали {f['inviters']} человек; друзей внутри сервиса {f['to_inside']}, вне его {f['to_outside']}"],
-              ["Открыли страницу приглашения", f"{f['opened']}; из них без профиля и согласия {f['new_openers']}"],
+              ["Приглашений создано", f"{f['invites']}; позвали {f['inviters']} человек; друзей внутри сервиса {f['to_inside']}, вне его {f['to_outside']}"],
+              ["Открыли страницу приглашения", f"{f['opened']}; из них без профиля и согласия {f['new_openers']}; друг внутри сервиса ещё не открывал приложение: {ck.get('friend_without_app', 0)}"],
               ["Приняли «Иду» / «Может быть»", f"{f['accepted']} ({f['going']} / {f['maybe']}); «Другие выходные под меня»: {f['declined']}"],
-              ["Согласие при первом касании (ответ 409 → галочка)", f"{f['consent_409']} из {f['new_openers']} новых; из них ушли без согласия {ck.get('consent_not_given', 0)}"],
-              ["Событие уже прошло к открытию (410 на «Иду»)", str(ck.get("accept_gone_410", 0))],
-              ["Пригласивший получил уведомление «идёт с тобой»", f"{f['notified']} из {f['going']} «иду»"],
+              ["Согласие при первом касании (409 → галочка)", f"{f['consent_409']} из {f['new_openers']} новых; ушли без согласия {ck.get('consent_not_given', 0)}"],
+              ["Событие уже прошло к открытию (410)", str(ck.get("accept_gone_410", 0))],
+              ["Пригласивший видит «вдвоём с Имя» в плане", f"{f['notified']} из {f['going']} «иду»"],
               ["Предложение онбординга: «Давай» сразу / в повторе", f"{f['offers_yes1']} из {f['offers_round1']} / {f['offers_yes2']} из {f['offers_round2']}"],
-              ["Онбординг в Mini App: начали / закончили", f"{f['onboarding_started']} / {f['onboarding_done']}"],
-              ["Новых людей всего (приглашённые и по ссылке)", f"{f['guests_total']}; дали боту право писать {f['guests_can_write']}; получили хотя бы одну подборку {f['guests_with_digest']}"],
-              ["Право писать отклонено → «Открыть чат с ботом» → /start w_<код>", f"{f.get('write_fallback_ok', 0) + f.get('write_fallback_bad', 0)} человек; can_write и ответ «INVITE_WRITE_OK» верны у {f.get('write_fallback_ok', 0)}, неверно {f.get('write_fallback_bad', 0)}; после этого в боте пришли «План на сегодня» у {f.get('write_fallback_got_plan', 0)}, «План» или «Как прошло?» у {f.get('write_fallback_got_any', 0)}"],
-              ["Просьба о рекомендации (T-REF-ASK)", f"{f['ref_asks']} показов у {f['ref_ask_users']} человек; «Поделиться» нажали {f['ref_shares']}; ссылку открыли {f['ref_newcomers']} человек, "
-                                                    f"согласились {f['ref_newcomers_consented']}"],
+              ["Онбординг гостей: начали / закончили", f"{f['onboarding_started']} / {f['onboarding_done']}"],
+              ["Гостей всего", f"{f['guests_total']}; прошли онбординг и живут в приложении {f['guests_active']}; открывали приложение потом {f['guests_opened_app']}"],
+              ["Момент рекомендации", f"{f['ref_asks']} показов у {f['ref_ask_users']} профилей; «Поделиться» {f['ref_shares']}; ссылку открыли {f['ref_newcomers']} человек, согласились {f['ref_newcomers_consented']}"],
           ]), ""]
-    if f.get("opened_anonymous_api") is not None:
-        L += [f"Открывшие без согласия входят в знаменатели «принятия» и «активации»: у API открывших {g['metrics']['acceptance']['api']['denominator']}, у симулятора {f['opened']}; "
-              f"отдельный счётчик `counts.opened_without_consent` = {f['opened_anonymous_api']} (без согласия на конец прогона; давшие согласие позже считаются как принятые).", ""]
     org, inv = cmp_["activation"]["organic"], cmp_["activation"]["invited"]
     o2, i2 = cmp_["onboarding"]["organic"], cmp_["onboarding"]["invited"]
     rt = cmp_["ratings"]
@@ -891,319 +361,155 @@ def growth_lines(d: dict) -> list[str]:
         return [label, x["n"], num(x["mean"], 2), pct(x["share_4_5"])]
 
     L += ["### 5.3 Приглашённые и органические", "",
-          table(["Показатель", "Органические (50 персон, бот)", "Приглашённые (Mini App)", "Как считали"], [
+          table(["Показатель", "Органические (50 персон)", "Приглашённые", "Как считали"], [
               ["Активация", f"{pct(ratio(org['num'], org['den']))} ({org['num']} из {org['den']})", f"{pct(ratio(inv['num'], inv['den']))} ({inv['num']} из {inv['den']})",
-               "дошли до конца онбординга / начали; согласие + решение / открыли без профиля"],
+               "дошли до ленты / начали; согласие + решение / открыли без профиля"],
               ["Онбординг", f"{pct(ratio(o2['num'], o2['den']))} ({o2['num']} из {o2['den']})", f"{pct(ratio(i2['num'], i2['den']))} ({i2['num']} из {i2['den']})",
                "прошли онбординг / дали согласие; полный профиль за 2 недели / принявшие с source=invite"]]), "",
-          table(["Оценки «как прошло»", "Оценок", "Средняя", "Доля 4–5"],
-                [rrow("Органические «иду»", rt["organic"]), rrow("«Иду» по приглашению", rt["invited_decisions"]), rrow("Все оценки приглашённых людей", rt["invited_users_all"]),
-                 rrow("Совместные походы (оба идут)", rt["together"]), rrow("Одиночные «иду» органических", rt["solo"])]), "",
-          "Оценка в модели — функция скрытого вкуса человека и события, «вдвоём приятнее» намеренно не заложено (`TOGETHER_RATING_BONUS = 0`). Поэтому разница между совместными и "
-          "одиночными походами — только отбор: друг принимает то, что ему подходит. Малые n (см. колонку) дают лишь ориентир, не вывод.", "",
+          table(["Оценки «сходил»", "Оценок", "Средняя", "Доля 4–5"],
+                [rrow("Органические", rt["organic"]), rrow("Решения по приглашению", rt["invited_decisions"]), rrow("Все оценки приглашённых", rt["invited_users_all"]),
+                 rrow("Совместные походы", rt["together"]), rrow("Одиночные органические", rt["solo"])]), "",
+          "Оценка в модели — функция скрытого вкуса человека и события; «вдвоём приятнее» намеренно не заложено. Малые n дают ориентир, не вывод.", "",
           "### 5.4 Контрольные проверки API приглашений", "",
-          "- Вызовы: " + "; ".join(f"{k} — {v}" for k, v in g["calls"].items()) + ".",
-          f"- Контракт `POST /api/invites` (код 8 символов без 0/1/I/L/O/U, ссылка Mini App в `url`, текст от первого лица со ссылкой): верно {ck.get('invite_contract_ok', 0)}, "
+          f"- Контракт `POST /api/invites` (код из 8 символов без 0/1/I/L/O/U, ссылка `{'{WEB_BASE_URL}'}/e/<slug>?inv=<код>`, текст со ссылкой): верно {ck.get('invite_contract_ok', 0)}, "
           f"нарушено {ck.get('invite_contract_bad', 0)}; повторное «Позвать друга» вернуло тот же код {ck.get('invite_idempotent', 0)} раз, другой — {ck.get('invite_not_idempotent', 0)}.",
           f"- `GET /api/invites/{{code}}`: карточка, день, имя пригласившего верны {ck.get('view_ok', 0)}, событие уже прошло {ck.get('view_past', 0)}, ошибок {ck.get('view_bad', 0)}.",
-          f"- `POST …/accept`: решение с верным статусом и днём приглашения {ck.get('accept_ok', 0)}, без согласия 409 {ck.get('consent_required_409', 0)}, событие прошло 410 {ck.get('accept_gone_410', 0)}, "
-          f"другие ошибки {ck.get('accept_failed', 0)}; «declined» без решения {ck.get('declined_ok', 0)} (с решением {ck.get('declined_has_decision', 0)}); имя пригласившего в ответе верно {ck.get('together_name_ok', 0)} из "
+          f"- `POST …/accept`: решение с верным статусом и днём {ck.get('accept_ok', 0)}, без согласия 409 {ck.get('consent_required_409', 0)}, событие прошло 410 {ck.get('accept_gone_410', 0)}, "
+          f"другие ошибки {ck.get('accept_failed', 0)}; «declined» без решения {ck.get('declined_ok', 0)}; имя пригласившего в ответе верно {ck.get('together_name_ok', 0)} из "
           f"{ck.get('together_name_ok', 0) + ck.get('together_name_bad', 0)}.",
-          f"- Уведомление пригласившему дошло {ck.get('inviter_notified', 0)} раз, не дошло {ck.get('inviter_not_notified', 0)}.",
-          f"- Момент рекомендации: просьба после оценки 4–5 не чаще раза в 14 дней — нарушений {ck.get('ref_ask_too_soon', 0)}, пропущено {ck.get('ref_ask_missing', 0)}, на оценку 1–2 пришло {ck.get('ref_ask_on_low_rating', 0)}; "
-          f"ссылка по `PUT /api/profile` с `ref_code` ставит `source=ref`: верно {ck.get('ref_source_ok', 0)}, неверно {ck.get('ref_source_bad', 0)}; открывшие ссылку без согласия профиля не получили: "
-          f"{ck.get('ref_no_profile_without_consent', 0)}.",
-          f"- Ответы сервера 5xx: {g['n_api_errors']}.",
-          f"- Приглашённые в боте: «План на сегодня» {guests['plan_pushes']}, «Как прошло?» {guests['feedback_requests']}, подборок {guests['digests']}, оценок {guests['ratings_n']}.", ""]
+          f"- Момент рекомендации: раньше 14 дней {ck.get('ref_ask_too_soon', 0)}, пропущен {ck.get('ref_ask_missing', 0)}, на оценку 1–2 {ck.get('ref_ask_on_low_rating', 0)}; "
+          f"`PUT /api/profile` с `ref_code` ставит `source=ref`: верно {ck.get('ref_source_ok', 0)}, неверно {ck.get('ref_source_bad', 0)}; открывшие ссылку без согласия профиля не получили: {ck.get('ref_no_profile_without_consent', 0)}.",
+          f"- Ответы сервера 5xx: {g['n_api_errors']}.", ""]
     return L
 
 
-def compare_rows(m: dict, d: dict, defects: list[dict], closed: list[dict], usab: list[dict]) -> list[list[str]] | None:
-    """Строки «метрика | исходный | второй прогон | стало». Исходный — sim/baseline.json, второй — baseline_v2.json (онбординг v2, 19 ценностей),
-    «стало» — этот прогон."""
-    b = load_baseline()
-    if not b:
-        return None
-    f = load_baseline("baseline_v2.json") or {}
-    g3 = load_baseline("baseline_v3.json") or {}
-
-    def val(src: dict, mid: str):
-        return next((r["value"] for r in src.get("spec_metrics", []) if r["id"] == mid), None)
-
-    def p(x):
-        return pct(x) if x is not None else "н/д"
-
-    def taps(src: dict) -> str:
-        o = src.get("onboarding", {})
-        return f"{o.get('taps_min')} / {num(o.get('taps_median'), 0)} / {o.get('taps_max')}" if o else "н/д"
-
-    o = m["onboarding"]
-    now_taps = f"{o['taps_min']} / {num(o['taps_median'], 0)} / {o['taps_max']}"
-
-    def row(name, fn, now):
-        return [name, fn(b), fn(f) if f else "—", fn(g3) if g3 else "—", now]
-
-    rows = [
-        row("Активация", lambda s: p(val(s, "activation")), p(m["activation"])),
-        row("Реакция (подборки с решением)", lambda s: p(val(s, "reaction")), p(m["reaction"])),
-        row("«Иду» в неделю (среднее)", lambda s: p(val(s, "plan")), p(m["plan"]["mean"])),
-        row("Удержание на последней неделе", lambda s: p(val(s, "retention")), p(m["retention"]["last"])),
-        row("Средняя оценка", lambda s: num(val(s, "rating"), 2), num(m["rating"]["mean"], 2)),
-        row("Нажатий до первой подборки: min / медиана / max", taps, now_taps),
-        row("Нажатий до первого «Иду» (медиана)", lambda s: num(s.get("first_go", {}).get("taps_median"), 0), num(m["first_go"]["taps_median"], 0)),
-        row("Бросили онбординг (из 50)", lambda s: str(s.get("onboarding", {}).get("started", 0) - s.get("onboarding", {}).get("completed", 0)),
-            str(o["started"] - o["completed"])),
-        row("Карточек в подборке (среднее)", lambda s: num(s.get("digests", {}).get("avg_cards"), 1), num(m["digests"]["avg_cards"], 1)),
-        row("Пустых слотов из 5 (среднее)", lambda s: num(s.get("digests", {}).get("avg_empty"), 2), num(m["digests"]["avg_empty"], 2)),
-        row("Повторные показы, доля", lambda s: pct(s.get("repeats", {}).get("share"), 1), pct(m["repeats"]["share"], 1)),
-        row("Дошли до плана", lambda s: str(s.get("plan", {}).get("reached_any")), str(m["plan"]["reached_any"])),
-        row("Решений «Интересно»", lambda s: str(s.get("decisions", {}).get("by_status", {}).get("интересно", 0)), str(m["decisions"]["by_status"].get("интересно", 0))),
-        row("«Мимо»: причина не выбрана", lambda s: str(s.get("decisions", {}).get("skip_unanswered")), str(m["decisions"]["skip_unanswered"])),
-    ]
-    for k in ("Пт", "Вс", "Пн–Чт"):
-        def fn(s, k=k):
-            v = s.get("plan_reminders", {}).get(k, {})
-            return f"{v.get('reminded', 0)} из {v.get('going', 0)}"
-        new = m["plan_reminders"].get(k, {})
-        rows.append(row(f"Напоминание в день события, {k}", fn, f"{new.get('reminded', 0)} из {new.get('going', 0)}"))
-    sev_b = Counter(x["severity"] for x in b.get("defects", []))
-    sev_f = Counter(x["severity"] for x in f.get("defects", []))
-    nsev = Counter(x["severity"] for x in defects)
-    sev_3 = Counter(x["severity"] for x in g3.get("defects", []))
-    rows += [["Открытых дефектов, всего", str(len(b.get("defects", []))), str(len(f.get("defects", []))) if f else "—", str(len(g3.get("defects", []))) if g3 else "—", str(len(defects))],
-             ["  высокой серьёзности", str(sev_b.get("высокая", 0)), str(sev_f.get("высокая", 0)) if f else "—", str(sev_3.get("высокая", 0)) if g3 else "—", str(nsev.get("высокая", 0))],
-             ["  средней", str(sev_b.get("средняя", 0)), str(sev_f.get("средняя", 0)) if f else "—", str(sev_3.get("средняя", 0)) if g3 else "—", str(nsev.get("средняя", 0))],
-             ["  низкой", str(sev_b.get("низкая", 0)), str(sev_f.get("низкая", 0)) if f else "—", str(sev_3.get("низкая", 0)) if g3 else "—", str(nsev.get("низкая", 0))],
-             ["Закрыто из дефектов исходного прогона", "—", str(len(f.get("closed_defects", []))) if f else "—", "—", f"{sum(1 for c in closed if c['prev'])} из {len(PREV_ID)}"],
-             ["Проблем юзабилити (открытых)", str(len(b.get("usability", []))), str(len(f.get("usability", []))) if f else "—", str(len(g3.get("usability", []))) if g3 else "—", str(len(usab))]]
-    return rows
-
-
-def render_md(m: dict, d: dict, defects: list[dict], usab: list[dict], closed: list[dict] | None = None,
-              closed_u: list[dict] | None = None) -> str:
-    closed = closed or []
-    closed_u = closed_u or []
-    meta, o, dg, dec, pl, rk = d["meta"], m["onboarding"], m["digests"], m["decisions"], m["plan"], m["rating"]
-    L: list[str] = []
+# ───────────────────────── вывод ─────────────────────────
+def render_md(d: dict, spec: list[dict], defects: list[dict], closed: list[dict], usab: list[dict]) -> str:
+    meta, m = d["meta"], d["metrics"]
+    o, op, ev, pr, ln = m["onboarding"], m["opens"], m["evening"], m["profiles"], m["learning"]
     w = meta["weeks"]
-    L += ["# Отчёт симуляции пользователей — «Планировщик досуга»", "",
-          f"Прогон: seed `{meta['seed']}`, {meta['users']} персон ({', '.join(f'{k} {v}' for k, v in sorted(meta['archetypes'].items()))}), "
-          f"неделя онбординга и {w} {'недели' if w in (2, 3, 4) else 'недель'} после неё — {w + 1} уикендов (23.10 – {(date_str(meta, w))}), {meta['updates_fed']} апдейтов через `Dispatcher.feed_update`, "
-          f"{meta['world_calls']} исходящих вызовов Bot API (в поддельной сессии, без сети). События: seed {meta['events_seeded']} шт.", "",
-          f"Команда: `python -m leisure.sim.runner --users {meta['users']} --weeks {w} --seed {meta['seed']}`. База `{meta['db_name']}` создаётся и удаляется прогоном, база разработки не затрагивается. "
-          "Один seed — один и тот же отчёт (кроме строки о длительности в конце).", "",
-          "> **Как читать.** Код продукта — настоящий: бот, фильтры, FSM, клавиатуры, задачи воркера и БД. Люди — модель: ответы онбординга, вероятности отвала, "
-          "открытия, решений и оценок заданы допущениями в `personas.py` (п. «Ограничения»). Поэтому абсолютные доли (активация, реакция, удержание) — "
-          "«что будет при таком поведении», а не прогноз; надёжны находки о механике продукта: дефекты и юзабилити ниже подтверждены логом.", ""]
-    cr = compare_rows(m, d, defects, closed, usab)
+    L = ["# Отчёт симуляции пользователей — «Успею» (приложение, версия 2)", "",
+         f"Прогон: seed `{meta['seed']}`, {meta['users']} персон ({', '.join(f'{k} {v}' for k, v in sorted(meta['archetypes'].items()))}), неделя онбординга и {w} "
+         f"{'недели' if w in (2, 3, 4) else 'недель'} после неё, {meta.get('api_calls')} вызовов API через FastAPI TestClient. События: seed {meta['events_seeded']} шт.", "",
+         f"Команда: `python -m leisure.sim.runner --users {meta['users']} --weeks {w} --seed {meta['seed']}`. База `{meta['db_name']}` создаётся и удаляется прогоном, база разработки "
+         "не затрагивается. Один seed — один и тот же отчёт (кроме строки о длительности в конце).", "",
+         "> **Как читать.** Код продукта — настоящий: API, лента, скоринг, обучение, приглашения, БД. Люди — модель: когда открыть приложение, какой день и направление выбрать, "
+         "нажать ли «Иду», сколько терпеть онбординг (`personas.py`, `app/driver.py`). Абсолютные доли — «что будет при таком поведении»; надёжны находки о механике: "
+         "дефекты и наблюдения ниже подтверждены журналом вызовов.", ""]
+    cr = compare_rows(d, spec, defects)
     if cr:
-        L += ["## 0. Было → стало (против прошлого прогона)", "",
-              "«Исходный» — `leisure/sim/baseline.json` (первый прогон, 5 недель), «второй» — `baseline_v2.json` (онбординг v2, 19 ценностей), «третий» — `baseline_v3.json` "
-              "(онбординг v2.1: восемь направлений, бюджет строкой на «Шаге 2»), «стало» — этот прогон: то же плюс автопереход на «Шаг 2» после пятой ценности, "
-              "приглашения друзей и момент рекомендации (раздел 5). Тот же seed и те же 50 архетипов; горизонт второго, третьего и этого прогона — 4 недели после недели онбординга, "
-              "в исходном было 5, поэтому «удержание на последней неделе» с ним сравнивать надо с оговоркой. Основные метрики считаются только по 50 персонам; приглашённых они не включают. "
-              "Небольшие сдвиги реакции, оценок и удержания по сравнению с третьим прогоном — шум модели: приглашения и уведомления добавили в историю персон события, "
-              "и случайные розыгрыши пошли иначе.", "",
-              table(["Показатель", "Исходный прогон", "Второй (онбординг v2)", "Третий (v2.1)", "Стало (приглашения, авто-переход)"], cr), ""]
-    L += ["## 1. Метрики п. 11 спеки", "",
-          table(["Метрика", "Значение", "Цель", "Статус", "Примечание"],
-                [[r["name"], r["shown"], r["target"], STATUS_RU[r["status"]], r["note"]] for r in m["spec_table"]]), ""]
-    L += ["## 2. Операционные метрики", "", "### Показатели против норм спеки", "",
-          table(["Показатель", "Значение", "Норма", "Статус", "Примечание"], [[r["name"], r["value"], r["norm"], STATUS_RU[r["status"]], r["note"]] for r in m["norms"]]), "",
-          "### Онбординг", "",
-          f"Начали {o['started']}, прошли {o['completed']} ({pct(m['activation'])}). Нажатий до первой подборки (включая /start): "
-          f"**min {o['taps_min']}, медиана {num(o['taps_median'], 0)}, max {o['taps_max']}** (минимум по коду — {o['theoretical_min']}; цель FLOW-ONBOARDING — "
-          f"не больше {TARGET_TAPS}: уложились {o['taps_le_target']} из {o['completed']}; у не ошибавшихся: min {o['taps_clean_min']}, медиана {num(o['taps_clean_median'], 0)}, "
-          f"max {o['taps_clean_max']}). Без правок интересов " + (f"медиана {num(o['no_interest_edit_median'], 0)} (n={o['no_interest_edit_n']})." if o['no_interest_edit_n'] else "не обошёлся никто (у всех персон интересы отличаются от предложенных восьми).") + "", "",
-          f"«Уточнить под себя» открыли {m['refine']['opened']} из {o['completed']} (меню хотели {m['refine']['personas_with_menu']}); нажатий в блоке — медиана "
-          f"{num(m['refine']['taps_median'], 0)}, макс. {m['refine']['taps_max']}; пункты: " + (", ".join(f"{ANSWER_RU.get(k, {'kids': 'с детьми'}.get(k, k))} — {v}" for k, v in sorted(m['refine']['ops'].items())) or "—")
-          + f"; «Пересобрать подборку» нажали {m['refine']['rebuilt']}. Профиль целиком (подборка + меню) — медиана {num(m['refine']['all_taps_median'], 0)} нажатий.", "",
-          f"Бюджет строкой на «Шаге 2»: нажали {fcount(d, 'budget_row_ok') + fcount(d, 'budget_row_broken')} человек, ● на выбранной и экран остался в {fcount(d, 'budget_row_ok')} случаях "
-          f"(сбоев {fcount(d, 'budget_row_broken')}); ошиблись кнопкой и поправили повторным нажатием {fcount(d, 'budget_row_fixed')}. Остальные задали бюджет в «Уточнить» или оставили «Не важно».", "",
-          table(["Шаг", "Дошли до экрана", "Бросили на нём", "Нажатий в среднем"],
-                [[STEP_RU[f["step"]], f["reached"], f["left"], num(o["step_means"].get(f["step"], 0), 1)] for f in o["funnel"]]), "",
-          "### Решения и причины", "",
-          table(["Статус", "Нажатий", "Доля"], [[k, v, pct(ratio(v, dec["total"]))] for k, v in sorted(dec["by_status"].items(), key=lambda kv: -kv[1])]
-                + ([["интересно (кнопки нет)", f"0 (хотели {dec['wanted_interest']})", "—"]] if dec["wanted_interest"] else [])), "",
-          f"«Мимо» — {dec['skip_total']}; причины: " + (", ".join(f"{k or 'без причины'} {v}" for k, v in sorted(dec['reasons'].items(), key=lambda kv: -kv[1])) or "—")
-          + f"; блок причин оставили без ответа: {dec['skip_unanswered']}; следующим действием блок свернулся {fcount(d, 'reasons_collapsed')} раз, остался на карточке {fcount(d, 'reasons_not_collapsed')}. "
-          f"Подсказка про бюджет после второго «Мимо — дорого» при «не важно»: пришла {fcount(d, 'nudge_ok')}, не пришла {fcount(d, 'nudge_missing')}, пришла без повода {fcount(d, 'nudge_unexpected')}; "
-          f"из подсказки бюджет задали {fcount(d, 'nudge_followed')}.", "",
-          f"Нажатий до первого «Иду» (от первого /start, включая онбординг): min {num(m['first_go']['taps_min'], 0)}, медиана {num(m['first_go']['taps_median'], 0)}, "
-          f"max {num(m['first_go']['taps_max'], 0)}; «Иду» нажимали {m['first_go']['users']} из {m['first_go']['of']} прошедших, в самой первой подборке — {m['first_go']['in_first_digest']}.", "",
-          "### Подборки по неделям", "",
-          table(["Уикенд", "Дайджестов", "Карточек", "Слотов заполнено из 5", "Пустых слотов", "«На горизонте»", "Открыли", "С решением", "С «Иду»"],
-                [[("0 (23–25.10)" if wk == 0 else wk), v["digests"], num(v["cards"], 1), num(v["slots"], 1), num(v["empty"], 1), num(v["horizon"], 1),
-                  v["opened"], v["reacted"], v["go"]] for wk, v in dg["by_week"].items() if v.get("digests")]), "",
-          f"Всего отправлено {dg['sent']} подборок (в т.ч. первых {dg['first']}), ещё {dg['manual']} по /digest. Пустых слотов в среднем {num(dg['avg_empty'], 2)} из 5; "
-          f"подборок с пустыми слотами {dg['with_empty']} из {dg['sent']}. Человеко-недель без подборки: {m['silent']['silent']} из {m['silent']['user_weeks']} ({pct(m['silent']['share'])}), в лог «нечего отправить» воркер записал {m['silent']['logged_nothing']}.", "",
-          "### Повторы между дайджестами", "",
-          f"Показов события: {m['repeats']['appearances']}, из них повторных (то же событие тому же человеку в другом уикенде): {m['repeats']['repeated']} ({pct(m['repeats']['share'], 1)}). "
-          "Состояние решения на момент повтора: " + (", ".join(f"{k} — {v}" for k, v in sorted(m['repeats']['classes'].items())) or "—")
-          + f". Нарушений правила исключения: без реакции в пределах 3 уикендов — {m['repeats']['violate_no_reaction_3']}, после «мимо»/«интересно» — {m['repeats']['violate_skip']}.", "",
-          "### План и оценки", "",
-          f"Дошли до плана: {pl['reached_any']} из {o['completed']} (нажали «Иду» — {pl['reached_go']}, получили «План на сегодня» — {pl['got_push']} ({pl['pushes']} сообщений), "
-          f"открыли /plan с непустым планом — {pl['used_cmd']}). /plan вызывали {pl['plan_cmd_total']} раз, пустой план — {pl['plan_cmd_empty']}.", "",
-          f"Оценок {rk['n']} на {rk['prompts']} запросов «Как прошло?» ({pct(rk['answered'])}); распределение: " + ", ".join(f"{k}★ — {v}" for k, v in rk["dist"].items()) + ".", "",
-          "«Иду», по которым можно было напомнить (человек нажал не позже дня события):", "",
-          table(["День события «Иду»", "Всего «Иду»", "«План на сегодня» в день события", "«Как прошло?» на следующий день"],
-                [[k, v["going"], v["reminded"], v["asked_rating"]] for k, v in m["plan_reminders"].items() if isinstance(v, dict) and "going" in v and k in ("Пт", "Сб", "Вс", "Пн–Чт")]), "",
-          f"«Иду» на сегодня после 09:00: напоминание на ближайшем часовом запуске — {m['plan_reminders'].get('same_day_after_9', {}).get('reminded', 0)} из "
-          f"{m['plan_reminders'].get('same_day_after_9', {}).get('going', 0)}; нажали, когда день события уже прошёл: {m['plan_reminders'].get('stale_taps', 0)}.", "",
-          "### Масштаб и целостность", "",
-          f"Сообщений на подборку в среднем {num(m['scale']['avg_messages_per_digest'], 1)} → 10 000 человек при 25 сообщ./с ≈ {num(m['scale']['minutes_for_10k'], 0)} мин (цель п. 10 — 15 мин). "
-          f"Целостность: нажатий не найдено в БД — {d['db']['decision_integrity']['missing']}, расхождений статуса/причины — {d['db']['decision_integrity']['mismatch']} "
-          f"из {d['db']['decision_integrity']['checked']}; профилей с неверными ответами из-за ошибки без «Назад» — {sum(d['db'].get('profile_mismatch', {}).values())}. "
-          f"Нарушения правил Bot API в поддельной сессии: " + (", ".join(f"{k} — {v['count']}" for k, v in sorted(d['violations'].items())) or "нет") + ". "
-          f"Исключения обработчиков бота: {d['handler_errors']}; записи ERROR/WARNING продукта: {len(d['log_errors'])}.", ""]
-    L += ["## 3. Дефекты продукта", "", "### 3.1 Открытые", "",
-          "Каждый воспроизведён прогоном; «где» — файл (и функция), «как воспроизвести» — минимальные шаги.", ""]
+        L += ["## 0. Было → стало (против четвёртого прогона, `baseline_v4.json`)", "",
+              "Четвёртый прогон — бот и Mini App с рассылкой по четвергам; этот — приложение без рассылок: человек сам открывает ленту. Сопоставимы онбординг, «иду» в неделю, оценка и "
+              "метрики роста; «реакция» и «удержание» переопределены (в примечании). Тот же seed и те же 50 архетипов.", "",
+              table(["Показатель", "Четвёртый прогон (бот)", "Стало (приложение)", "Примечание"], cr), ""]
+    L += ["## 1. Метрики п. 11 спеки в редакции приложения", "",
+          table(["Метрика", "Значение", "Цель", "Статус", "Примечание"], [[r["name"], r["shown"], r["target"], STATUS_RU[r["status"]], r["note"]] for r in spec]), ""]
+    a = m["activation"]
+    L += ["## 2. Как люди пользуются приложением", "", "### Первый вход и онбординг", "",
+          f"Начали {a['started']}, дошли до ленты {a['completed']} ({pct(ratio(a['completed'], a['started']))}); бросили: " +
+          (", ".join(f"{k} — {v}" for k, v in a["abandoned_at"].items()) or "никто") + ". Нажатий от открытия ссылки до ленты (галочка согласия, «Начать», пять ценностей с автопереходом, "
+          f"правки направлений, бюджет строкой, «Показать подборку»): **min {o['taps_min']}, медиана {num(o['taps_median'], 0)}, max {o['taps_max']}**; минимум по схеме {MIN_TAPS}–9, "
+          f"цель FLOW-ONBOARDING — не больше {TARGET_TAPS}: уложились {o['taps_le_12']} из {a['completed']}, в 9 — {o['taps_le_9']}. Правок направлений в медиане {num(o['interest_edits_median'], 0)}, "
+          f"«Все направления» открыли {o['used_all_screen']}, бюджет строкой задали {o['budget_on_step']}; из восьми предложенных направлений в интерес персоны попало в среднем {num(o['shown_match_avg'], 1)}."
+          + (f" Предзаполнение интересов сервером отличалось от схемы FLOW у {o['server_prefill_differs']} профилей." if o.get("server_prefill_differs") else ""), "",
+          f"До первого «Иду» (от открытия ссылки): медиана {num(m['first_go']['taps_median'], 0)} нажатий; «Иду» нажали {m['first_go']['users']} из {m['first_go']['of']}.", "",
+          "### Открытия приложения", "",
+          f"Всего открытий {op['total']} — {num(op['per_user_week'], 1)} на человека в неделю (запланировано по характеру: " +
+          ", ".join(f"{v} чел. × {k}/нед." for k, v in sorted(op["planned_per_week"].items())) + f"); с хотя бы одним решением {op['with_decision']} ({pct(op['with_decision_share'])}); "
+          f"лента пуста в {op['empty']}; карточек в ленте в среднем {num(op['cards_avg'], 1)}. Выбор дня: " + ", ".join(f"{DAY_RU.get(k, k)} — {v}" for k, v in op["by_day"].items()) +
+          "; направление: " + ", ".join(f"{SEG_RU.get(k, k)} — {v}" for k, v in op["by_segment"].items()) + ". По неделям: " +
+          ", ".join(f"{k} — {v}" for k, v in op["by_cycle"].items()) + ". Решений: " + ", ".join(f"{k} — {v}" for k, v in m["decisions"].items()) +
+          f"; отметок «сходил» с оценкой {m['rating']['went']}, распределение: " + ", ".join(f"{k}★ — {v}" for k, v in sorted(m["rating"]["dist"].items())) + f". Ушли (перестали открывать): {m['churned']}.", "",
+          "### Сценарий «освободился вечер»", "",
+          f"Открытий в будний день с 17:00 до 19:59 по местному времени: {ev['opens']}; человек смотрит «Сегодня» (3–5 карточек). С «Иду» закончились {ev['with_go']} ({pct(ev['go_share'])}), "
+          f"с любым решением {ev['with_decision']}. «Сегодня» было пусто в {ev['empty'] + ev['fallback_tomorrow']} открытиях, в {ev['fallback_tomorrow']} из них человек переключился на «Завтра». "
+          f"Нажатий до «Иду» (свайпы мимо + «Иду»): медиана {num(ev['taps_to_go_median'], 0)}, максимум {ev['taps_to_go_max']}; в три уложились {ev['taps_le_3']} из {ev['with_go']} (цель 3). "
+          f"Карточек в вечерней ленте в среднем {num(ev['cards_avg'], 1)}.", "",
+          "### Несколько профилей", "",
+          f"Второй профиль завели {pr['accounts_with_second']} из {a['completed']} ({pct(pr['share'])}; по модели второй профиль у 20 % персон — {pr['planned_second']} из {a['started']}, "
+          f"из них {pr['planned_second_abandoned']} бросили онбординг): " + (", ".join(f"{k} — {v}" for k, v in pr["second_kinds"].items()) or "—") +
+          f". Онбординг второго профиля — нажатий {pr['second_onboarding_taps']}. Решений по профилям (основной, второй): {pr['decisions_by_profile']}; открытий со вторым профилем "
+          f"{pct(pr['opens_second_share'])} от всех. В БД решения второго профиля лежат под его user_id: аккаунтов проверено {d['db']['profile_isolation']['ok'] + d['db']['profile_isolation']['bad']}, "
+          f"перепутано {d['db']['profile_isolation']['bad']}.", "",
+          "### Персональное обучение", "",
+          f"Пробы на живых профилях (лента `date=week&segment=all`, первая пятёрка по категориям). Три «не моё» по категории из пятёрки: проб {ln['neg_ran']}, категория ушла из пятёрки в {ln['neg_passed']}. "
+          f"Три «сходил, 5» по категории вне пятёрки (сравнение с профилем-двойником без этих решений): проб {ln['pos_ran']}, категория поднялась в {ln['pos_passed']}" + (f", ещё {ln.get('pos_not_evaluable', 0)} не оценить — после отметок событий категории в ленте не осталось" if ln.get("pos_not_evaluable") else "") + ". Обучение одного профиля "
+          f"не тронуло ленту второго профиля того же аккаунта: проверок {ln['isolation_checked']}, без изменений {ln['isolation_ok']}." +
+          (f" Не выполнены (не нашлось подходящей категории с достаточным числом событий): {ln['not_run']}." if ln["not_run"] else ""), ""]
+    probe_rows = [[p["kind"], p["category"], " · ".join(x or "?" for x in p.get("before", [])), " · ".join(x or "?" for x in p.get("after", [])),
+                   "не оценить" if p.get("not_evaluable") else "да" if p.get("passed") else "нет", {True: "да", False: "нет"}.get(p.get("isolated"), "—")] for p in d["probes"] if p.get("ran")]
+    if probe_rows:
+        L += [table(["Проба", "Категория", "Пятёрка до", "Пятёрка после", "Сработало", "Второй профиль не изменился"], probe_rows), ""]
+    L += ["## 3. Дефекты продукта", "", "### 3.1 Открытые", ""]
     for x in defects:
-        L += [f"### {x['id']} [{x['severity']}] {x['title']}", ""]
-        L += [f"- {line}" for line in x["what"]]
-        L += [f"- **Где:** {x['where']}", f"- **Как воспроизвести:** {x['repro']}", ""]
+        L += [f"### {x['id']} [{x['severity']}] {x['title']}", "", *[f"- {line}" for line in x["what"]], f"- **Где:** {x['where']}", f"- **Как воспроизвести:** {x['repro']}", ""]
     if not defects:
         L += ["Открытых дефектов нет.", ""]
-    if closed:
-        L += ["### 3.2 Закрыто с прошлых прогонов", "",
-              "Дефекты исходного прогона (нумерация того отчёта):", "",
-              table(["Было", "Дефект", "Что показал этот прогон"], [[x["prev"], x["title"], x["evidence"] or "—"] for x in sorted(
-                  (c for c in closed if c["prev"]), key=lambda x: int(x["prev"][1:]))]), ""]
-        prev4 = [c for c in closed if c.get("prev4")]
-        prev2 = [c for c in closed if c.get("prev2")]
-        if prev4:
-            L += ["Дефекты, открытые в четвёртом прогоне (нумерация четвёртого отчёта, `baseline_v4.json`):", "",
-                  table(["Было", "Дефект", "Что показал этот прогон"], [[x["prev4"], x["title"], x["evidence"] or "—"] for x in sorted(
-                      prev4, key=lambda x: int(x["prev4"][1:]))]), ""]
-        if prev2:
-            L += ["Дефекты, открытые во втором прогоне (нумерация второго отчёта, `baseline_v2.json`):", "",
-                  table(["Было", "Дефект", "Что показал этот прогон"], [[x["prev2"], x["title"], x["evidence"] or "—"] for x in sorted(
-                      prev2, key=lambda x: int(x["prev2"][1:]))]), ""]
-    L += ["## 4. Проблемы юзабилити (по убыванию важности)", ""]
-    for x in usab:
-        L += [f"### {x['id']}. {x['title']}", ""]
-        L += [f"- {line}" for line in x["evidence"]]
-        L += [f"- **Что сделать:** {x['advice']}", ""]
+    L += ["### 3.2 Проверено и закрыто", "", table(["Проверка", "Что показал прогон"], [[x["title"], x["evidence"] or "—"] for x in closed]), "",
+          "Дефект четвёртого прогона «отправка дайджеста 10 000 пользователям не укладывается в 15 минут» снят вместе с рассылкой.", ""]
+    L += ["## 4. Наблюдения и юзабилити (по убыванию важности)", ""]
+    for i, x in enumerate(usab, 1):
+        L += [f"### У{i}. {x['title']}", "", *[f"- {line}" for line in x["evidence"]], f"- **Что сделать:** {x['advice']}", ""]
     if not usab:
         L += ["Проблем не найдено.", ""]
-    if closed_u:
-        L += ["### 4.1 Закрыто с прошлых прогонов", "",
-              table(["Было", "Проблема", "Что показал этот прогон"],
-                    [[x["prev"] or f"{x['prev2']} (второй прогон)", x["title"], x["evidence"] or "—"] for x in sorted(
-                        closed_u, key=lambda x: (0 if x["prev"] else 1, int((x["prev"] or x["prev2"])[1:])))]), ""]
     L += growth_lines(d)
-    L += ["## 6. Что подтвердилось и что нет (контрольные проверки)", ""]
-    vio = d.get("violations", {})
-    st = d["scenarios"].get("startup", {})
-    cmds = Counter(c["cmd"] for c in d["commands"])
-    fp = d["scenarios"].get("fault_probe", {})
-    fsm = d["scenarios"].get("fsm_restart", {})
-    dl = d["scenarios"].get("delete", [])
-    L += [f"- Пробы доставки (настоящий `send_with_bot` на трёх сообщениях): разовый 502 → доставлено {len(fp.get('server_error_once', {}).get('delivered', []))} из 3; "
-          f"429 → {len(fp.get('retry_after', {}).get('delivered', []))} из 3; Forbidden → заблокирован {fp.get('blocked', {}).get('blocked')}, доставлено "
-          f"{len(fp.get('blocked', {}).get('delivered', []))} из 3; стойкий 502 → доставлено {len(fp.get('server_error_persistent', {}).get('delivered', []))} из 3.",
-          f"- Рестарт бота (пустой MemoryStorage): нажатий на старые экраны онбординга до рестарта {len(fsm.get('before', []))} (работали: "
-          f"{sum(1 for x in fsm.get('before', []) if x.get('handled'))}), после — {len(fsm.get('after', []))}, ответ получили "
-          f"{sum(1 for x in fsm.get('after', []) if x.get('answered') and x.get('reply'))}.",
-          f"- /delete: удалено профилей {len(dl)}; профиль после удаления был в БД у {sum(1 for x in dl if x.get('profile_after_delete'))}, после нажатия на старую карточку — у "
-          f"{sum(1 for x in dl if x.get('profile_after_tap'))}.",
-          f"- Запуск бота выполнен настоящим `leisure.bot.main.run()` (токен, класс Bot и start_polling подменены): меню команд {', '.join('/' + c for c in st.get('commands', []))}; "
-          f"allowed_updates {st.get('allowed_updates')}; parse_mode по умолчанию {st.get('parse_mode', '').replace('ParseMode.', '')}. "
-          "Вызовы команд в прогоне: " + ", ".join(f"{k} — {v}" for k, v in sorted(cmds.items())) +
-          f"; /reset — {len(d['scenarios'].get('reset', []))} (сценарий) и {sum(p['redo'] for p in d['personas'])} после ошибки в ответе.",
-          f"- Формат исходящих сообщений по правилам Bot API: ошибок разбора HTML — {vio.get('html_parse', {}).get('count', 0)}, текстов длиннее 4096 — "
-          f"{vio.get('text_too_long', {}).get('count', 0)}, callback_data длиннее 64 байт — {vio.get('callback_data_len', {}).get('count', 0)}, "
-          f"недопустимых URL кнопок — {vio.get('button_url_invalid', {}).get('count', 0)}, повторных ответов на callback — "
-          f"{vio.get('callback_answered_twice', {}).get('count', 0)}.",
-          f"- Через настоящие обработчики прошли {meta['updates_fed']} апдейтов; callback без ответа: {fcount(d, 'callback_unanswered')}, "
-          f"исключений обработчиков: {d['handler_errors']}, нажатий, не дошедших до БД: {d['db']['decision_integrity']['missing']}.",
-          f"- Дубли отправки: число подборок на человека и уикенд > 1 по повторным часовым запускам — "
-          f"{sum(1 for k, c in Counter((x['u'], x['week']) for x in d['digests'] if x['origin'] == 'weekly').items() if c > 1)}.",
-          *([f"- Команды без пройденной настройки ({len(d['scenarios']['not_ready'])} вызовов): ответ — " + "; ".join(sorted({f"«{x['reply']}»" for x in d['scenarios']['not_ready']})) + "."]
-            if d['scenarios'].get('not_ready') else []),
-          f"- Часовые пояса: {cnt(sum(1 for p in d['personas'] if p['tz'] != 'Europe/Moscow'), 'персона', 'персоны', 'персон')} не в Москве; рассылка ушла каждому в 19:00 по его поясу (запуски по каждому поясу и стрэгглеры).", ""]
-    rpb = d["scenarios"].get("resend_probe", {})
-    npb = d["scenarios"].get("nudge_probe", {})
-    L += ["- Досылка недоставленных карточек (проба на настоящей четверговой рассылке): " + (
-        f"у u{rpb.get('uid')} четыре 502 подряд на первой карточке подборки из {rpb.get('items')} → помечено {rpb.get('flagged_first')}, пришло {rpb.get('cards_first')} карточек; "
-        f"после следующего `job_send_digests` дослано {rpb.get('resent')}, пометок {rpb.get('flagged_after')}." if rpb.get("ran") else "проба не выполнялась."),
-          "- Блок причин «Мимо»: следующим действием (сообщение или кнопка на другой карточке) блок свернулся "
-          f"{fcount(d, 'reasons_collapsed')} раз из {fcount(d, 'reasons_collapsed') + fcount(d, 'reasons_not_collapsed')}.",
-          f"- Подсказка про бюджет (проба u{npb.get('uid')}, два «Мимо — дорого» подряд при «не важно»): пришла {fcount(d, 'nudge_ok')}, не пришла {fcount(d, 'nudge_missing')}, "
-          f"без повода {fcount(d, 'nudge_unexpected')}; бюджет из неё задали {fcount(d, 'nudge_followed')}." if npb else "- Подсказка про бюджет: проба не выполнялась.", ""]
+    sc = d.get("scenarios", {})
+    ap, da = sc.get("api_probe", {}), sc.get("delete_account", {})
+    L += ["## 6. Контрольные проверки", "",
+          f"- Лента до онбординга: `GET /api/feed` → {ap.get('feed_before_onboarding', {}).get('status')} ({ap.get('feed_before_onboarding', {}).get('detail')}); «сходил» до дня события → "
+          f"{ap.get('went_before_day', {}).get('status')}; удалённый профиль после `DELETE` → {'404' if ap.get('deleted_profile_gone') else 'ещё есть'}.",
+          f"- Удаление аккаунта с двумя профилями: основной {'удалён' if da.get('main_gone') else '—'}, второй {'удалён' if da.get('second_gone') else 'остался'}, решений второго осталось {da.get('second_decisions_left', '—')}." if da else "- Удаление аккаунта с двумя профилями: проба не выполнялась.",
+          f"- Целостность: решений сверено с БД {d['db']['decision_integrity']['checked']}, не найдено {d['db']['decision_integrity']['missing']}, расхождений {d['db']['decision_integrity']['mismatch']}; "
+          f"профилей в БД {d['db']['profiles']['total']} (настроенных {d['db']['profiles']['onboarded']}, только согласие {d['db']['profiles']['consent_only']}).",
+          "- Вызовы API: " + "; ".join(f"{k} — {v}" for k, v in d["api"]["calls"].items()) + f". Ответов 5xx: {d['api']['n_errors']}; записей ERROR/WARNING продукта: {len(d.get('log_errors', []))}.",
+          f"- Воркер: журнал показанного (среда 22:00) запускался {len(d['volatile'].get('jobs', []))} раз.", ""]
     L += ["## 7. Ограничения прогона", "",
-          "- Поведение людей — допущения (`leisure/sim/personas.py`, `actors.py`): вероятности отвала по экранам (`STEP_HAZARD`), открытия, решений, оценок, "
-          "усталость и порог ухода. Новые ценности (Удовольствие, Веселье, Азарт, Покой, Близость, Смысл) персоны получают отдельным розыгрышем поверх прежних 13, чтобы когорта оставалась сравнимой с прошлыми прогонами; интересы персон заданы заранее и редко совпадают с восемью предложенными ботом, поэтому число нажатий на экране интересов — оценка сверху. Бюджет строкой на «Шаге 2» задают 85 % персон с бюджетом 1 000 или 2 500 ₽ (5 000 ₽ в строке нет), из подсказки про бюджет в «Уточнить» идёт 55 % персон с бюджетом; заметки персоны больше не пишут (пункта нет). Другие допущения дадут другие абсолютные доли; механика продукта от них не зависит.",
-          "- Seed — 177 событий; на первом уикенде их 93, дальше 18, 8, 6, 4, 6 на уикенд: часть «пустых слотов» — недобор базы, а не логики подборки.",
-          "- Не проверялись: живой Telegram (лимиты, форматирование, превью), поток сбоев сети и 429/5xx (проверены пробами на трёх сообщениях: разовый и стойкий 502, 429, блокировка — и одной пробой на настоящей рассылке: четыре 502 подряд на карточке одного человека и досылка на следующем часовом запуске), "
-          "веб-приложение, переходы по URL-кнопкам («Подробнее», «Другу», календари), параллельные нажатия, несколько городов.",
-          "- Рост через друзей: граф, вероятности приглашения, принятия, «Давай», «Поделиться» и число пришедших по ссылке — допущения (`social.py`, `social_run.py`), абсолютные доли зависят от них. "
-          "Приглашённых за 4 недели мало (десяток), поэтому сравнение приглашённых с органическими, особенно по оценкам, — ориентир, не вывод. Первый пришедший по ссылке-рекомендации всегда проходит путь целиком "
-          "(согласие и онбординг по `PUT /api/profile` с `ref_code`) — это проба контракта. Часы БД подменены триггерами на `created_at`/`opened_at`/`updated_at`, а `datetime.now()` в модулях профилей и приглашений — часами симуляции: "
-          "без этого «онбординг за 2 недели» и «просьба не чаще раза в 14 дней» сравнивали бы время симуляции с настоящим. Друзья без права писать (Mini App) не получают плана и подборок: бот отвечает им Forbidden, как Telegram.",
-          "- Время: часы подменены (`services.utcnow`), воркер вызывается с `now_utc`: среда 22:00 (сборка), четверг 19:00 по поясу каждого (подборка) с повторными запусками "
-          "(ловят дубли), «План на сегодня» ежедневно в 09:00 и «Как прошло?» ежедневно в 12:00 по поясу каждого; «Иду» на сегодня после 09:00 получает дополнительный запуск "
-          "плана в ближайший :00 (эмуляция часового cron). Остальные часы суток не гонялись. Пауза между сообщениями и паузы повторов 5xx отключены "
-          "(`SEND_INTERVAL = 0`, `RETRY_DELAYS = (0, 0, 0)`).", ""]
-    L += ["## 8. Как воспроизвести", "",
-          "```", f"python -m leisure.sim.runner --users {meta['users']} --weeks {w} --seed {meta['seed']}", "cd leisure && python -m pytest tests/test_sim_smoke.py", "```",
-          "Журнал вызовов — `leisure/sim/out/sim_log.jsonl` (не в git), сырые результаты — `leisure/sim/out/run_data.json`.", "",
+          "- Поведение людей — допущения (`leisure/sim/personas.py`, `app/driver.py`, `app/social.py`): частота открытий 1–5 в неделю по вовлечённости, чаще вечером четверга и пятницы; выбор дня "
+          "по характеру (спонтанные — «Сегодня», планирующие — «Неделя»), направление «Дело» чаще у нетворкеров и занятых; вероятности «Иду» / «Не моё», оценок, ухода. Другие допущения дадут другие доли.",
+          "- Нажатия считаются на клиенте по схеме FLOW-ONBOARDING и экранам v2 (свайп мимо карточки = 1); на сервер уходят только вызовы API.",
+          "- Seed — 177 событий, почти все на первом уикенде; по будням событий мало, поэтому «Сегодня» вечером часто пусто — это ограничение базы, а не ленты.",
+          "- Часы: `services.utcnow` и `datetime.now()` в модулях профилей и приглашений подменены часами симуляции, `created_at`/`updated_at` в БД — триггерами; окно «сегодня» в ленте считается по ним.",
+          "- Удержание — доля открывших приложение за неделю; открытия запланированы по характеру и прекращаются только при уходе (вовлечённость ниже порога), поэтому доля высока по построению.",
+          "- Не проверялись: веб-клиент (Next.js), установка PWA, системный «Поделиться», почта (magic link), параллельные запросы, несколько городов.", ""]
+    L += ["## 8. Как воспроизвести", "", "```", f"python -m leisure.sim.runner --users {meta['users']} --weeks {w} --seed {meta['seed']}",
+          "cd leisure && python -m pytest tests/test_sim_smoke.py", "```", "Сырые результаты — `leisure/sim/out/run_data.json` (не в git).", "",
           f"---\nДлительность прогона: {d['volatile']['duration_s']} с (единственная строка отчёта, которая меняется от запуска к запуску)."]
     return "\n".join(L) + "\n"
-
-
-def date_str(meta: dict, w: int) -> str:
-    from datetime import date, timedelta
-
-    d = date(2026, 10, 25) + timedelta(days=7 * w)
-    return d.strftime("%d.%m")
 
 
 def write_reports(d: dict, out_dir: Path | str) -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    m = build_metrics(d)
-    defects, closed = build_defects(m, d)
-    usab, closed_u = build_usability(m, d)
-    renumber(defects, usab, closed)
-    (out / "REPORT.md").write_text(render_md(m, d, defects, usab, closed, closed_u), encoding="utf-8")
-    cr = compare_rows(m, d, defects, closed, usab)
+    spec = spec_table(d)
+    defects, closed = build_defects(d)
+    usab = build_usability(d)
+    (out / "REPORT.md").write_text(render_md(d, spec, defects, closed, usab), encoding="utf-8")
+    cr = compare_rows(d, spec, defects)
+    g = d.get("growth")
     payload = {
-        "meta": {k: v for k, v in d["meta"].items() if k != "log_file"},
-        "norms": m["norms"],
-        "spec_metrics": [{k: r[k] for k in ("id", "name", "value", "target", "status", "note")} for r in m["spec_table"]],
-        "onboarding": {k: v for k, v in m["onboarding"].items() if k != "screens"},
-        "digests": m["digests"], "decisions": m["decisions"], "first_go": m["first_go"], "plan": m["plan"], "retention": m["retention"],
-        "rating": m["rating"], "repeats": m["repeats"], "silent": m["silent"], "scale": m["scale"], "plan_reminders": m["plan_reminders"],
+        "meta": d["meta"], "spec_metrics": spec,
+        "onboarding": {**d["metrics"]["onboarding"], "started": d["metrics"]["activation"]["started"], "completed": d["metrics"]["activation"]["completed"]},
+        "first_go": d["metrics"]["first_go"], "metrics": d["metrics"],
         "defects": [{k: x[k] for k in ("id", "severity", "title", "count", "where")} for x in defects],
-        "closed_defects": [{k: x[k] for k in ("id", "title", "evidence")} for x in closed],
-        "vs_previous": [{"metric": r[0], "was": r[1], "second": r[2], "third": r[3], "now": r[4]} for r in (cr or [])],
-        "growth": ({"metrics": {k: {"own": v["own"], "api": v["api"]} for k, v in d["growth"]["metrics"].items()}, "funnel": d["growth"]["funnel"],
-                    "compare": d["growth"]["compare"], "mismatch": d["growth"]["mismatch"], "checks": d["growth"]["checks"]} if d.get("growth") else None),
-        "usability": [{k: x[k] for k in ("id", "priority", "title")} for x in usab],
-        "findings": {k: {"count": v["count"], "users": v["users"]} for k, v in d["findings"].items()},
-        "violations": {k: v["count"] for k, v in d["violations"].items()},
+        "closed_defects": [{k: x[k] for k in ("key", "title", "evidence")} for x in closed],
+        "usability": [{"id": f"У{i}", "title": x["title"]} for i, x in enumerate(usab, 1)],
+        "vs_previous": [{"metric": r[0], "was": r[1], "now": r[2], "note": r[3]} for r in (cr or [])],
+        "growth": ({"metrics": g["metrics"], "funnel": g["funnel"], "compare": g["compare"], "mismatch": g["mismatch"], "checks": g["checks"]} if g else None),
+        "db": d["db"], "scenarios": d.get("scenarios"), "findings": {k: v["count"] for k, v in d["findings"].items()}, "api_calls": d["api"]["calls"],
         "volatile": d["volatile"],
     }
-    (out / "report.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
-    m["_defects"], m["_usability"], m["_closed"] = defects, usab, closed
-    return m
+    (out / "report.json").write_text(json.dumps(payload, ensure_ascii=False, indent=1, sort_keys=True, default=str), encoding="utf-8")
+    return {"spec": spec, "defects": defects, "usability": usab}
 
 
 def console_summary(m: dict, d: dict) -> str:
-    lines = [f"[sim] готово за {d['volatile']['duration_s']} с: {d['meta']['users']} персон, {d['meta']['weeks'] + 1} уикендов, {d['meta']['updates_fed']} апдейтов"]
-    for r in m["spec_table"]:
+    o, ev = d["metrics"]["onboarding"], d["metrics"]["evening"]
+    lines = [f"[sim] готово за {d['volatile']['duration_s']} с: {d['meta']['users']} персон, {d['meta']['weeks'] + 1} недель, {d['meta'].get('api_calls')} вызовов API"]
+    for r in m["spec"]:
         lines.append(f"  {r['name'][:70]:<70} {r['shown'][:40]:<40} цель {r['target']:<14} {STATUS_RU[r['status']]}")
-    o = m["onboarding"]
-    lines.append(f"  онбординг: нажатий min/медиана/max = {o['taps_min']}/{num(o['taps_median'], 0)}/{o['taps_max']}; до первого «Иду» медиана {num(m['first_go']['taps_median'], 0)}")
-    lines.append(f"  дефектов: {len(m['_defects'])}, проблем юзабилити: {len(m['_usability'])} — подробности в leisure/sim/REPORT.md")
+    lines.append(f"  онбординг: нажатий min/медиана/max = {o['taps_min']}/{num(o['taps_median'], 0)}/{o['taps_max']}; вечер: «Иду» в {pct(ev['go_share'])} открытий, до «Иду» медиана {num(ev['taps_to_go_median'], 0)}")
+    lines.append(f"  дефектов: {len(m['defects'])}, наблюдений: {len(m['usability'])} — подробности в leisure/sim/REPORT.md")
     return "\n".join(lines)
 
 
-if __name__ == "__main__":
-    import sys
-
-    src = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / "out" / "run_data.json"
-    data = json.loads(src.read_text(encoding="utf-8"))
-    mm = write_reports(data, Path(__file__).parent)
-    print(console_summary(mm, data))
+_ = statistics

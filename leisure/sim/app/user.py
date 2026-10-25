@@ -12,6 +12,7 @@ class ProfileState:
     pid: int
     kind: str                          # self | parent | child | other
     p: Persona                         # скрытый вкус именно этого профиля
+    name: str = ""                     # имя профиля в приложении («я» — имя человека; «Мама», «Ребёнок»)
     decisions: dict = field(default_factory=dict)    # event_id → {status, reason, day, rating, via_invite}
     ratings: list = field(default_factory=list)
     onb: dict = field(default_factory=dict)          # completed, taps_total, steps, prefill, interest_edits, ...
