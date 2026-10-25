@@ -215,9 +215,9 @@ button.pill.on{color:var(--accent-ink)}
 .btn2.go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .btn2 svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .bnav{display:flex;border-top:1px solid var(--line);background:var(--surface);padding:0 4px 10px}
-.bnav a{flex:1 1 0;min-width:0;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12.5px;font-weight:600;color:var(--muted);text-decoration:none;position:relative}
+.bnav a{flex:1 1 0;min-width:0;min-height:52px;white-space:nowrap;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12.5px;font-weight:600;color:var(--muted);text-decoration:none;position:relative}
 .bnav a[aria-current="page"]{color:var(--accent);font-weight:700}
-.bnav .dotn{position:absolute;top:8px;left:calc(50% + 10px);width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.bnav .dotn{position:absolute;top:6px;left:calc(50% + 12px);width:8px;height:8px;border-radius:50%;background:var(--accent)}
 .pd{background:var(--surface);border-radius:20px;padding:4px 16px}
 .pd .it{padding:12px 0;display:flex;flex-direction:column;gap:3px;border-top:2px dashed var(--line)}
 .pd .it:first-child{border-top:0}
@@ -336,8 +336,8 @@ button.kbtn.url{color:var(--accent)}
         </div>
       </div>
       <nav class="bnav" aria-label="Основное">
-        <a href="#" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 14h16M9 14v6M15 14v6"/></svg>Рекомендации</a>
-        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>План<span class="dotn" aria-hidden="true"></span><span class="sr">, есть неотмеченные</span></a>
+        <a href="#" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 14h16M9 14v6M15 14v6"/></svg>Лента</a>
+        <a href="#" aria-label="План, есть неотмеченные"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>План<span class="dotn" aria-hidden="true"></span></a>
         <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5"/></svg>Профиль</a>
       </nav>
     </div>
@@ -395,7 +395,7 @@ button.kbtn.url{color:var(--accent)}
         </div>
       </div>
       <nav class="bnav" aria-label="Основное">
-        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 14h16M9 14v6M15 14v6"/></svg>Рекомендации</a>
+        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 14h16M9 14v6M15 14v6"/></svg>Лента</a>
         <a href="#" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>План</a>
         <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5"/></svg>Профиль</a>
       </nav>
@@ -447,8 +447,8 @@ button.kbtn.url{color:var(--accent)}
         </div>
       </div>
       <nav class="bnav" aria-label="Основное">
-        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 14h16M9 14v6M15 14v6"/></svg>Рекомендации</a>
-        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>План<span class="dotn" aria-hidden="true"></span><span class="sr">, есть неотмеченные</span></a>
+        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 14h16M9 14v6M15 14v6"/></svg>Лента</a>
+        <a href="#" aria-label="План, есть неотмеченные"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>План<span class="dotn" aria-hidden="true"></span></a>
         <a href="#" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5"/></svg>Профиль</a>
       </nav>
     </div>
