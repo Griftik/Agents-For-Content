@@ -1,6 +1,6 @@
-"""Конвейер сбора (п. 7 спеки): коллекторы → LLM-нормализация → дедупликация → черновики в базе.
+"""Конвейер сбора (п. 7 спеки): коллекторы → нормализация (правила для структурированных источников, LLM для остальных) → дедупликация → черновики.
 
-    python -m leisure.collectors.pipeline --city Москва --days 14 [--sources kudago,timepad] [--dry-run]
+    python -m leisure.collectors.pipeline --city Москва --days 14 [--sources kudago,timepad] [--normalizer auto|rules|llm] [--dry-run]
 
 Шаги:
   1. `collect_all` по зарегистрированным источникам; молчащий источник не мешает остальным и виден в сводке.
@@ -12,7 +12,8 @@
   5. Новые события пишутся в базу черновиками через `seed.load.upsert_events`.
   6. Сводка в лог и в stdout: по источникам собрано, уже в базе, ошибок нормализации, дубликатов, черновиков.
 
-`--dry-run` (и автоматически, если нет OPENROUTER_KEY): только шаги 1–2, без LLM и без базы; конвейер не падает.
+`--dry-run`: только шаги 1–2, без нормализации и без базы. Без OPENROUTER_KEY конвейер не останавливается: структурированные
+источники (`normalize/rules.RULE_SOURCES`) нормализуются правилами, карточки со свободным текстом считаются «не разобрано» и ждут модели.
 Код выхода: 0 — отработал (источники могли молчать, это видно в сводке); 1 — не записалось в базу или молчат все источники.
 """
 from __future__ import annotations
@@ -29,6 +30,7 @@ from pathlib import Path
 from leisure import settings
 from leisure.normalize.dedup import find_duplicates, pick_best
 from leisure.normalize.llm import normalize_raw
+from leisure.normalize.rules import make_router
 from leisure.normalize.schema import EventIn, RawEvent
 
 from . import load_collectors
@@ -38,6 +40,7 @@ from .base import REGISTRY, CollectResult, collect_all
 log = logging.getLogger("leisure.collectors.pipeline")
 
 RAW_DIR = Path(__file__).resolve().parents[1] / "data" / "raw"
+NORMALIZERS = ("auto", "rules", "llm")  # auto: правила для структурированных источников, LLM для остальных (если есть ключ)
 
 
 # ─── структуры ───
@@ -80,7 +83,7 @@ class PipelineReport:
 
     def render(self) -> str:
         head = f"Сбор: {self.city}, {self.date_from} — {self.date_to}; режим: {self.mode}"
-        cols = ("источник", "собрано", "уже в базе", "ошибок LLM", "дубликатов", "черновиков")
+        cols = ("источник", "собрано", "уже в базе", "не разобрано", "дубликатов", "черновиков")
         rows = [(name, s.collected, s.known_in_db, s.norm_errors, s.duplicates, s.drafts) for name, s in self.sources.items()]
         total = ("ИТОГО", *(sum(r[i] for r in rows) for i in range(1, 6)))
         width = [max(len(str(x)) for x in col) for col in zip(cols, *rows, total)]
@@ -235,7 +238,8 @@ def has_openrouter_key() -> bool:
 def run_pipeline(
     city: str, date_from: date, date_to: date, *, names: list[str] | None = None, dry_run: bool = False,
     max_cards: int | None = None, raw_dir: Path = RAW_DIR, now: Callable[[], datetime] | None = None,
-    collect: Callable[..., CollectResult] | None = None, normalize: Callable[..., EventIn] = normalize_raw,
+    collect: Callable[..., CollectResult] | None = None, normalize: Callable[..., EventIn] | None = None,
+    normalizer: str = "auto",
     load_existing_events: Callable[..., list[dict]] | None = None, write: Callable[[Sequence[EventIn]], tuple[int, int]] | None = None,
     key_present: Callable[[], bool] = has_openrouter_key,
 ) -> PipelineReport:
@@ -245,12 +249,26 @@ def run_pipeline(
     load_existing_events = load_existing_events or load_existing
     write = write or write_drafts
 
+    if normalizer not in NORMALIZERS:
+        raise ValueError(f"normalizer: ожидалось одно из {NORMALIZERS}")
+    has_key = key_present()
     mode = "боевой"
     if dry_run:
-        mode = "сухой прогон (--dry-run): без LLM и без базы"
-    elif not key_present():
-        dry_run, mode = True, "сухой прогон (нет OPENROUTER_KEY): без LLM и без базы"
+        mode = "сухой прогон (--dry-run): без нормализации и без базы"
+    elif normalize is not None:
+        mode = "боевой"  # нормализатор передан явно (тесты, сторонний вызов)
+    elif normalizer == "llm" and not has_key:
+        dry_run, mode = True, "сухой прогон (нет OPENROUTER_KEY, --normalizer llm): без LLM и без базы"
         log.warning("OPENROUTER_KEY не задан, нормализация пропущена, карточки только сохраняются")
+    elif normalizer == "llm":
+        normalize, mode = normalize_raw, "боевой (только LLM)"
+    elif normalizer == "rules" or not has_key:
+        normalize = make_router(None)
+        mode = "боевой (только правила" + (": нет OPENROUTER_KEY, карточки со свободным текстом ждут LLM)" if not has_key else ")")
+        if not has_key:
+            log.warning("OPENROUTER_KEY не задан: структурированные источники нормализуются правилами, остальные ждут модели")
+    else:
+        normalize, mode = make_router(normalize_raw), "боевой (правила для структурированных источников, LLM для остальных)"
     report = PipelineReport(city, date_from, date_to, mode)
 
     result = collect(city, date_from, date_to, names)
@@ -266,6 +284,7 @@ def run_pipeline(
             report.db_error = f"не удалось прочитать события из базы: {type(exc).__name__}: {exc}"
             log.error(report.db_error)
             return report
+        assert normalize is not None
         items = normalize_cards(result.events, normalize, date_from, date_to, report, known_urls(existing), max_cards)
         items = unique_slugs(dedupe(items, existing, report), {e.get("slug", "") for e in existing})
         if items:
@@ -287,7 +306,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--start", type=date.fromisoformat, default=None, help="первый день диапазона, YYYY-MM-DD (по умолчанию сегодня, МСК)")
     ap.add_argument("--sources", default="", help="имена через запятую, например kudago,timepad (по умолчанию все)")
     ap.add_argument("--dry-run", action="store_true", help="только собрать и сохранить сырые карточки: без LLM и без базы")
-    ap.add_argument("--max-cards", type=int, default=None, help="потолок карточек для LLM за запуск (защита от расходов)")
+    ap.add_argument("--max-cards", type=int, default=None, help="потолок карточек на нормализацию за запуск (защита расходов на LLM)")
+    ap.add_argument("--normalizer", choices=NORMALIZERS, default="auto",
+                    help="auto (по умолчанию): структурированные источники правилами, остальные LLM; rules: только правила; llm: только модель")
     ap.add_argument("--raw-dir", type=Path, default=RAW_DIR)
     args = ap.parse_args(argv)
     if args.days < 1:
@@ -303,7 +324,7 @@ def main(argv: list[str] | None = None) -> int:
     date_to = date_from + timedelta(days=args.days - 1)
 
     report = run_pipeline(args.city, date_from, date_to, names=names, dry_run=args.dry_run,
-                          max_cards=args.max_cards, raw_dir=args.raw_dir)
+                          max_cards=args.max_cards, raw_dir=args.raw_dir, normalizer=args.normalizer)
     text = report.render()
     log.info("сводка:\n%s", text)
     print(text)

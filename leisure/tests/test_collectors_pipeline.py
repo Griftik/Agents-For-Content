@@ -91,10 +91,15 @@ def test_dry_run_on_fixtures_saves_raw_and_touches_nothing_else(tmp_path):
     assert "источник" in text and "ИТОГО" in text and "kudago" in text and "сырые карточки:" in text
 
 
-def test_missing_openrouter_key_falls_back_to_dry_run(tmp_path):
+def test_missing_openrouter_key_switches_to_rules_only(tmp_path, monkeypatch):
+    """Без ключа конвейер не уходит в сухой прогон: структурированные источники (KudaGo, Timepad) собираются правилами."""
+    from leisure.normalize import llm as llm_module
+    monkeypatch.setattr(llm_module, "normalize_raw", forbidden)
+    written: list[EventIn] = []
     report = run_pipeline("Москва", FROM, TO, raw_dir=tmp_path, collect=fixture_collect, key_present=lambda: False,
-                          normalize=forbidden, load_existing_events=forbidden, write=forbidden)
-    assert "нет OPENROUTER_KEY" in report.mode and len(list(tmp_path.glob("raw_*.json"))) == 1
+                          load_existing_events=lambda *a: [], write=lambda evs: written.extend(evs) or (len(evs), 0))
+    assert "только правила" in report.mode and "нет OPENROUTER_KEY" in report.mode and len(list(tmp_path.glob("raw_*.json"))) == 1
+    assert report.total_drafts == len(written) > 0 and all(e.note.startswith("normalized_by=rules") for e in written)
 
 
 def test_has_openrouter_key_follows_settings(monkeypatch):
