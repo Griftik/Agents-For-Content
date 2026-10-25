@@ -3,18 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Экраны планировщика досуга</title>
+<title>Экраны приложения «Досуг»</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oranienbaum&family=Golos+Text:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Piazzolla:wght@800&family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
 <style>
-/* Статичный макет четырёх экранов Mini App. Без скриптов и современных CSS-функций: открывается в любом браузере.
-   Токены — из leisure/web/DESIGN.md, содержимое — реальные события из seed на 23–25 октября 2026. */
+/* Система (DESIGN.md v2, направление B «Билет»): Piazzolla 800 / Golos Text 400 / IBM Plex Mono 500 капслок;
+   один акцент (бордовый), фон плоский, без теней; сетка 4/8/12/16/24/32; появление одной оркестровкой 280 мс.
+   Статичный макет без скриптов; переключатель «Серая структура» работает на :has(). Содержимое — настоящие события из seed, 24 октября 2026. */
 :root{
   --page:#E4E7EB; --bg:#ECEEF1; --surface:#F6F7F9; --surface-2:#E1E4E9; --fg:#1A1D23; --muted:#5F6876; --line:#D1D6DD;
   --accent:#7A1F3D; --accent-ink:#FFFFFF; --accent-soft:#F1DFE6; --brass:#8F7128;
   --ok:#2E6B46; --ok-soft:#DCEBE1; --warn:#8A500E; --warn-soft:#F3E6D2; --ring:#D8DCE2;
-  --display:'Oranienbaum','Times New Roman',Georgia,serif;
-  --body:'Golos Text','Segoe UI',Roboto,Arial,sans-serif;
+  --display:'Piazzolla',Georgia,'Times New Roman',serif;
+  --body:'Golos Text','Segoe UI',Arial,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -36,7 +38,7 @@ body{margin:0;background:var(--page);color:var(--fg);font:15px/1.5 var(--body);
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
   padding-top:28px;padding-bottom:48px;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1180px;margin:0 auto}
-h1,h2,h3,h4{font-family:var(--display);font-weight:400;margin:0;line-height:1.1}
+h1,h2,h3,h4{font-family:var(--display);font-weight:800;margin:0;line-height:1.08;letter-spacing:-.01em;text-wrap:balance}
 p{margin:0}
 a{color:var(--accent)}
 .eyebrow{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
@@ -164,6 +166,87 @@ button.pill.on{color:var(--accent-ink)}
 .grps{display:flex;flex-direction:column;gap:12px}
 .daypick{align-items:center;margin-top:2px}
 
+/* нижняя навигация и входящие */
+.bnav{display:flex;border-top:1px solid var(--line);background:var(--surface);padding:0 4px 10px}
+.bnav a{flex:1 1 0;min-width:0;min-height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11.5px;font-weight:600;color:var(--muted);text-decoration:none;position:relative}
+.bnav a[aria-current="page"]{color:var(--accent);font-weight:700}
+.bnav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.bnav .cnt{position:absolute;top:4px;left:calc(50% + 6px);min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:10.5px;line-height:17px;text-align:center}
+.inb{background:var(--surface);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.inb .t{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.inb .t b{font-size:14.5px;font-weight:600}
+.inb .t span{font-size:12px;color:var(--muted);white-space:nowrap}
+.inb p{font-size:13.5px;color:var(--muted)}
+.inb .new{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:6px;vertical-align:middle}
+
+/* v2: приложение — три вкладки, карточка-билет, нижняя навигация, серая структура, появление */
+.gray{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted);margin-top:4px}
+.gray input{width:18px;height:18px;margin:0;accent-color:var(--accent)}
+.wrap:has(#gray:checked) .rail{filter:grayscale(1)}
+.col.w375{width:375px}
+.app .pad{padding:12px 16px 16px;gap:12px}
+.lbl{font-family:var(--mono);font-weight:500;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);line-height:1.3}
+.lbl.ok{color:var(--ok);background:var(--ok-soft);padding:4px 8px;border-radius:999px}
+.lbl.fg{color:var(--fg)}
+.xl{font-size:32px;line-height:1.05;letter-spacing:-.02em}
+.psw{display:inline-flex;align-items:center;gap:8px;padding:4px 12px 4px 4px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:13.5px;font-weight:600;color:var(--fg);min-height:40px}
+.psw i{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-family:var(--display);font-weight:800;font-style:normal;display:inline-flex;align-items:center;justify-content:center;font-size:14px}
+.days{display:flex;gap:8px;align-items:center;overflow:hidden}
+.days .chip{padding:8px 12px;font-size:13px;font-weight:500;min-height:36px}
+.days .ic{margin-left:auto;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;flex:none}
+.days .ic svg,.bnav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.segm{display:flex;border:1px solid var(--line);border-radius:999px;padding:3px;background:var(--surface)}
+.segm button{flex:1 1 0;border:0;background:transparent;border-radius:999px;min-height:36px;font-family:inherit;font-size:13.5px;font-weight:500;color:var(--muted)}
+.segm button[aria-checked="true"]{background:var(--surface-2);color:var(--fg);font-weight:600}
+.fc{position:relative;background:var(--surface);border-radius:20px;padding:16px 16px 14px;display:flex;flex-direction:column;gap:8px;min-height:300px}
+.fc .top{display:flex;justify-content:space-between;align-items:center}
+.fc .when{display:flex;align-items:baseline;gap:12px;margin-top:8px}
+.fc .when b{font-family:var(--display);font-weight:800;font-size:40px;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.fc h3{font-size:24px;line-height:1.1}
+.fc .place{font-size:16px;line-height:1.4}
+.fc .tear{position:relative;border-top:2px dashed var(--line);margin:8px -16px 4px;height:0}
+.fc .tear:before,.fc .tear:after{content:"";position:absolute;top:-11px;width:20px;height:20px;border-radius:50%;background:var(--bg)}
+.fc .tear:before{left:-10px}.fc .tear:after{right:-10px}
+.fc .bot{display:flex;justify-content:space-between;align-items:center;margin-top:auto}
+.fc .bot a{font-size:13.5px;font-weight:600;color:var(--accent);text-decoration:none}
+.fc-next{height:8px;margin:0 14px;border:1px solid var(--line);border-top:0;border-radius:0 0 16px 16px;opacity:.6}
+.abar{display:flex;gap:8px}
+.btn2{flex:1 1 0;min-height:56px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-family:inherit;font-size:16px;font-weight:600;color:var(--fg);display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn2.go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn2 svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.bnav{display:flex;border-top:1px solid var(--line);background:var(--surface);padding:0 4px 10px}
+.bnav a{flex:1 1 0;min-width:0;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12.5px;font-weight:600;color:var(--muted);text-decoration:none;position:relative}
+.bnav a[aria-current="page"]{color:var(--accent);font-weight:700}
+.bnav .dotn{position:absolute;top:8px;left:calc(50% + 10px);width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.pd{background:var(--surface);border-radius:20px;padding:4px 16px}
+.pd .it{padding:12px 0;display:flex;flex-direction:column;gap:3px;border-top:2px dashed var(--line)}
+.pd .it:first-child{border-top:0}
+.pd .it b{font-size:16px;font-weight:600;line-height:1.3}
+.pd .it .pl{font-size:13px;color:var(--muted)}
+.pd .it .wn{font-size:13px;color:var(--warn)}
+.pd .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.marks{display:flex;gap:8px;margin-top:6px}
+.marks .chip{min-height:44px;padding:0 16px;display:inline-flex;align-items:center;font-size:14px}
+.stars2{display:flex;gap:4px;margin-top:6px}
+.stars2 .chip{min-height:40px;padding:0 10px;display:inline-flex;align-items:center;color:var(--brass);font-size:13px}
+.stars2 .chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.sec2{display:flex;flex-direction:column;gap:10px;background:var(--surface);border-radius:20px;padding:14px 16px}
+.sec2 h3{font-size:24px;display:flex;justify-content:space-between;align-items:baseline}
+.sec2 .pr{display:flex;align-items:center;gap:10px;font-size:15px}
+.sec2 .pr span:first-child{flex:1 1 auto}
+.rng{flex:none;width:120px;height:4px;border-radius:999px;background:var(--line);position:relative}
+.rng i{position:absolute;top:-8px;width:20px;height:20px;border-radius:50%;background:var(--accent);display:block}
+.rowl{display:flex;justify-content:space-between;align-items:center;font-size:15px;min-height:44px}
+.sw2{width:52px;height:32px;border-radius:999px;background:var(--accent);position:relative;flex:none;border:0}
+.sw2 i{position:absolute;top:4px;left:24px;width:24px;height:24px;border-radius:50%;background:var(--surface);display:block}
+.pchips{display:flex;gap:8px;flex-wrap:wrap}
+.pchips .chip{min-height:40px;display:inline-flex;align-items:center;padding:0 14px;font-size:14px}
+.pchips .chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+@keyframes up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.app .pad>*{animation:up .28s cubic-bezier(.16,1,.3,1) both}
+.app .pad>*:nth-child(2){animation-delay:.06s}.app .pad>*:nth-child(3){animation-delay:.12s}.app .pad>*:nth-child(4){animation-delay:.18s}.app .pad>*:nth-child(5){animation-delay:.24s}.app .pad>*:nth-child(n+6){animation-delay:.3s}
+@media (prefers-reduced-motion:reduce){.app .pad>*{animation:none}}
+
 /* бот: сообщения и inline-клавиатура Telegram */
 .chat{padding:12px 12px 20px;display:flex;flex-direction:column;gap:10px;background:var(--bg)}
 .cap2{font-size:11.5px;color:var(--muted);padding:0 4px}
@@ -207,12 +290,169 @@ button.kbtn.url{color:var(--accent)}
 
 <div class="head">
   <div class="eyebrow">Макет · 24 октября 2026</div>
-  <h1>Экраны <span>планировщика досуга</span></h1>
-  <p>Экраны Telegram Mini App (онбординг, подборка, план, профиль) и два набора сообщений бота: подборка с карточками и план.
+  <h1>Экраны приложения <span>«Досуг»</span></h1>
+  <p>Три вкладки (Рекомендации, План, Профиль) в направлении «Билет», затем онбординг, страница приглашения и снятые экраны бота как история.
   Содержимое — настоящие события из базы на 23–25 октября. Листайте ленту вбок.</p>
+  <label class="gray"><input type="checkbox" id="gray">Серая структура</label>
 </div>
 
 <div class="rail">
+
+  <!-- РЕКОМЕНДАЦИИ -->
+  <div class="col w375">
+    <div class="cap"><b>Рекомендации</b><span>сегодня, 18:12 · первая карточка подошла: открыть + «Иду» = 2 нажатия</span></div>
+    <div class="phone app">
+      <div class="bar-top"><span>18:12</span><span>Досуг</span></div>
+      <div class="pad">
+        <div class="mast">
+          <h2 class="xl">Сегодня</h2>
+          <button type="button" class="psw" aria-haspopup="listbox"><i>Я</i>я</button>
+        </div>
+        <div class="days">
+          <button type="button" class="chip on" aria-pressed="true">Сегодня</button>
+          <button type="button" class="chip" aria-pressed="false">Завтра</button>
+          <button type="button" class="chip" aria-pressed="false">Неделя</button>
+          <button type="button" class="ic" aria-label="Выбрать дату"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg></button>
+        </div>
+        <div class="segm" role="radiogroup" aria-label="Направление">
+          <button type="button" role="radio" aria-checked="true">Досуг</button>
+          <button type="button" role="radio" aria-checked="false">Дело</button>
+          <button type="button" role="radio" aria-checked="false">Всё</button>
+        </div>
+        <div>
+        <section class="fc" aria-label="Probka Wines на Малой Никитской">
+          <div class="top"><span class="lbl ok">Успеваешь</span><span class="lbl">1 / 4</span></div>
+          <div class="when"><b>19:00</b><span class="lbl fg">Сегодня · сб 24 окт</span></div>
+          <h3>Probka Wines на Малой Никитской</h3>
+          <p class="place">Probka Wines · м. Пушкинская</p>
+          <div class="tear"></div>
+          <div class="bot"><span class="lbl">Винные бары · камерно</span><a href="#">Подробнее</a></div>
+        </section>
+        <div class="fc-next"></div>
+        </div>
+        <div class="abar">
+          <button type="button" class="btn2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>Не моё</button>
+          <button type="button" class="btn2 go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l5 5L19 7"/></svg>Иду</button>
+        </div>
+      </div>
+      <nav class="bnav" aria-label="Основное">
+        <a href="#" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 14h16M9 14v6M15 14v6"/></svg>Рекомендации</a>
+        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>План<span class="dotn" aria-hidden="true"></span><span class="sr">, есть неотмеченные</span></a>
+        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5"/></svg>Профиль</a>
+      </nav>
+    </div>
+  </div>
+
+  <!-- ПЛАН -->
+  <div class="col w375">
+    <div class="cap"><b>План</b><span>прошедшие первыми, пока не отмечены · сходил и ★</span></div>
+    <div class="phone app">
+      <div class="bar-top"><span>18:12</span><span>Досуг</span></div>
+      <div class="pad">
+        <div class="mast">
+          <h2 class="xl">План</h2>
+          <button type="button" class="psw" aria-haspopup="listbox"><i>Я</i>я</button>
+        </div>
+        <h3>Прошли</h3>
+        <div class="pd">
+          <div class="it">
+            <span class="lbl">Пт 23 окт · 19:00</span>
+            <b>Фотобиеннале в МАММ: Роджер Баллен</b>
+            <div class="marks"><button type="button" class="chip on" aria-pressed="true">✓ Сходил</button><button type="button" class="chip" aria-pressed="false">Не сходил</button></div>
+            <div class="stars2" role="group" aria-label="Оценка">
+              <button type="button" class="chip" aria-pressed="false">1 ★</button><button type="button" class="chip" aria-pressed="false">2 ★</button><button type="button" class="chip" aria-pressed="false">3 ★</button><button type="button" class="chip on" aria-pressed="true">● 4 ★</button><button type="button" class="chip" aria-pressed="false">5 ★</button>
+            </div>
+          </div>
+          <div class="it">
+            <span class="lbl">Пт 23 окт · 12:00</span>
+            <b>Винзавод: девять новых выставок сезона</b>
+            <div class="marks"><button type="button" class="chip" aria-pressed="false">Сходил</button><button type="button" class="chip" aria-pressed="false">Не сходил</button></div>
+          </div>
+        </div>
+        <h3>Сегодня</h3>
+        <div class="pd">
+          <div class="it">
+            <span class="lbl">13:00–15:00 · вдвоём с Анной</span>
+            <b>«Карманный онгон»: вырезать деревянного духа-хранителя</b>
+            <span class="pl">Ателье ГЭС-2 · м. Кропоткинская</span>
+            <div class="acts"><span class="btn cal sm">Календарь</span><span class="btn sm">Позвать друга</span><span class="btn sm quiet">Убрать</span></div>
+          </div>
+          <div class="it">
+            <span class="lbl">19:00 · может быть</span>
+            <b>Probka Wines на Малой Никитской</b>
+            <span class="pl">Probka Wines · м. Пушкинская</span>
+            <div class="acts"><span class="btn go sm">Иду</span><span class="btn sm quiet">Убрать</span></div>
+          </div>
+        </div>
+        <h3>Завтра</h3>
+        <div class="pd">
+          <div class="it">
+            <span class="lbl">11:00–17:00</span>
+            <b>Конференция «ОТЛЁТ! Грязь, грибы и естественная история»</b>
+            <span class="wn">Пересекается с «Хлеб» в Центре «Зотов»</span>
+            <div class="acts"><span class="btn cal sm">Календарь</span><span class="btn sm">Позвать друга</span><span class="btn sm quiet">Убрать</span></div>
+          </div>
+        </div>
+      </div>
+      <nav class="bnav" aria-label="Основное">
+        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 14h16M9 14v6M15 14v6"/></svg>Рекомендации</a>
+        <a href="#" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>План</a>
+        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5"/></svg>Профиль</a>
+      </nav>
+    </div>
+  </div>
+
+  <!-- ПРОФИЛЬ -->
+  <div class="col w375">
+    <div class="cap"><b>Профиль</b><span>несколько профилей в одном аккаунте · веса, бюджет, дорога, что узнал</span></div>
+    <div class="phone app">
+      <div class="bar-top"><span>18:12</span><span>Досуг</span></div>
+      <div class="pad">
+        <div class="mast"><h2 class="xl">Профиль</h2></div>
+        <div class="pchips" role="listbox" aria-label="Профили">
+          <button type="button" class="chip on" role="option" aria-selected="true">● я</button>
+          <button type="button" class="chip" role="option" aria-selected="false">мама</button>
+          <button type="button" class="chip" role="option" aria-selected="false">ребёнок</button>
+          <button type="button" class="chip" aria-label="Новый профиль">+</button>
+        </div>
+        <div class="sec2">
+          <h3>Ценности <span class="lbl">5 / 5</span></h3>
+          <div class="pchips">
+            <button type="button" class="chip on" aria-pressed="true">✓ Развитие</button><button type="button" class="chip on" aria-pressed="true">✓ Новизна</button><button type="button" class="chip on" aria-pressed="true">✓ Творчество</button><button type="button" class="chip on" aria-pressed="true">✓ Дружба</button><button type="button" class="chip on" aria-pressed="true">✓ Эстетика</button><button type="button" class="chip" aria-pressed="false">Исследования</button><button type="button" class="chip" aria-pressed="false">Семья</button><button type="button" class="chip" aria-pressed="false">Покой</button>
+          </div>
+        </div>
+        <div class="sec2">
+          <h3>Направления</h3>
+          <div class="pr"><span>Своими руками</span><span class="rng"><i style="left:100px"></i></span><span class="lbl fg">Главное</span></div>
+          <div class="pr"><span>Джаз</span><span class="rng"><i style="left:66px"></i></span><span class="lbl fg">Интересно</span></div>
+          <div class="pr"><span>Вечеринки</span><span class="rng"><i style="left:-2px"></i></span><span class="lbl fg">Не показывать</span></div>
+        </div>
+        <div class="sec2">
+          <h3>Бюджет</h3>
+          <div class="pchips"><button type="button" class="chip" aria-pressed="false">Не важно</button><button type="button" class="chip" aria-pressed="false">до 1 000 ₽</button><button type="button" class="chip on" aria-pressed="true">● до 2 500 ₽</button><button type="button" class="chip" aria-pressed="false">до 5 000 ₽</button></div>
+        </div>
+        <div class="sec2">
+          <h3>На дорогу <span class="lbl">40 мин</span></h3>
+          <div class="pr"><span class="rng" style="width:100%"><i style="left:36%"></i></span></div>
+        </div>
+        <div class="sec2">
+          <h3>Что я о тебе узнал</h3>
+          <div class="pchips"><button type="button" class="chip on">+ Джаз</button><button type="button" class="chip on">+ Своими руками</button><button type="button" class="chip">− Вечеринки</button></div>
+        </div>
+        <div class="sec2">
+          <div class="rowl"><span>Показывать имя друзьям</span><button type="button" class="sw2" role="switch" aria-checked="true" aria-label="Показывать имя друзьям"><i></i></button></div>
+          <div class="rowl"><span>Почта</span><span class="lbl">Скоро</span></div>
+          <div class="rowl"><span>Установить на экран</span><span class="lbl fg">→</span></div>
+          <div class="rowl"><button type="button" class="btn quiet" style="color:var(--warn);border-color:transparent;background:transparent;padding-left:0">Удалить мои данные</button></div>
+        </div>
+      </div>
+      <nav class="bnav" aria-label="Основное">
+        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M4 14h16M9 14v6M15 14v6"/></svg>Рекомендации</a>
+        <a href="#"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>План<span class="dotn" aria-hidden="true"></span><span class="sr">, есть неотмеченные</span></a>
+        <a href="#" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="4"/><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5"/></svg>Профиль</a>
+      </nav>
+    </div>
+  </div>
 
   <!-- ОНБОРДИНГ -->
   <div class="col">
@@ -319,88 +559,9 @@ button.kbtn.url{color:var(--accent)}
     </div>
   </div>
 
-  <!-- ДАЙДЖЕСТ -->
-  <div class="col">
-    <div class="cap"><b>Дайджест</b><span>четверг 19:00 · 5 слотов и полный список</span></div>
-    <div class="phone">
-      <div class="bar-top"><span>16:56</span><span>Досуг</span></div>
-      <div class="pad">
-        <div class="mast">
-          <div>
-            <div class="eyebrow">Обновлён 24.10 09:14</div>
-            <h2>Уикенд <i>23–25 октября</i></h2>
-          </div>
-          <span class="sync"><span class="dot"></span>Евгений</span>
-        </div>
-        <div class="tabs">
-          <span class="tab on">Дайджест <b>128</b></span>
-          <span class="tab">План <b>2</b></span>
-          <span class="tab">Профиль</span>
-        </div>
-
-        <div class="sec"><h3>Рекомендация</h3><span>5 слотов</span></div>
-        <div class="empty">Пятница свободна. Под твои интересы ничего не нашлось — смотри полный список ниже.</div>
-
-        <div class="slot">
-          <div class="eyebrow">Сб · день</div>
-          <h4>«Карманный онгон»: вырезать деревянного духа-хранителя</h4>
-          <div class="meta">Ателье ГЭС-2 · 13:00–15:00 · <b style="color:var(--ok)">бесплатно</b></div>
-          <div class="foot2">
-            <svg class="ring" width="42" height="42" viewBox="0 0 46 46" role="img" aria-label="совпадение 91 процент">
-              <circle cx="23" cy="23" r="19" fill="none" stroke="var(--ring)" stroke-width="3.2"></circle>
-              <circle cx="23" cy="23" r="19" fill="none" stroke="var(--accent)" stroke-width="3.2" stroke-linecap="round"
-                      stroke-dasharray="108 119" transform="rotate(-90 23 23)"></circle>
-              <text x="23" y="27.5" text-anchor="middle" font-size="13" font-weight="600" fill="var(--fg)" font-family="Golos Text, Arial, sans-serif">91</text>
-            </svg>
-            <span class="row"><span class="btn sm">Другое</span><span class="btn sm">Не моё</span></span>
-          </div>
-        </div>
-
-        <div class="slot">
-          <div class="eyebrow">Вс · день</div>
-          <h4>Конференция «ОТЛЁТ! Грязь, грибы и естественная история»</h4>
-          <div class="meta">Центр Вознесенского · 11:00–17:00 · по регистрации</div>
-          <div class="foot2">
-            <svg class="ring" width="42" height="42" viewBox="0 0 46 46" role="img" aria-label="совпадение 88 процентов">
-              <circle cx="23" cy="23" r="19" fill="none" stroke="var(--ring)" stroke-width="3.2"></circle>
-              <circle cx="23" cy="23" r="19" fill="none" stroke="var(--accent)" stroke-width="3.2" stroke-linecap="round"
-                      stroke-dasharray="105 119" transform="rotate(-90 23 23)"></circle>
-              <text x="23" y="27.5" text-anchor="middle" font-size="13" font-weight="600" fill="var(--fg)" font-family="Golos Text, Arial, sans-serif">88</text>
-            </svg>
-            <span class="row"><span class="btn sm">Другое</span><span class="btn sm">Не моё</span></span>
-          </div>
-        </div>
-
-        <div class="row" style="border-top:1px solid var(--line);padding-top:12px">
-          <span class="chip day">Все дни</span><span class="chip">Пт 0</span><span class="chip">Сб 67</span>
-          <span class="chip">Вс 61</span><span class="chip">Горизонт 84</span>
-        </div>
-
-        <div class="ev">
-          <div class="when"><b>24</b><span>сб<br>12:00</span></div>
-          <div class="body">
-            <div class="row"><span class="eyebrow">Современное искусство</span><span class="badge free">бесплатно</span></div>
-            <h4>Винзавод: девять новых выставок сезона</h4>
-            <div class="place"><b>ЦСИ Винзавод</b> · 4-й Сыромятнический пер., 1 · м. Курская</div>
-            <p class="desc">Мортаев в pop/off/art, Сапожников в XL, Муратов в 11.12 и «Неприснившееся завтра» в Акцизном зале.</p>
-            <div class="row"><span class="why">Творчество</span><span class="why">Эстетика</span><span class="why">нетривиально</span></div>
-            <p class="fit"><b>Почему тебе · </b>Девять только что открывшихся выставок за один вечер, бесплатно и без толп.</p>
-            <div class="row daypick"><span class="eyebrow">День</span>
-              <button type="button" class="chip day" aria-pressed="true">Сб</button><button type="button" class="chip" aria-pressed="false">Вс</button>
-            </div>
-            <div class="row">
-              <span class="btn go">Иду</span><span class="btn">Может быть</span>
-              <span class="btn">Интересно</span><span class="btn">Мимо</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- БОТ · ПОДБОРКА -->
   <div class="col">
-    <div class="cap"><b>Бот · подборка</b><span>четверг 19:00 · заголовок и три состояния карточки</span></div>
+    <div class="cap"><b>Бот · подборка (снято)</b><span>история версии с Telegram</span></div>
     <div class="phone">
       <div class="bar-top"><span>19:00</span><span>Досуг · бот</span></div>
       <div class="chat">
@@ -477,75 +638,9 @@ button.kbtn.url{color:var(--accent)}
     </div>
   </div>
 
-  <!-- ПЛАН -->
-  <div class="col">
-    <div class="cap"><b>План</b><span>суббота 09:00 · конфликты и календарь</span></div>
-    <div class="phone">
-      <div class="bar-top"><span>16:56</span><span>Досуг</span></div>
-      <div class="pad">
-        <div class="mast">
-          <div><div class="eyebrow">План</div><h2>Выходные <i>23–25 октября</i></h2></div>
-        </div>
-        <div class="tabs">
-          <span class="tab">Дайджест <b>128</b></span>
-          <span class="tab on">План <b>3</b></span>
-          <span class="tab">Профиль</span>
-        </div>
-
-        <div class="card">
-          <h3 style="font-size:21px">Суббота <span class="muted" style="font-family:var(--body);font-size:12.5px">24 окт</span></h3>
-          <div class="pi">
-            <div class="t">13:00–15:00</div>
-            <div class="n">«Карманный онгон»: вырезать духа-хранителя</div>
-            <div class="v">Ателье ГЭС-2, Болотная наб., 15 · м. Кропоткинская</div>
-            <div class="row" style="margin-top:6px">
-              <span class="btn sm">Подробнее</span><span class="btn sm cal">Google Календарь</span>
-              <span class="btn sm cal">Outlook</span><span class="btn sm">Отправить</span><span class="btn sm quiet">Убрать</span>
-            </div>
-          </div>
-          <div class="pi">
-            <div class="t">19:00 · может быть</div>
-            <div class="n" style="font-weight:500;color:var(--muted)">Probka Wines на Малой Никитской</div>
-            <div class="v">Малая Никитская, 16/5 · м. Баррикадная</div>
-            <div class="row" style="margin-top:6px"><span class="btn sm">Точно иду</span><span class="btn sm quiet">Убрать</span></div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3 style="font-size:21px">Воскресенье <span class="muted" style="font-family:var(--body);font-size:12.5px">25 окт</span></h3>
-          <div class="pi">
-            <div class="t">11:00–17:00</div>
-            <div class="n">Конференция «ОТЛЁТ!»</div>
-            <div class="v">Центр Вознесенского, Большая Ордынка, 46 · м. Полянка</div>
-            <div class="warn">Пересекается по времени с «Хлеб» в Зотове</div>
-            <div class="row" style="margin-top:6px">
-              <span class="btn sm cal">Google Календарь</span><span class="btn sm">Отправить</span><span class="btn sm quiet">Убрать</span>
-            </div>
-          </div>
-          <div class="pi">
-            <div class="t">12:00–22:00</div>
-            <div class="n">«Хлеб» в Центре «Зотов»</div>
-            <div class="v">Ходынская ул., 2 · м. Улица 1905 года</div>
-            <div class="stars">★★★★<i>★</i></div>
-          </div>
-        </div>
-
-        <div class="row"><span class="btn go">Скопировать план</span><span class="muted" style="font-size:12.5px">3 события · одно пересечение</span></div>
-
-        <div class="sec"><h3>На горизонте</h3><span>покупается заранее</span></div>
-        <div class="card">
-          <div class="t muted" style="font-size:12px">до 29 ноября · 12:00–21:00</div>
-          <div class="n" style="font-weight:600;font-size:14px">Фотобиеннале в МАММ: Роджер Баллен</div>
-          <div class="v muted" style="font-size:12.5px">Остоженка, 16 · м. Кропоткинская</div>
-          <div class="row" style="margin-top:6px"><span class="btn sm">Билеты</span><span class="btn sm cal">Календарь</span></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- БОТ · ПЛАН -->
   <div class="col">
-    <div class="cap"><b>Бот · план</b><span>/plan, «План на сегодня», «Как прошло?»</span></div>
+    <div class="cap"><b>Бот · план (снято)</b><span>история версии с Telegram</span></div>
     <div class="phone">
       <div class="bar-top"><span>09:00</span><span>Досуг · бот</span></div>
       <div class="chat">
@@ -610,14 +705,14 @@ button.kbtn.url{color:var(--accent)}
 
   <!-- ВЕБ · ПРИГЛАШЕНИЕ -->
   <div class="col">
-    <div class="cap"><b>Приглашение</b><span>страница события · друг без согласия</span></div>
+    <div class="cap"><b>Приглашение</b><span>страница события · друг без аккаунта · галочка + «Иду вместе» = 2 нажатия</span></div>
     <div class="phone">
       <div class="bar-top"><span>12:20</span><span>Досуг</span></div>
       <div class="pad">
-        <div class="hint">
-          <span class="eyebrow">Приглашение</span>
-          <h4>Анна зовёт тебя</h4>
-          <p>Суббота, 24 окт · 13:00–15:00</p>
+        <div>
+          <span class="lbl">Приглашение</span>
+          <h2 class="xl">Анна зовёт тебя</h2>
+          <span class="lbl fg">Сб 24 окт · 13:00–15:00</span>
         </div>
         <div class="row"><span class="eyebrow">Своими руками</span><span class="badge free">бесплатно</span></div>
         <h2 style="font-size:27px">«Карманный онгон»: вырезать деревянного духа-хранителя</h2>
@@ -639,70 +734,6 @@ button.kbtn.url{color:var(--accent)}
     </div>
   </div>
 
-  <!-- ПРОФИЛЬ -->
-  <div class="col">
-    <div class="cap"><b>Профиль</b><span>ценности, интересы и что сервис понял</span></div>
-    <div class="phone">
-      <div class="bar-top"><span>16:56</span><span>Досуг</span></div>
-      <div class="pad">
-        <div class="mast">
-          <div><div class="eyebrow">Профиль · Москва</div><h2>Евгений</h2></div>
-          <span class="sync"><span class="dot"></span>сохранено</span>
-        </div>
-        <div class="tabs">
-          <span class="tab">Дайджест <b>128</b></span>
-          <span class="tab">План <b>3</b></span>
-          <span class="tab on">Профиль</span>
-        </div>
-
-        <div class="card">
-          <h3 style="font-size:21px">Ценности</h3>
-          <p class="muted" style="font-size:12.5px;margin-bottom:6px">Пять ведущих выделены: их теги весят больше.</p>
-          <div class="vrow"><span class="nm top">Творчество</span><span class="track"><i style="width:100%"></i></span><span class="val">5</span></div>
-          <div class="vrow"><span class="nm top">Наставничество</span><span class="track"><i style="width:100%"></i></span><span class="val">5</span></div>
-          <div class="vrow"><span class="nm top">Дружба</span><span class="track"><i style="width:100%"></i></span><span class="val">5</span></div>
-          <div class="vrow"><span class="nm top">Развитие</span><span class="track"><i style="width:100%"></i></span><span class="val">5</span></div>
-          <div class="vrow"><span class="nm top">Новизна</span><span class="track"><i style="width:100%"></i></span><span class="val">5</span></div>
-          <div class="vrow"><span class="nm">Эстетика</span><span class="track"><i style="width:60%"></i></span><span class="val">3</span></div>
-          <div class="vrow"><span class="nm">Природа</span><span class="track"><i style="width:20%"></i></span><span class="val">1</span></div>
-        </div>
-
-        <div class="card">
-          <h3 style="font-size:21px">Что я узнал о тебе</h3>
-          <div class="learn" style="margin-top:6px">
-            <div><b>Чаще выбираешь:</b> современное искусство, своими руками, камерно</div>
-            <div><b>Чаще отклоняешь:</b> вечеринки, шумно</div>
-            <div><b>Причины «мимо»:</b> далеко (3), не в это время (1)</div>
-            <div class="muted" style="font-size:12.5px">12 решений за 3 недели · средняя оценка 4,3</div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3 style="font-size:21px">Интересы</h3>
-          <p class="muted" style="font-size:12.5px;margin-bottom:6px">— не показывать · иногда · интересно · в первую очередь</p>
-          <div class="vrow"><span class="nm">Современное искусство</span><span class="seg"><span>—</span><span>1</span><span>2</span><span class="on">3</span></span></div>
-          <div class="vrow"><span class="nm">Своими руками</span><span class="seg"><span>—</span><span>1</span><span>2</span><span class="on">3</span></span></div>
-          <div class="vrow"><span class="nm">Джаз</span><span class="seg"><span>—</span><span>1</span><span class="on">2</span><span>3</span></span></div>
-          <div class="vrow"><span class="nm">Вечеринки</span><span class="seg"><span class="on">—</span><span>1</span><span>2</span><span>3</span></span></div>
-        </div>
-
-        <div class="card">
-          <h3 style="font-size:21px">Параметры</h3>
-          <div class="vrow"><span class="nm">Эстетика обязательна</span><span class="sw"><i></i></span></div>
-          <div class="vrow"><span class="nm">Бюджет на событие</span><span class="muted num" style="font-size:13px">2 500 ₽</span></div>
-          <div class="vrow"><span class="nm">С кем обычно</span><span class="seg"><span>один</span><span class="on">вдвоём</span><span>друзья</span></span></div>
-          <div class="vrow"><span class="nm">Когда</span><span class="row"><span class="chip on">день</span><span class="chip on">вечер</span></span></div>
-        </div>
-
-        <div class="card">
-          <h3 style="font-size:21px">Что ещё важно</h3>
-          <p class="note" style="margin-top:8px">В субботу вечером чаще с друзьями. Хочу попробовать стеклодувную
-          мастерскую. Бары только с хорошей винной картой.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
 </div>
 
 <div class="legend">
@@ -716,8 +747,9 @@ button.kbtn.url{color:var(--accent)}
     <span class="sw-item"><span class="sw-box" style="background:var(--bg)"></span>Фон экрана</span>
   </div>
   <div class="notes">
-    <p><b>Шрифты.</b> Заголовки — Oranienbaum, текст — Golos Text, обе гарнитуры из прототипа. Цифры времени и цен
-    набраны моноширинными цифрами, чтобы столбцы не прыгали.</p>
+    <p><b>Шрифты.</b> Три роли: заголовки — Piazzolla 800 (антиква, заменила Oranienbaum, у которого есть только 400 и нет контраста весов),
+    текст — Golos Text 400, служебное — IBM Plex Mono 500 капслоком с разрядкой. Цифры времени и цен — tabular.</p>
+    <p><b>Направление.</b> «Билет»: время и цена как главные числа, линия отрыва перед действиями, фото только если есть. Переключатель «Серая структура» вверху показывает иерархию без цвета.</p>
     <p><b>Тёмная тема.</b> Страница следует настройке телефона: токены переопределяются целиком, а не инвертируются,
     поэтому акцент остаётся читаемым на тёмном фоне.</p>
     <p><b>Что изменено в карточке.</b> Четыре кнопки решения вместо трёх («Интересно» требует пункт F6 постановки). Под событием
