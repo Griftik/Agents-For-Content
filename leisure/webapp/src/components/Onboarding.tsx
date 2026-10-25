@@ -4,8 +4,8 @@ import { BUDGETS, PROPOSED_N, TOP_VALUES, clusters, rankCategories, type Onboard
 import { ValuePicker } from "./ValuePicker";
 
 /**
- * Онбординг в Mini App из двух шагов (FLOW-ONBOARDING): приветствие с согласием (если профиля ещё нет) → «1 из 2» пять ценностей →
- * «2 из 2» восемь направлений и строка бюджета → «Дайджест». Тексты приветствия — T-REF-LANDING.
+ * Первый вход (FLOW-APP, А1 → Э1 → Э2): приветствие с согласием (T-APP-WELCOME, T-APP-CONSENT) → «Шаг 1 / 2» пять ценностей
+ * (пятая сразу открывает шаг 2) → «Шаг 2 / 2» восемь направлений и бюджет → лента на сегодня.
  */
 export function Onboarding({ step, profile, catalog, error, needConsent }: { step: OnboardingStep; profile: Profile | null; catalog: Catalog; error?: string; needConsent?: boolean }) {
   return (
@@ -14,7 +14,7 @@ export function Onboarding({ step, profile, catalog, error, needConsent }: { ste
         {step === "welcome" ? <Welcome hasConsent={!!profile?.has_consent} error={error} needConsent={needConsent} /> : null}
         {step === "1" ? <StepValues catalog={catalog} profile={profile} error={error} /> : null}
         {step === "2" && profile ? <StepInterests catalog={catalog} profile={profile} error={error} /> : null}
-        <p className="foot"><a href="/policy">Политика обработки данных</a></p>
+        {step === "welcome" ? <p className="foot"><a href="/policy">Политика обработки данных</a></p> : null}
       </main>
     </div>
   );
@@ -23,20 +23,26 @@ export function Onboarding({ step, profile, catalog, error, needConsent }: { ste
 function Welcome({ hasConsent, error, needConsent }: { hasConsent: boolean; error?: string; needConsent?: boolean }) {
   return (
     <>
-      <h1>Выходные под то, что для тебя важно</h1>
-      <p style={{ maxWidth: "60ch" }}>
-        Каждый четверг присылаю 5–7 событий и объясняю, почему они подходят именно тебе. Нужны два шага: пять главных ценностей и интересы, около минуты.
-      </p>
+      <h1>События под то, что для тебя важно</h1>
+      <p style={{ maxWidth: "60ch" }}>Два шага, около минуты. Регистрации нет: приложение запомнит тебя на этом телефоне.</p>
       <form action={startOnboardingAction} className="stack">
         {!hasConsent ? (
           <label className="consent">
             <input type="checkbox" name="consent" aria-describedby={needConsent ? "need" : undefined} />
             <span>
-              Даю согласие на обработку моего Telegram id, имени и ответов, чтобы собрать подборку. Подробнее в <a href="/policy" target="_blank" rel="noopener noreferrer">политике</a>.
+              Даю согласие на обработку моих ответов и решений, чтобы подбирать события. Данные хранятся в России. Подробнее в{" "}
+              <a href="/policy" target="_blank" rel="noopener noreferrer">политике обработки данных</a>.
             </span>
+            <small>Согласие можно отозвать в любой момент: «Удалить мои данные» в профиле.</small>
           </label>
         ) : null}
         {!hasConsent ? <input type="hidden" name="needs_consent" value="1" /> : null}
+        {!hasConsent ? (
+          <div className="stack" style={{ gap: 4 }}>
+            <label htmlFor="who" className="svc">Имя, необязательно</label>
+            <input id="who" name="name" type="text" maxLength={80} autoComplete="given-name" style={{ minHeight: 44, width: "100%", maxWidth: 320, font: "15px var(--body)", padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg)", color: "var(--fg)" }} />
+          </div>
+        ) : null}
         {needConsent ? <p id="need" role="alert" className="field-error">Отметь согласие, чтобы продолжить.</p> : null}
         {error ? <p role="alert" className="field-error">Не получилось сохранить, попробуй ещё раз.</p> : null}
         <div className="row"><button type="submit" className="btn primary">Начать</button></div>
@@ -51,10 +57,9 @@ function StepValues({ catalog, profile, error }: { catalog: Catalog; profile: Pr
   return (
     <>
       <div>
-        <p className="eyebrow">Шаг 1 из 2</p>
+        <p className="svc">Шаг 1 / 2</p>
         <h1>Что для тебя важно</h1>
       </div>
-      <p>Выбери пять главных ценностей из {catalog.values.length}. Остальные тоже учту, но слабее.</p>
       {error ? <p role="alert" className="field-error">{error === "save" ? "Не получилось сохранить, попробуй ещё раз." : `Нужно выбрать ровно ${TOP_VALUES}.`}</p> : null}
       <ValuePicker groups={groups} short={catalog.value_short ?? {}} initial={fives.length === TOP_VALUES ? fives : []} />
     </>
@@ -70,10 +75,9 @@ function StepInterests({ catalog, profile, error }: { catalog: Catalog; profile:
   return (
     <form action={finishOnboardingAction} className="stack" style={{ gap: 18 }}>
       <div>
-        <p className="eyebrow">Шаг 2 из 2</p>
+        <p className="svc">Шаг 2 / 2</p>
         <h1>Интересы</h1>
       </div>
-      <p>Восемь направлений под твои ценности. Нажми, чтобы убрать или вернуть; остальные покажу реже.</p>
       {error ? <p role="alert" className="field-error">Не получилось сохранить, попробуй ещё раз.</p> : null}
       <div className="pick" role="group" aria-label="Направления">
         {shown.map((c) => (
@@ -84,7 +88,7 @@ function StepInterests({ catalog, profile, error }: { catalog: Catalog; profile:
         ))}
       </div>
       <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-        <legend className="eyebrow" style={{ marginBottom: 8 }}>Бюджет на событие</legend>
+        <legend className="svc" style={{ marginBottom: 8 }}>Бюджет</legend>
         <span className="seg wrapseg">
           {BUDGETS.map((b) => (
             <label key={b.value}>
@@ -95,10 +99,9 @@ function StepInterests({ catalog, profile, error }: { catalog: Catalog; profile:
         </span>
       </fieldset>
       <div className="row">
-        <a className="btn quiet" href="/profile?onboarding=1">← Назад</a>
-        <button type="submit" className="btn primary">Показать подборку →</button>
+        <a className="btn quiet" href="/profile?onboarding=1" style={{ minHeight: 48 }}>Назад</a>
+        <button type="submit" className="btn primary">Показать рекомендации</button>
       </div>
-      <p className="muted" style={{ fontSize: 13.5 }}>Все направления можно поправить позже в разделе «Профиль».</p>
     </form>
   );
 }

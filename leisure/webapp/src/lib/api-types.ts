@@ -56,6 +56,7 @@ export type Profile = {
     company?: string;
     times?: string[];
     areas?: string[];
+    travel_minutes?: number;
   } & Record<string, unknown>;
   notes: string;
   tz: string;
@@ -68,10 +69,14 @@ export type Profile = {
   /** Показывать имя друзьям в приглашениях (по умолчанию true). */
   show_name?: boolean;
   source?: string;
-  /** Бот может писать человеку (профиль из Mini App — false до requestWriteAccess или /start). */
-  can_write?: boolean;
   /** Предложение своей подборки приглашённому: 0 не показывали, 1 «Потом», 2 повтор показан. */
   offer_seen?: number;
+  /** Ручная правка «что я о тебе узнал» и накопленные веса: {tag: {…}, cat: {…}, n}. */
+  affinity?: { tag?: Record<string, number>; cat?: Record<string, number>; n?: number };
+  /** Время на дорогу, мин (для «успеваешь»); по умолчанию 40. */
+  travel_minutes?: number;
+  /** Вид профиля в аккаунте: self | parent | child | other. */
+  kind?: string;
   /** YYYY-MM-DD: когда повторить предложение онбординга приглашённому (день события + 1) или null. */
   offer_due?: string | null;
   /** Согласие на обработку данных дано (профиль-заготовка без согласия — false). */
@@ -94,10 +99,11 @@ export type Catalog = {
 };
 export type ProfilePatch = Partial<Pick<Profile, "notes" | "values" | "interests">> & {
   params?: Profile["params"];
+  /** Правка «что я о тебе узнал»: желаемые веса по тегам и категориям (как в GET профиля, поле n игнорируется). */
+  affinity?: { tag?: Record<string, number>; cat?: Record<string, number> };
   name?: string;
   username?: string;
   show_name?: boolean;
-  can_write?: boolean;
   offer_seen?: number;
   consent?: boolean;
   onboarded?: boolean;
@@ -107,7 +113,7 @@ export type ProfilePatch = Partial<Pick<Profile, "notes" | "values" | "interests
 
 // ─── Приглашения (leisure/docs/GROWTH.md, раздел 6; зеркало InviteOut / InviteCreatedOut / InviteAcceptOut из api/schemas.py) ───
 export type InviteStatus = "active" | "past" | "unpublished" | "gone";
-/** POST /api/invites. url = null, пока в API не заданы бот и MINIAPP_SHORT_NAME: тогда share_text содержит web_url. */
+/** POST /api/invites. Ссылка приглашения — web_url (адрес приложения); url оставлен для совместимости и может быть null. */
 export type InviteCreated = { code: string; kind: string; url: string | null; web_url: string; share_text: string };
 /** GET /api/invites/{code}. event — карточка как в дайджесте; null, если событие удалено (status = gone). */
 export type InviteView = {
@@ -130,3 +136,22 @@ export type InviteView = {
 export type InviteAcceptStatus = "going" | "maybe" | "declined";
 /** POST /api/invites/{code}/accept. Для declined решения нет. */
 export type InviteAccepted = { decision: Decision | null; together_with: string | null; profile_state: "new" | "onboarded" };
+
+// ─── Приложение (docs/PIVOT-PWA.md): гостевая сессия ───
+/** Гостевая сессия: POST /api/session. */
+export type SessionCreated = { user_id: number; token?: string };
+
+// ─── Лента и профили аккаунта (docs/PIVOT-PWA.md, версия 2) ───
+/** Элемент GET /api/feed: событие на день с баллом; can_make_it — старт не раньше, чем через время на дорогу. */
+export type FeedItem = {
+  event: EventT;
+  day: string;
+  score: number | null;
+  can_make_it: boolean;
+  /** Обложка, если источник её дал; иначе типографская обложка. */
+  cover?: string | null;
+  decision?: Decision | null;
+};
+export type Feed = { date: string; segment: string; items: FeedItem[] };
+/** Профиль аккаунта в переключателе («я», «мама», «ребёнок»). */
+export type AccountProfile = { id: number; name: string; kind: "self" | "parent" | "child" | "other" | string; onboarded: boolean };

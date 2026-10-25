@@ -1,36 +1,18 @@
-import type { ReactNode } from "react";
+import type { AccountProfile } from "@/lib/api-types";
+import { BottomNav, type Tab } from "./BottomNav";
+import { ProfileSwitcher } from "./ProfileSwitcher";
 
-type Tab = "digest" | "plan" | "profile";
+export type { Tab };
 
-export function Masthead({ eyebrow, title, accent, tab, digestCount, name }: {
-  eyebrow: string;
-  title: string;
-  accent?: string;
-  tab: Tab;
-  digestCount?: number;
-  name?: string;
-}) {
-  const tabs: { id: Tab; href: string; label: string; count?: ReactNode }[] = [
-    { id: "digest", href: "/digest", label: "Подборка", count: digestCount },
-    { id: "plan", href: "/plan", label: "План" },
-    { id: "profile", href: "/profile", label: "Профиль" },
-  ];
+/** Каркас экрана: заголовок вкладки слева, переключатель профилей справа, нижняя навигация. */
+export function Masthead({ title, tab, profiles, activeId, planDot }: { title: string; tab: Tab; profiles: AccountProfile[]; activeId: number; planDot?: boolean }) {
   return (
-    <header className="mast-bar">
-      <div className="mast">
-        <div>
-          <div className="eyebrow">{eyebrow}</div>
-          <h1>{title} {accent ? <i>{accent}</i> : null}</h1>
-        </div>
-        {name ? <span className="sync"><span className="dot" aria-hidden="true" />{name}</span> : null}
-      </div>
-      <nav className="tabs" aria-label="Разделы">
-        {tabs.map((t) => (
-          <a key={t.id} className="tab" href={t.href} aria-current={t.id === tab ? "page" : undefined}>
-            {t.label}{t.count != null ? <> <b>{t.count}</b></> : null}
-          </a>
-        ))}
-      </nav>
-    </header>
+    <>
+      <header className="app-head">
+        <h1>{title}</h1>
+        <ProfileSwitcher profiles={profiles} activeId={activeId} />
+      </header>
+      <BottomNav tab={tab} planDot={planDot} />
+    </>
   );
 }

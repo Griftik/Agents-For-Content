@@ -4,8 +4,6 @@
 export type ProfileState = "new" | "onboarded";
 
 export type Viewer = {
-  /** Страница открыта в Telegram (есть initData). В браузере без Telegram «иду» записать нельзя. */
-  inTelegram: boolean;
   /** Согласие на обработку данных уже дано (profile.has_consent). */
   hasConsent: boolean;
 };
@@ -13,15 +11,14 @@ export type Viewer = {
 /** Галочку согласия показываем, пока согласия нет. */
 export const needsConsent = (v: Pick<Viewer, "hasConsent">): boolean => !v.hasConsent;
 
-export type Tap = "link" | "open-in-telegram" | "consent" | "accept";
+export type Tap = "link" | "consent" | "accept";
 
 /**
- * Нажатия приглашённого до записанного «иду» (FLOW-INVITE, раздел 6): переход по ссылке считается как /start.
+ * Нажатия приглашённого до записанного «иду»: переход по ссылке считается за одно. Гостевая сессия создаётся сама, входа нет.
  * Порядок «галочка, кнопка» и «кнопка, галочка» даёт те же два нажатия на странице.
  */
 export function inviteeTaps(v: Viewer): Tap[] {
   const taps: Tap[] = ["link"];
-  if (!v.inTelegram) taps.push("open-in-telegram");
   if (needsConsent(v)) taps.push("consent");
   taps.push("accept");
   return taps;

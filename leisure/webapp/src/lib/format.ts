@@ -61,13 +61,6 @@ export function placeLine(ev: EventT): { venue: string; rest: string } {
 /** Событие целиком вне ближайших выходных — «на горизонте». */
 export const isHorizon = (ev: EventT, weekend: string[]) => !ev.dates.some((d) => weekend.includes(d));
 
-export function shareUrl(ev: EventT, day: string | null | undefined, base: string): string {
-  const d = day || ev.dates[0] || "";
-  const when = [d ? `${dateLong(d)}` : "", ev.time_text].filter(Boolean).join(", ");
-  const text = [ev.title, when, ev.venue].filter(Boolean).join("\n").slice(0, 300);
-  return "https://t.me/share/url?" + new URLSearchParams({ url: `${base}/e/${ev.slug}`, text }).toString();
-}
-
 export const STATUS_LABEL: Record<string, string> = { иду: "Иду", может: "Может быть", интересно: "Интересно", мимо: "Мимо" };
 
 /** Разбор ?today= (только для проверки в разработке). */

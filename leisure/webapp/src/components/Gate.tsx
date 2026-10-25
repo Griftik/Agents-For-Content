@@ -1,31 +1,20 @@
-import { botLink } from "@/lib/config";
+import { redirect } from "next/navigation";
 
-/** Нет сессии: страница открыта не из Telegram или initData ещё не обменялся на сессию. */
+/** Сессии ещё нет: гостевой аккаунт создаётся сам (SessionBoot в layout), страница обновится. */
 export function AuthGate() {
-  const bot = botLink();
   return (
     <main id="main" className="wrap page" style={{ paddingTop: 26 }}>
-      <div className="notice">
-        <h2>Открой приложение из Telegram</h2>
-        <p>Логинов и паролей здесь нет: тебя узнаём по Telegram. Открой «Досуг» из бота, и подборка появится сама.</p>
-        {bot ? <p style={{ marginTop: 10 }}><a className="btn go" href={bot}>Открыть бота</a></p> : null}
+      <div className="notice" role="status">
+        <h2>Готовим приложение</h2>
+        <p>Секунду: создаём твой аккаунт. Входа и паролей нет.</p>
       </div>
     </main>
   );
 }
 
-/** Профиль ещё не создан: онбординг проходит в боте. */
-export function NoProfile() {
-  const bot = botLink("start");
-  return (
-    <main id="main" className="wrap page" style={{ paddingTop: 26 }}>
-      <div className="notice">
-        <h2>Сначала познакомимся</h2>
-        <p>Профиля пока нет. Ответь на несколько вопросов в боте: это три минуты, и подборка станет твоей.</p>
-        {bot ? <p style={{ marginTop: 10 }}><a className="btn go" href={bot}>Начать в боте</a></p> : null}
-      </div>
-    </main>
-  );
+/** Профиля или согласия ещё нет: начинаем с приветствия онбординга. */
+export function NoProfile(): never {
+  redirect("/profile?onboarding=welcome");
 }
 
 export function ApiDown({ message }: { message?: string }) {

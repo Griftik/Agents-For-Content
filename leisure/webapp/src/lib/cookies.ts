@@ -1,6 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { INVITE_COOKIE, REF_COOKIE, WHO_COOKIE, cookieOpts } from "./session-consts";
+import { PROFILE_COOKIE, REF_COOKIE, SESSION_COOKIE, cookieOpts } from "./session-consts";
 import { CODE_RE } from "./start-param";
 
 const prod = () => process.env.NODE_ENV === "production";
@@ -16,25 +16,9 @@ export async function setRef(code: string) {
 export async function clearCookie(name: string) {
   (await cookies()).set(name, "", { ...cookieOpts(0, prod()), maxAge: 0 });
 }
-
-export type Who = { name: string; username: string };
-export async function readWho(): Promise<Who> {
-  try {
-    const raw = (await cookies()).get(WHO_COOKIE)?.value;
-    if (!raw) return { name: "", username: "" };
-    const j = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as { n?: unknown; u?: unknown };
-    return { name: typeof j.n === "string" ? j.n.slice(0, 200) : "", username: typeof j.u === "string" ? j.u.slice(0, 100) : "" };
-  } catch {
-    return { name: "", username: "" };
-  }
+export async function setSessionCookie(token: string, maxAgeSec: number) {
+  (await cookies()).set(SESSION_COOKIE, token, cookieOpts(maxAgeSec, prod()));
 }
-export const encodeWho = (name: string, username: string) =>
-  Buffer.from(JSON.stringify({ n: name.slice(0, 200), u: username.slice(0, 100) }), "utf8").toString("base64url");
-
-export async function readLastInvite(): Promise<string | null> {
-  const v = (await cookies()).get(INVITE_COOKIE)?.value;
-  return v && CODE_RE.test(v) ? v : null;
-}
-export async function setLastInvite(code: string) {
-  (await cookies()).set(INVITE_COOKIE, code, cookieOpts(60 * DAY, prod()));
+export async function setProfileCookie(token: string) {
+  (await cookies()).set(PROFILE_COOKIE, token, cookieOpts(180 * DAY, prod()));
 }

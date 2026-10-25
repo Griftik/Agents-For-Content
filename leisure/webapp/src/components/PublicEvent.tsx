@@ -1,6 +1,15 @@
 import type { EventT } from "@/lib/api-types";
 import { dateLong, placeLine, priceLabel, timeRange, wdShort } from "@/lib/format";
-import { Badges } from "./EventCard";
+
+
+function Badges({ ev }: { ev: EventT }) {
+  return (
+    <>
+      {ev.free ? <span className="badge free">бесплатно</span> : null}
+      {ev.confidence === "нужно проверить" ? <span className="badge check">нужно проверить</span> : null}
+    </>
+  );
+}
 
 /** Публичная карточка события: заголовок, факты, описание, «Почему стоит». Общая для /e/<слаг> и приглашения. */
 export function PublicEvent({ ev, heading = "h1" }: { ev: EventT; heading?: "h1" | "h2" }) {
@@ -12,7 +21,10 @@ export function PublicEvent({ ev, heading = "h1" }: { ev: EventT; heading?: "h1"
   const H = heading;
   return (
     <article className="stack" style={{ gap: 14 }}>
-      <div className="row"><span className="eyebrow">{ev.category}</span><Badges ev={ev} /></div>
+      <div className="fcover" style={{ borderRadius: "var(--r-card)", aspectRatio: "16 / 7" }}>
+        <span className="svc cat">{ev.category}</span>
+      </div>
+      <div className="row"><Badges ev={ev} /></div>
       <H style={heading === "h2" ? { fontSize: 28 } : undefined}>{ev.title}</H>
       <dl className="facts">
         {dates.length ? (
@@ -30,7 +42,6 @@ export function PublicEvent({ ev, heading = "h1" }: { ev: EventT; heading?: "h1"
         {sourceOk ? <><dt>Источник</dt><dd><a href={ev.url} rel="nofollow noopener noreferrer" target="_blank">{new URL(ev.url).hostname.replace(/^www\./, "")}</a></dd></> : null}
       </dl>
       {ev.description ? <p style={{ maxWidth: "70ch", fontSize: 16 }}>{ev.description}</p> : null}
-      {ev.why_fit_hint ? <p className="fit" style={{ maxWidth: "70ch" }}><span className="eyebrow">Почему стоит · </span>{ev.why_fit_hint}</p> : null}
     </article>
   );
 }

@@ -1,41 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { copyText, miniAppLink, splitShare, tgShareLink, writeChatLink } from "./invite-share";
+import { copyText, shareLink, splitShare } from "./invite-share";
 
-const link = "https://t.me/dosug_bot/app?startapp=inv_k3m9x2ab";
+const link = "https://dosug.example/e/karmannyj-ongon?inv=k3m9x2ab";
+const text = `Иду на «Карманный онгон»: суббота, 24 окт, 13:00–15:00, Ателье ГЭС-2.\nПойдёшь со мной? ${link}`;
 
 describe("поделиться", () => {
   it("убирает ссылку из текста, чтобы в чате она не стояла дважды", () => {
-    const t = `Иду на «Карманный онгон»: суббота, 24 окт, 13:00–15:00, Ателье ГЭС-2.\nПойдёшь со мной? ${link}`;
-    const s = splitShare(t, link);
+    const s = splitShare(text, link);
     expect(s.url).toBe(link);
     expect(s.text).not.toContain(link);
     expect(s.text.endsWith("Пойдёшь со мной?")).toBe(true);
   });
-  it("ссылка t.me/share/url кодирует адрес и текст", () => {
-    const u = tgShareLink(link, "Привет & пока");
-    expect(u).toBe(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("Привет & пока")}`);
-  });
   it("в буфер ссылка попадает один раз", () => {
-    const t = `Иду на «Карманный онгон»: суббота, 24 окт, 13:00–15:00, Ателье ГЭС-2.\nПойдёшь со мной? ${link}`;
-    expect(copyText(t, link).split(link).length - 1).toBe(1);
+    expect(copyText(text, link).split(link).length - 1).toBe(1);
     expect(copyText("Без ссылки", link)).toBe(`Без ссылки\n${link}`);
   });
-  it("ссылка на Mini App: с коротким именем и без", () => {
-    expect(miniAppLink("dosug_bot", "app", "inv", "ABCD1234")).toBe("https://t.me/dosug_bot/app?startapp=inv_ABCD1234");
-    expect(miniAppLink("dosug_bot", "", "ref", "ABCD1234")).toBe("https://t.me/dosug_bot?startapp=ref_ABCD1234");
-    expect(miniAppLink("", "app", "inv", "ABCD1234")).toBeNull();
-  });
-});
-
-describe("запасная ссылка на чат с ботом", () => {
-  it("с кодом приглашения: ?start=w_<код>", () => {
-    expect(writeChatLink("dosug_bot", "ABCD1234")).toBe("https://t.me/dosug_bot?start=w_ABCD1234");
-  });
-  it("без кода или с повреждённым кодом: просто чат с ботом", () => {
-    expect(writeChatLink("dosug_bot")).toBe("https://t.me/dosug_bot");
-    expect(writeChatLink("dosug_bot", "../x")).toBe("https://t.me/dosug_bot");
-  });
-  it("без имени бота ссылки нет", () => {
-    expect(writeChatLink("", "ABCD1234")).toBeNull();
+  it("ссылка — адрес приложения (web_url), url из API — запасной", () => {
+    expect(shareLink({ web_url: link, url: "https://x" })).toBe(link);
+    expect(shareLink({ web_url: "", url: "https://x" })).toBe("https://x");
+    expect(shareLink({})).toBe("");
   });
 });

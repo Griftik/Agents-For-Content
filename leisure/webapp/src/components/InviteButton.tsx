@@ -3,16 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { createInviteAction } from "@/app/actions";
 import { copyToClipboard } from "@/lib/clipboard";
-import { copyText, splitShare, tgShareLink } from "@/lib/invite-share";
-import { inTelegram, openTelegramLink } from "@/lib/tg-client";
+import { copyText, splitShare } from "@/lib/invite-share";
 
 type Share = { url: string; text: string };
 
 /**
- * «Позвать друга» (T-INVITE-SHARE, FLOW-INVITE И1–И2): нажатие создаёт приглашение (server action → POST /api/invites)
- * и открывает окно с текстом, который уйдёт от имени человека. «Поделиться» — в Telegram openTelegramLink на t.me/share/url,
- * вне Telegram Web Share API; «Скопировать» — запасной вариант с подтверждением. Системный выбор чата открывается по второму нажатию,
- * то есть в свежем жесте: Safari не пускает navigator.share после ожидания ответа сервера.
+ * «Позвать друга» (T-INVITE-SHARE): нажатие создаёт приглашение (server action → POST /api/invites) и открывает нижний лист с текстом,
+ * который уйдёт от имени человека. «Поделиться» — Web Share API (обычная ссылка на приложение); «Скопировать» — запасной вариант
+ * с подтверждением. Системное окно открывается вторым нажатием, в свежем жесте: Safari не пускает navigator.share после ожидания сервера.
  */
 export function InviteButton({ slug, day, small = true }: { slug: string; day: string | null; small?: boolean }) {
   const dlg = useRef<HTMLDialogElement>(null);
@@ -23,7 +21,7 @@ export function InviteButton({ slug, day, small = true }: { slug: string; day: s
   const [shareAvailable, setShareAvailable] = useState(false);
 
   useEffect(() => {
-    setShareAvailable(inTelegram() || typeof navigator.share === "function");
+    setShareAvailable(typeof navigator.share === "function");
   }, []);
 
   async function open() {
@@ -49,11 +47,6 @@ export function InviteButton({ slug, day, small = true }: { slug: string; day: s
   async function doShare() {
     if (!share) return;
     const { text, url } = splitShare(share.text, share.url);
-    if (inTelegram()) {
-      openTelegramLink(tgShareLink(url, text));
-      dlg.current?.close();
-      return;
-    }
     try {
       await navigator.share({ text, url });
       dlg.current?.close();

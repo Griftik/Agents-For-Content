@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { DEV_PREFIX, SESSION_COOKIE, parseDevUser } from "@/lib/session-consts";
 
 /**
- * Режим разработки: ?dev_user=<telegram id> без подписи ставит dev-cookie.
+ * Режим разработки: ?dev_user=<id> без подписи ставит dev-cookie.
  * В production (NODE_ENV !== "development") middleware ничего не делает, а сам cookie не принимается.
  */
 export function middleware(req: NextRequest) {

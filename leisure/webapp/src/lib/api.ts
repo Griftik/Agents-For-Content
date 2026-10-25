@@ -1,6 +1,6 @@
 import "server-only";
 import { apiBase, apiKey } from "./config";
-import type { Catalog, Decision, Digest, EventT, InviteAcceptStatus, InviteAccepted, InviteCreated, InviteView, Plan, Profile, ProfilePatch, ScoredEvent } from "./api-types";
+import type { AccountProfile, Catalog, Feed, SessionCreated, Decision, Digest, EventT, InviteAcceptStatus, InviteAccepted, InviteCreated, InviteView, Plan, Profile, ProfilePatch, ScoredEvent } from "./api-types";
 import { MockError, mockCall, mockEnabled } from "./mock";
 
 export class ApiError extends Error {
@@ -37,7 +37,8 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {}
     throw new ApiError(res.status, detail);
   }
-  return (await res.json()) as T;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : {}) as T;
 }
 
 const q = (params: Record<string, string | undefined>) => {
@@ -54,23 +55,41 @@ export const api = {
   saveProfile: (uid: number, body: ProfilePatch) =>
     call<Profile>(`/api/profile/${uid}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   decisions: (uid: number) => call<Decision[]>(`/api/decisions/${uid}`),
-  decide: (body: { user_id: number; event: string; status: string; reason?: string; day?: string }) =>
+  decide: (body: { user_id: number; event: string; status: string; reason?: string; day?: string; rating?: number }) =>
     call<Decision>("/api/decisions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   removeDecision: (uid: number, event: string) =>
     call<{ removed: boolean }>(`/api/decisions/${uid}/${encodeURIComponent(event)}`, { method: "DELETE" }),
   digest: (uid: number, today?: string) => call<Digest>(`/api/digest/${uid}/preview${q({ today })}`),
   digestAll: (uid: number, today?: string) => call<ScoredEvent[]>(`/api/digest/${uid}/all${q({ today })}`),
   plan: (uid: number, today?: string) => call<Plan>(`/api/plan/${uid}${q({ today })}`),
+  /** POST /api/session: гостевой аккаунт с первого экрана (user_id; подпись cookie ставит веб). */
+  createSession: () => call<SessionCreated>("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }),
+  /** GET /api/feed: лента на день или неделю по направлению, ранжированная под профиль. */
+  feed: (profileId: number, date: string, segment: string, limit = 20) =>
+    call<Feed>(`/api/feed${q({ profile_id: String(profileId), date, segment, limit: String(limit) })}`),
+  /** GET /api/profiles: профили аккаунта. */
+  profiles: (uid: number) => call<AccountProfile[]>(`/api/profiles${q({ user_id: String(uid) })}`),
+  /** POST /api/profiles: новый профиль в аккаунте («мама», «ребёнок»). */
+  createProfile: (uid: number, name: string, kind: string) =>
+    call<AccountProfile>("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: uid, name, kind }) }),
+  /** POST /api/auth/email: ссылка-вход на почту; 503, пока у API нет SMTP. */
+  linkEmail: (uid: number, email: string) =>
+    call<unknown>("/api/auth/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: uid, email }) }),
+  /** «Удалить мои данные»: профиль, решения, подписки. */
+  deleteProfile: (uid: number) => call<unknown>(`/api/profile/${uid}`, { method: "DELETE" }),
   /** GET /api/invites/{code}; user_id (необязательно) нужен, чтобы автор узнал своё приглашение (is_own) и my_status. */
   invite: (code: string, uid?: number) => call<InviteView>(`/api/invites/${encodeURIComponent(code)}${q({ user_id: uid ? String(uid) : undefined })}`),
   /** POST /api/invites: код и ссылка для события и дня (повторный вызов возвращает то же приглашение). */
   createInvite: (uid: number, slug: string, day: string | null) =>
     call<InviteCreated>("/api/invites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: uid, event_slug: slug, day: day ?? undefined }) }),
-  /** POST /api/invites/{code}/accept; consent=true при первом касании. name и username берутся из Telegram. */
-  acceptInvite: (code: string, body: { user_id: number; status: InviteAcceptStatus; consent: boolean; name?: string; username?: string }) =>
+  /** POST /api/invites kind=ref: ссылка-рекомендация сервиса (момент рекомендации после оценки 4–5). */
+  createReferral: (uid: number) =>
+    call<InviteCreated>("/api/invites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_id: uid, kind: "ref" }) }),
+  /** POST /api/invites/{code}/accept; consent=true при первом касании; name — необязательное имя с формы. */
+  acceptInvite: (code: string, body: { user_id: number; status: InviteAcceptStatus; consent: boolean; name?: string }) =>
     call<InviteAccepted>(`/api/invites/${encodeURIComponent(code)}/accept`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   /** POST /api/invites/{code}/open: первый вход по ссылке; для ref-кода ставит source=ref и referred_by новому человеку. */
-  openInvite: (code: string, body: { user_id: number; name?: string; username?: string }) =>
+  openInvite: (code: string, body: { user_id: number; name?: string }) =>
     call<InviteView>(`/api/invites/${encodeURIComponent(code)}/open`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
   ics: async (slug: string, day?: string) => {
     const res = await fetch(`${apiBase()}/api/events/${encodeURIComponent(slug)}/ics${q({ day })}`, {

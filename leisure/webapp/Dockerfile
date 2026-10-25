@@ -23,5 +23,5 @@ COPY --from=build --chown=app:app /app/webapp/content ./content
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s CMD wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1
-# Секреты (API_KEY, LEISURE_BOT_TOKEN) приходят только через окружение при запуске, в образ не попадают.
+# Секреты (API_KEY, SESSION_SECRET) приходят только через окружение при запуске, в образ не попадают.
 CMD ["node", "server.js"]

@@ -1,19 +1,21 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
-import { TelegramBoot } from "@/components/TelegramBoot";
 import { LaterOffer } from "@/components/LaterOffer";
+import { PwaBoot } from "@/components/PwaBoot";
+import { SessionBoot } from "@/components/SessionBoot";
 import { api, ApiError } from "@/lib/api";
 import { moscowToday } from "@/lib/format";
-import { chatLink } from "@/lib/config";
-import { readLastInvite } from "@/lib/cookies";
 import { offerAgain } from "@/lib/offer";
-import { getUserId } from "@/lib/session";
+import { getProfileId, getUserId } from "@/lib/session";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: { default: "Досуг", template: "%s · Досуг" },
-  description: "Подборка выходных по твоим ценностям и интересам.",
+  description: "События под то, что для тебя важно: сегодня, завтра, на неделю.",
   robots: { index: false, follow: false },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Досуг" },
+  icons: { apple: "/icons/apple-touch-icon.png", icon: "/icons/icon-192.png" },
 };
 
 export const viewport: Viewport = {
@@ -21,23 +23,22 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   colorScheme: "light dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ECEEF1" },
+    { media: "(prefers-color-scheme: dark)", color: "#141619" },
+  ],
 };
 
-const FONTS =
-  "https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=Oranienbaum&display=swap";
+const FONTS = "https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Oranienbaum&display=swap";
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const uid = await getUserId();
-  // Повтор предложения подборки: API ставит profile.offer_due (день события + 1) при принятии приглашения. Показываем один раз
-  // (LaterOffer сразу отмечает offer_seen = 2), если срок настал и своей подборки у человека ещё нет.
+  const pid = await getProfileId();
+  // Повтор предложения своей подборки приглашённому (profile.offer_due = день события + 1): один раз, если онбординг не пройден.
   let offer = false;
-  let chatUrl: string | null = null;
-  if (uid) {
+  if (pid) {
     try {
-      const p = await api.profile(uid);
-      offer = offerAgain(p, moscowToday());
-      // бот ещё не может писать этому человеку — в баннере повтора даём запасной путь «Открыть чат с ботом»
-      if (offer && p.can_write === false) chatUrl = chatLink(await readLastInvite());
+      offer = offerAgain(await api.profile(pid), moscowToday());
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
     }
@@ -51,9 +52,10 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       </head>
       <body>
         <a className="skip-link" href="#main">К содержимому</a>
-        <TelegramBoot authed={uid != null} />
+        <SessionBoot authed={uid != null} />
+        <PwaBoot />
         {children}
-        {offer ? <LaterOffer chatUrl={chatUrl} /> : null}
+        {offer ? <LaterOffer /> : null}
       </body>
     </html>
   );

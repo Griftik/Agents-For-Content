@@ -1,7 +1,9 @@
 // Мок-режим MOCK_INVITES=1: экраны приглашений можно смотреть и проверять без бэкенда.
 // Работает только при NODE_ENV=development (npm run dev) и test (vitest); в production-сборке и в `next start` игнорируется.
 // Подставляется на уровне api.ts: все вызовы страниц остаются прежними, ответы приходят из памяти процесса.
-import type { Catalog, Decision, Digest, DigestItem, EventT, Plan, PlanItem, Profile } from "./api-types";
+import type { AccountProfile, Catalog, Decision, Digest, DigestItem, EventT, Plan, PlanItem, Profile } from "./api-types";
+import { addDays } from "./feed";
+import { moscowToday } from "./format";
 
 export const mockEnabled = () => process.env.MOCK_INVITES === "1" && process.env.NODE_ENV !== "production";
 
@@ -11,7 +13,7 @@ export class MockError extends Error {
   }
 }
 
-const WEEKEND = ["2026-10-23", "2026-10-24", "2026-10-25"];
+
 
 const event = (o: Partial<EventT> & Pick<EventT, "slug" | "title" | "dates">): EventT => ({
   id: `id-${o.slug}`, category: "Своими руками", subcategory: "", kind: "workshop", city: "Москва", time_text: "", start_time: "13:00",
@@ -20,21 +22,44 @@ const event = (o: Partial<EventT> & Pick<EventT, "slug" | "title" | "dates">): E
   aesthetics: 4, novelty: 3, crowd: "малая", url: "https://example.com/event", rating: null, confidence: "подтверждено", slot: "день", free: false, ...o,
 });
 
+const T0 = moscowToday();
+const D1 = addDays(T0, 1);
+const D2 = addDays(T0, 2);
+/** События приглашений: даты относительно сегодня (завтра, сегодня, послезавтра), «старый спектакль» — две недели назад. */
 export const MOCK_EVENTS: EventT[] = [
-  event({ slug: "karmannyj-ongon", title: "Карманный онгон: вырезать деревянного духа-хранителя", dates: ["2026-10-24"] }),
-  event({ slug: "dzhaz-na-kryshe", title: "Джаз на крыше", category: "Джаз", dates: ["2026-10-23"], start_time: "20:00", end_time: "22:00", venue: "Крыша Vol. 2", metro: "Таганская", price_from: 1200, price_text: "от 1 200 ₽", why_fit_hint: "Живая музыка, камерный зал.", slot: "вечер" }),
-  event({ slug: "usadba-progulka", title: "Прогулка по усадьбе Кусково", category: "Природа и усадьбы", dates: ["2026-10-25"], start_time: "12:00", end_time: "14:00", venue: "Усадьба Кусково", metro: "Выхино", price_from: 0, price_text: "бесплатно", free: true, why_fit_hint: "Осенний парк и неспешная экскурсия." }),
-  event({ slug: "stary-spektakl", title: "Спектакль, который уже прошёл", category: "Театр", dates: ["2026-10-10"], venue: "Малый театр" }),
+  event({ slug: "karmannyj-ongon", title: "Карманный онгон: вырезать деревянного духа-хранителя", dates: [D1] }),
+  event({ slug: "dzhaz-na-kryshe", title: "Джаз на крыше", category: "Джаз", dates: [T0], start_time: "20:00", end_time: "22:00", venue: "Крыша Vol. 2", metro: "Таганская", price_from: 1200, price_text: "от 1 200 ₽", why_fit_hint: "Живая музыка, камерный зал.", slot: "вечер" }),
+  event({ slug: "usadba-progulka", title: "Прогулка по усадьбе Кусково", category: "Природа и усадьбы", dates: [D2], start_time: "12:00", end_time: "14:00", venue: "Усадьба Кусково", metro: "Выхино", price_from: 0, price_text: "бесплатно", free: true, why_fit_hint: "Осенний парк и неспешная экскурсия." }),
+  event({ slug: "stary-spektakl", title: "Спектакль, который уже прошёл", category: "Театр", dates: [addDays(T0, -15)], venue: "Малый театр" }),
 ];
-const bySlug = (s: string) => MOCK_EVENTS.find((e) => e.slug === s || e.id === s);
+const BIZ = ["Конференции и форумы", "Бизнес-завтраки", "Закрытые клубы", "Образование для управленцев"];
+/** События ленты: даты относительно сегодняшнего дня, чтобы «Сегодня» и «Неделя» были живыми в любой день. */
+export const FEED_EVENTS: EventT[] = [
+  event({ slug: "f-vecher-dzhaz", title: "Вечер джаза в «Клубе Алексея Козлова»", category: "Джаз", dates: [T0], start_time: "20:00", end_time: "22:30", venue: "Клуб Алексея Козлова", metro: "Маяковская", price_from: 1500, price_text: "от 1 500 ₽", description: "Квартет играет стандарты и свои темы. Два отделения.", why_fit_hint: "", slot: "вечер" }),
+  event({ slug: "f-lekciya-arhitektura", title: "Лекция: конструктивизм Москвы за час", category: "Нетривиальное", dates: [T0], start_time: "19:00", end_time: "20:00", venue: "Центр «Зотов»", metro: "Улица 1905 года", price_from: 600, price_text: "600 ₽", description: "Короткая лекция с прогулкой по картам.", slot: "вечер" }),
+  event({ slug: "f-kino-noch", title: "Ночной показ: «Сталкер» на плёнке", category: "Кино", dates: [T0], start_time: "23:30", end_time: null, venue: "Кинотеатр «Иллюзион»", metro: "Таганская", price_from: 500, price_text: "500 ₽", description: "35-мм копия, вступление киноведа.", slot: "вечер" }),
+  event({ slug: "f-utro-park", title: "Утренняя пробежка в Парке Горького", category: "Волейбол", dates: [T0, addDays(T0, 1)], start_time: "08:00", end_time: "09:00", venue: "Парк Горького", metro: "Октябрьская", price_from: 0, price_text: "бесплатно", free: true, description: "Групповая пробежка, темп спокойный.", slot: "утро" }),
+  event({ slug: "f-master-keramika", title: "Керамика: чашка за вечер", category: "Своими руками", dates: [addDays(T0, 1)], start_time: "19:00", end_time: "21:30", venue: "Мастерская «Глина»", metro: "Курская", price_from: 2800, price_text: "от 2 800 ₽", description: "Гончарный круг, обжиг через неделю.", slot: "вечер" }),
+  event({ slug: "f-vystavka", title: "Выставка «Свет и тень»: Бродский и Аксёнов", category: "Современное искусство", dates: [addDays(T0, 1), addDays(T0, 2), addDays(T0, 5)], start_time: "12:00", end_time: "20:00", venue: "ГЭС-2", metro: "Полянка", price_from: 0, price_text: "бесплатно", free: true, description: "Две фотосерии, аудиогид.", slot: "день" }),
+  event({ slug: "f-spektakl", title: "Спектакль «Чайка» в новой редакции", category: "Театр", dates: [addDays(T0, 2)], start_time: "19:00", end_time: "21:40", venue: "Театр им. Пушкина", metro: "Тверская", price_from: 1800, price_text: "от 1 800 ₽", description: "Постановка 2026 года.", slot: "вечер" }),
+  event({ slug: "f-vinnyj", title: "Дегустация вин Крыма", category: "Винные бары", dates: [addDays(T0, 3)], start_time: "19:30", end_time: "21:00", venue: "Бар «Винный базар»", metro: "Чистые пруды", price_from: 2500, price_text: "2 500 ₽", description: "Шесть образцов и сыр.", slot: "вечер" }),
+  event({ slug: "f-usadba", title: "Усадьба Архангельское: прогулка с гидом", category: "Природа и усадьбы", dates: [addDays(T0, 5), addDays(T0, 6)], start_time: "11:00", end_time: "13:30", venue: "Усадьба Архангельское", metro: "Тушинская", price_from: 900, price_text: "900 ₽", description: "Парк и дворец, 2,5 часа.", slot: "день" }),
+  event({ slug: "f-biz-zavtrak", title: "Бизнес-завтрак: продукт без бюджета", category: "Бизнес-завтраки", dates: [addDays(T0, 1)], start_time: "09:00", end_time: "10:30", venue: "Кафе «Март»", metro: "Трубная", price_from: 1200, price_text: "1 200 ₽", description: "Три кейса, вопросы.", slot: "утро" }),
+  event({ slug: "f-konf-ai", title: "Конференция «ИИ в малом бизнесе»", category: "Конференции и форумы", dates: [T0], start_time: "18:30", end_time: "21:00", venue: "Технопарк «Сколково»", metro: "Славянский бульвар", price_from: 0, price_text: "бесплатно", free: true, description: "Три доклада и нетворкинг.", slot: "вечер" }),
+  event({ slug: "f-klub", title: "Закрытый ужин предпринимателей", category: "Закрытые клубы", dates: [addDays(T0, 4)], start_time: "19:00", end_time: "22:00", venue: "Ресторан «Белуга»", metro: "Охотный Ряд", price_from: 7000, price_text: "7 000 ₽", description: "12 мест, модерируемая беседа.", slot: "вечер" }),
+  // прошедшее событие, на которое мок-пользователь 1001 «шёл»: для отметки «сходил / не сходил» в плане
+  event({ slug: "f-proshloe", title: "Органный вечер в Соборе на Малой Грузинской", category: "Концерты", dates: [addDays(T0, -2)], start_time: "19:00", end_time: "20:30", venue: "Собор Непорочного Зачатия", metro: "Улица 1905 года", price_from: 1000, price_text: "1 000 ₽", description: "", slot: "вечер" }),
+];
+const ALL_EVENTS = () => [...MOCK_EVENTS, ...FEED_EVENTS];
+const bySlug = (s: string) => ALL_EVENTS().find((e) => e.slug === s || e.id === s);
 
 /** Коды приглашений для просмотра экранов: открой `/e/<slug>?inv=<код>`. */
 export const MOCK_CODES: Record<string, { slug: string; day: string; name: string | null; status: string; inviter: number }> = {
-  MOCKOK01: { slug: "karmannyj-ongon", day: "2026-10-24", name: "Алина", status: "active", inviter: 9001 },
-  MOCKANON: { slug: "dzhaz-na-kryshe", day: "2026-10-23", name: null, status: "active", inviter: 9002 },
-  MOCKPAST: { slug: "stary-spektakl", day: "2026-10-10", name: "Алина", status: "past", inviter: 9001 },
-  MOCKUNPB: { slug: "usadba-progulka", day: "2026-10-25", name: "Алина", status: "unpublished", inviter: 9001 },
-  MOCKGONE: { slug: "karmannyj-ongon", day: "2026-10-24", name: null, status: "gone", inviter: 0 }, // пригласивший удалил профиль, событие доступно
+  MOCKOK01: { slug: "karmannyj-ongon", day: D1, name: "Алина", status: "active", inviter: 9001 },
+  MOCKANON: { slug: "dzhaz-na-kryshe", day: T0, name: null, status: "active", inviter: 9002 },
+  MOCKPAST: { slug: "stary-spektakl", day: addDays(T0, -15), name: "Алина", status: "past", inviter: 9001 },
+  MOCKUNPB: { slug: "usadba-progulka", day: D2, name: "Алина", status: "unpublished", inviter: 9001 },
+  MOCKGONE: { slug: "karmannyj-ongon", day: D1, name: null, status: "gone", inviter: 0 }, // пригласивший удалил профиль, событие доступно
 };
 
 const CATEGORIES = ["Джаз", "Концерты", "Театр", "Современное искусство", "Кино", "Винные бары", "Вечеринки", "Своими руками", "Природа и усадьбы", "Волейбол", "Волейбол: матчи", "ИИ и технологии", "Управление и стратегия", "Предприниматели и клубы", "Нетривиальное"];
@@ -79,13 +104,16 @@ type Store = {
   decisions: Map<number, Decision[]>;
   invites: Map<string, { slug: string; day: string; inviter: number }>;
   together: Map<string, string>; // "<uid>:<slug>" → имя пригласившего
+  nextUser: number; // счётчик гостевых аккаунтов (POST /api/session)
+  accountProfiles: Map<number, AccountProfile[]>; // account_id → профили («я» = сам аккаунт)
 };
 const g = globalThis as unknown as { __leisureMock?: Store };
 export function store(): Store {
   if (!g.__leisureMock) {
-    const s: Store = { profiles: new Map(), decisions: new Map(), invites: new Map(), together: new Map() };
+    const s: Store = { profiles: new Map(), decisions: new Map(), invites: new Map(), together: new Map(), nextUser: 100000, accountProfiles: new Map() };
     // 1001 — готовый профиль; 1002 — заготовка без онбординга; 9001 — «Алина» (пригласившая); остальные id профиля не имеют.
     s.profiles.set(1001, profile(1001, "Мария", true));
+    s.decisions.set(1001, [{ event_id: "id-f-proshloe", event_slug: "f-proshloe", status: "иду", reason: null, day: addDays(T0, -2), rating: null }]);
     s.profiles.set(9001, profile(9001, "Алина", true));
     s.profiles.set(1002, profile(1002, "Игорь", false)); // профиль-заготовка: согласие есть, подборку не настраивал
     g.__leisureMock = s;
@@ -99,32 +127,37 @@ export const resetMock = () => {
 function profile(uid: number, name: string, onboarded: boolean): Profile {
   return {
     user_id: uid, name, username: "", city: "Москва", values: Object.fromEntries(VALUES.map((v, i) => [v, i < 5 ? 5 : 2])),
-    interests: Object.fromEntries(CATEGORIES.map((c) => [c, 2])), params: { budget: 0, company: "любая", times: ["день", "вечер"], areas: ["любой"] },
+    interests: Object.fromEntries(CATEGORIES.map((c) => [c, 2])), params: { budget: 0, company: "любая", times: ["день", "вечер"], areas: ["любой"], travel_minutes: 40 },
     notes: "", tz: "Europe/Moscow", digest_day: 4, digest_hour: 18, plan: "", learned: {}, learned_text: "", onboarded, show_name: true, source: "organic",
-    has_consent: true, offer_seen: 0, offer_due: null, can_write: false,
+    has_consent: true, offer_seen: 0, offer_due: null, kind: "self", affinity: { tag: {}, cat: {}, n: 0 },
   };
 }
 
 const links = (e: EventT, day: string) => ({
   gcal: `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(e.title)}&dates=${day.replace(/-/g, "")}`,
   outlook: `https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(e.title)}&startdt=${day}`,
-  ics: `/api/events/${e.slug}/ics?day=${day}`, tg: "https://t.me/share/url", page: `/e/${e.slug}`,
+  ics: `/api/events/${e.slug}/ics?day=${day}`, tg: "", page: `/e/${e.slug}`,
 });
 
+/** План на 7 дней от сегодня (как в API v2); прошедшие решения страница берёт из GET /api/decisions. */
 function planOf(uid: number): Plan {
   const st = store();
-  const days: Record<string, PlanItem[]> = Object.fromEntries(WEEKEND.map((d) => [d, []]));
+  const today = moscowToday();
+  const week = Array.from({ length: 7 }, (_, i) => addDays(today, i));
+  const days: Record<string, PlanItem[]> = Object.fromEntries(week.map((d) => [d, []]));
   const horizon: PlanItem[] = [];
   for (const d of st.decisions.get(uid) ?? []) {
     if (d.status !== "иду" && d.status !== "может") continue;
     const e = bySlug(d.event_slug);
     if (!e) continue;
     const day = d.day ?? e.dates[0];
+    if (day < today) continue;
     const who = st.together.get(`${uid}:${e.slug}`);
     const item: PlanItem = { event: e, status: d.status, day, conflict: false, links: links(e, day), companions: who ? [who] : [] };
-    (days[day] ??= []).push(item);
+    if (days[day]) days[day].push(item);
+    else horizon.push(item);
   }
-  return { weekend: WEEKEND, title: "23–25 октября", days, horizon, text: "План (мок)" };
+  return { weekend: week, title: "Неделя", days, horizon, text: "План (мок)" };
 }
 
 const j = (init: RequestInit) => (init.body ? JSON.parse(String(init.body)) : {});
@@ -138,6 +171,63 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
   let m: RegExpExecArray | null;
 
   if (p === "/api/catalog") return MOCK_CATALOG;
+
+  // ─── сессия, профили, лента ───
+  if (p === "/api/session" && method === "POST") return { user_id: st.nextUser++ };
+
+  if (p === "/api/profiles") {
+    const b = method === "POST" ? j(init) : {};
+    const uid = Number(method === "POST" ? b.user_id : url.searchParams.get("user_id"));
+    const main = st.profiles.get(uid);
+    const list = st.accountProfiles.get(uid) ?? [];
+    const self: AccountProfile = { id: uid, name: main?.name || "я", kind: "self", onboarded: !!main?.onboarded };
+    if (method === "POST") {
+      const name = String(b.name ?? "").trim().slice(0, 40);
+      if (!name) throw new MockError(422, "нужно имя профиля");
+      const id = st.nextUser++;
+      const kind = ["parent", "child", "other"].includes(b.kind) ? b.kind : "other";
+      const np: AccountProfile = { id, name, kind, onboarded: false };
+      st.accountProfiles.set(uid, [...list, np]);
+      st.profiles.set(id, { ...profile(id, name, false), kind, has_consent: !!main?.has_consent });
+      return np;
+    }
+    return [self, ...list];
+  }
+
+  if (p === "/api/feed") {
+    const pid = Number(url.searchParams.get("profile_id"));
+    const prof = st.profiles.get(pid);
+    if (!prof) throw new MockError(404, "профиль не найден");
+    const dateQ = url.searchParams.get("date") || "today";
+    const seg = url.searchParams.get("segment") || "leisure";
+    const limit = Math.min(50, Number(url.searchParams.get("limit")) || 20);
+    const today = moscowToday();
+    const days = dateQ === "today" ? [today] : dateQ === "tomorrow" ? [addDays(today, 1)] : dateQ === "week" ? Array.from({ length: 7 }, (_, i) => addDays(today, i)) : [dateQ];
+    const travel = Number(prof.params.travel_minutes ?? 40);
+    const nowMin = (() => { const d = new Date(Date.now() + 3 * 3600_000); return d.getUTCHours() * 60 + d.getUTCMinutes(); })();
+    const decided = new Set((st.decisions.get(pid) ?? []).filter((d) => d.status === "иду" || d.status === "мимо" || d.status === "не моё").map((d) => d.event_slug));
+    const items = [];
+    for (const day of days) {
+      for (const e of FEED_EVENTS) {
+        if (!e.dates.includes(day) || decided.has(e.slug)) continue;
+        if (seg === "business" && !BIZ.includes(e.category)) continue;
+        if (seg === "leisure" && BIZ.includes(e.category)) continue;
+        const start = e.start_time ? Number(e.start_time.split(":")[0]) * 60 + Number(e.start_time.split(":")[1]) : null;
+        if (day === today && start != null && start < nowMin + travel) continue; // на сегодня — только то, куда ещё успеваешь
+        const score = 60 + ((prof.interests[e.category] ?? 1) * 10) + (e.free ? 3 : 0);
+        items.push({ event: e, day, score, can_make_it: day === today, cover: null, decision: null });
+      }
+    }
+    items.sort((a, b) => a.day.localeCompare(b.day) || b.score - a.score);
+    return { date: dateQ, segment: seg, items: items.slice(0, limit) };
+  }
+
+  if (p === "/api/auth/email" && method === "POST") {
+    const b = j(init);
+    if (process.env.MOCK_SMTP !== "1") throw new MockError(503, "почта не настроена");
+    if (!/^[^@\s]+@[^@\s]+$/.test(b.email ?? "")) throw new MockError(422, "некорректная почта");
+    return { ok: true };
+  }
 
   if ((m = /^\/api\/events\/([^/]+)$/.exec(p))) {
     const e = bySlug(decodeURIComponent(m[1]));
@@ -161,11 +251,18 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
         onboarded: cur.onboarded || b.onboarded === true || b.interests !== undefined,
         source: b.ref_code ? "ref" : cur.source,
         has_consent: cur.has_consent || b.consent === true,
+        affinity: b.affinity
+          ? { tag: { ...(cur.affinity?.tag ?? {}), ...(b.affinity.tag ?? {}) }, cat: { ...(cur.affinity?.cat ?? {}), ...(b.affinity.cat ?? {}) }, n: cur.affinity?.n ?? 0 }
+          : cur.affinity,
         offer_seen: b.offer_seen ?? cur.offer_seen,
-        can_write: b.can_write ?? cur.can_write,
       };
       st.profiles.set(uid, next);
       return next;
+    }
+    if (method === "DELETE") {
+      const had = st.profiles.delete(uid);
+      st.decisions.delete(uid);
+      return { deleted: had };
     }
     const prof = st.profiles.get(uid);
     if (!prof) throw new MockError(404, "профиль не найден");
@@ -177,9 +274,14 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
     const b = j(init);
     const e = bySlug(b.event);
     if (!e) throw new MockError(404, "событие не найдено");
+    const prev = (st.decisions.get(b.user_id) ?? []).find((d) => d.event_slug === e.slug);
     const list = (st.decisions.get(b.user_id) ?? []).filter((d) => d.event_slug !== e.slug);
-    const d: Decision = { event_id: e.id, event_slug: e.slug, status: b.status, reason: b.reason ?? null, day: b.day ?? e.dates[0], rating: null };
+    const d: Decision = { event_id: e.id, event_slug: e.slug, status: b.status, reason: b.reason ?? null, day: b.day ?? prev?.day ?? e.dates[0], rating: b.rating ?? prev?.rating ?? null };
     st.decisions.set(b.user_id, [...list, d]);
+    if (b.rating != null) {
+      if (b.rating >= 4) return { ...d, ref_ask: { url: "http://localhost:3000/?ref=REFMOCK1", share_text: "Пользуюсь приложением, которое подбирает события под то, что мне важно. Попробуй: http://localhost:3000/?ref=REFMOCK1" } };
+      if (b.rating <= 2) return { ...d, ask_reason: true };
+    }
     return d;
   }
   if ((m = /^\/api\/decisions\/(\d+)\/([^/]+)$/.exec(p)) && method === "DELETE") {
@@ -191,6 +293,7 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
 
   if ((m = /^\/api\/digest\/(\d+)\/(preview|all)$/.exec(p))) {
     const uid = Number(m[1]);
+    const WEEKEND = [T0, D1, D2];
     const evs = MOCK_EVENTS.filter((e) => e.dates.some((d) => WEEKEND.includes(d)));
     if (m[2] === "all") return evs.map((e, i) => ({ ...e, score: 90 - i * 7, why: [{ t: "Творчество", c: "" }] }));
     const items: DigestItem[] = evs.map((e, i) => {
@@ -198,7 +301,7 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
       const chosen = (st.decisions.get(uid) ?? []).some((d) => d.event_slug === e.slug && d.status === "иду");
       return { event: e, day, slot: e.slot, score: 90 - i * 7, why: [{ t: "Творчество", c: "" }], chosen, links: links(e, day) };
     });
-    const digest: Digest = { user_id: uid, weekend: WEEKEND, title: "23–25 октября", items, horizon: [] };
+    const digest: Digest = { user_id: uid, weekend: WEEKEND, title: "ближайшие дни", items, horizon: [] };
     return digest;
   }
   if ((m = /^\/api\/plan\/(\d+)$/.exec(p))) return planOf(Number(m[1]));
@@ -211,7 +314,7 @@ export function mockCall(path: string, init: RequestInit = {}): unknown {
     const day = b.day ?? e.dates[0];
     const code = `MOCK${(b.user_id % 10000).toString().padStart(4, "0")}`;
     st.invites.set(code, { slug: e.slug, day, inviter: b.user_id });
-    return { code, kind: "event", url: `https://t.me/mock_bot/app?startapp=inv_${code}`, web_url: `http://localhost:3000/e/${e.slug}?inv=${code}`, share_text: `Иду на «${e.title.slice(0, 59)}»: ${day}. ${e.why_fit_hint}\nПойдёшь со мной? https://t.me/mock_bot/app?startapp=inv_${code}` };
+    return { code, kind: "event", url: null, web_url: `http://localhost:3000/e/${e.slug}?inv=${code}`, share_text: `Иду на «${e.title.slice(0, 59)}»: ${day}. ${e.why_fit_hint}\nПойдёшь со мной? http://localhost:3000/e/${e.slug}?inv=${code}` };
   }
 
   if ((m = /^\/api\/invites\/([A-Za-z0-9]+)\/open$/.exec(p)) && method === "POST") {

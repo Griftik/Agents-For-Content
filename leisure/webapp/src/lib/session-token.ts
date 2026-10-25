@@ -2,15 +2,14 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export { DEV_PREFIX, SESSION_COOKIE, parseDevUser } from "./session-consts";
 
-/** Подписанный токен сессии в cookie: `<id>.<exp>.<подпись>`. Выдаётся после проверки initData. */
+/** Подписанный токен сессии в cookie: `<id>.<exp>.<подпись>`. user_id выдаёт API (POST /api/session), подписывает веб. */
 
-export const SESSION_TTL_SEC = 24 * 60 * 60;
+import { SESSION_TTL_SEC } from "./session-consts";
+export { SESSION_TTL_SEC };
 
-/** Секрет сессии: SESSION_SECRET, а если не задан — производный от токена бота (отдельный контекст, не ключ initData). */
+/** Секрет подписи: только SESSION_SECRET. Без него сессии не выдаются (в dev без секрета действует dev-режим `?dev_user=`). */
 export function sessionSecret(env: Record<string, string | undefined>): string | null {
-  if (env.SESSION_SECRET) return env.SESSION_SECRET;
-  if (env.LEISURE_BOT_TOKEN) return createHmac("sha256", env.LEISURE_BOT_TOKEN).update("leisure-web-session").digest("hex");
-  return null;
+  return env.SESSION_SECRET || null;
 }
 
 function mac(secret: string, body: string): string {
@@ -35,4 +34,26 @@ export function readSession(token: string | undefined, secret: string | null, no
   const idN = Number(id);
   if (!Number.isInteger(expN) || expN < now) return null;
   return Number.isSafeInteger(idN) && idN > 0 ? idN : null;
+}
+
+/**
+ * Активный профиль внутри аккаунта: `<profile_id>.<account_id>.<подпись>`. Подпись связывает профиль с аккаунтом, поэтому
+ * подменить cookie на чужой профиль нельзя; список своих профилей при выборе проверяет сервер.
+ */
+export function issueProfile(profileId: number, accountId: number, secret: string): string {
+  const body = `${profileId}.${accountId}`;
+  return `${body}.${mac(secret, `profile:${body}`)}`;
+}
+
+export function readProfile(token: string | undefined, accountId: number, secret: string | null): number | null {
+  if (!token || !secret) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [pid, acc, sig] = parts;
+  if (Number(acc) !== accountId) return null;
+  const want = Buffer.from(mac(secret, `profile:${pid}.${acc}`));
+  const got = Buffer.from(sig);
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
+  const n = Number(pid);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
 }

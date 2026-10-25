@@ -4,12 +4,10 @@ import { cache } from "react";
 import { ApiDown } from "@/components/Gate";
 import { InviteButton } from "@/components/InviteButton";
 import { InviteFlow } from "@/components/InviteFlow";
-import { InviteMatch } from "@/components/InviteMatch";
 import { InviteStatus } from "@/components/InviteStatus";
 import { PublicEvent } from "@/components/PublicEvent";
 import { ApiError, api } from "@/lib/api";
 import type { Decision, InviteView, Profile } from "@/lib/api-types";
-import { botLink, chatLink, miniLink } from "@/lib/config";
 import { dateShort, first, moscowToday, timeRange, wdFull } from "@/lib/format";
 import { getUserId } from "@/lib/session";
 import { CODE_RE, inviteHref } from "@/lib/start-param";
@@ -112,14 +110,7 @@ export default async function EventPage({ params, searchParams }: Props) {
         authed={uid != null}
         hasConsent={!!view.profile?.has_consent}
         prior={prior && PRIOR[prior.status] ? `${PRIOR[prior.status]}${prior.day ? `, ${wdFull(prior.day).toLowerCase()}` : ""}` : null}
-        openUrl={miniLink("inv", code!)}
-        chatUrl={chatLink(code)}
-        card={
-          <>
-            <PublicEvent ev={ev} heading="h2" />
-            {invite.score != null ? <InviteMatch score={invite.score} why={invite.why ?? []} /> : null}
-          </>
-        }
+        card={<PublicEvent ev={ev} heading="h2" />}
       />
     );
   }
@@ -130,21 +121,25 @@ export default async function EventPage({ params, searchParams }: Props) {
 
   const dates = [...ev.dates].sort();
   const past = dates.length > 0 && dates[dates.length - 1] < moscowToday();
-  const cta = botLink(`e_${slug}`);
-  const going = view.decisions.find((d) => d.event_slug === slug && d.status === "иду");
+  const going = view.decisions.find((d) => d.event_slug === slug && (d.status === "иду" || d.status === "сходил"));
+  const sourceOk = /^https?:\/\//.test(ev.url);
 
   return (
     <div className="wrap">
       <main id="main" className="public">
-        {past ? <p className="notice warn" role="status">Это событие уже прошло. Подборку на ближайшие выходные можно собрать ниже.</p> : null}
+        <a className="back" href={uid ? "/digest" : "/"} aria-label="Назад">←</a>
+        {past ? <p className="notice warn" role="status">Это событие уже прошло.</p> : null}
         <PublicEvent ev={ev} />
-        {going ? <div className="row"><InviteButton slug={slug} day={going.day} small={false} /></div> : null}
-
-        <section className="cta" aria-labelledby="cta">
-          <h2 id="cta">Собери свою подборку на выходные</h2>
-          <p>Ответь боту на пару вопросов о том, что для тебя важно, и каждый четверг получай события с пояснением, почему они подходят именно тебе.</p>
-          {cta ? <a className="btn primary" href={cta} rel="noopener noreferrer">Собрать мне такую подборку</a> : <p>Бот пока не подключён к этой странице.</p>}
-        </section>
+        <div className="row actions">
+          {sourceOk ? <a className="btn primary" href={ev.url} target="_blank" rel="noopener noreferrer">К билетам</a> : null}
+          {uid ? <InviteButton slug={slug} day={going?.day ?? ev.dates[0] ?? null} small={false} /> : null}
+        </div>
+        {!uid ? (
+          <section className="cta" aria-labelledby="cta">
+            <h2 id="cta">Свои рекомендации</h2>
+            <a className="btn primary" href="/profile?onboarding=welcome">Начать</a>
+          </section>
+        ) : null}
 
         <p className="foot"><a href="/policy">Политика обработки данных</a></p>
       </main>

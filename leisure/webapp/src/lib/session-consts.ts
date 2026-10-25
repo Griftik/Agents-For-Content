@@ -2,6 +2,9 @@
 export const SESSION_COOKIE = "leisure_session";
 export const DEV_PREFIX = "dev:";
 
+/** Гостевая сессия живёт 180 дней: человек открывает приложение с экрана телефона без входа. */
+export const SESSION_TTL_SEC = 180 * 24 * 60 * 60;
+
 /** Значение dev-cookie допустимо только при NODE_ENV=development. */
 export function parseDevUser(value: string | null | undefined): number | null {
   if (!value || !/^\d{1,15}$/.test(value)) return null;
@@ -9,15 +12,13 @@ export function parseDevUser(value: string | null | undefined): number | null {
   return n > 0 ? n : null;
 }
 
-/** Код рекомендации `ref_<код>` из start_param: живёт до первого касания профиля. */
+/** Активный профиль аккаунта («я», «мама», «ребёнок»): подписанная пара <profile_id>.<account_id>. */
+export const PROFILE_COOKIE = "leisure_profile";
+
+/** Код рекомендации (`/r/<код>` или `/?ref=<код>`): живёт до первого касания профиля. */
 export const REF_COOKIE = "leisure_ref";
-/** Имя и username из Telegram (для записи приглашённого и пустого профиля); не секрет, подпись не нужна. */
-export const WHO_COOKIE = "leisure_who";
 
-/** Код последнего принятого приглашения: нужен ссылке «Открыть чат с ботом» (?start=w_<код>) на баннере повтора. */
-export const INVITE_COOKIE = "leisure_inv";
-
-/** Атрибуты cookie. В вебе Telegram Mini App живёт во фрейме: в production нужны SameSite=None и Partitioned. */
+/** Атрибуты cookie: первая сторона (приложение открыто на своём домене), HTTPS в production. */
 export function cookieOpts(maxAgeSec: number, prod: boolean) {
-  return { httpOnly: true, path: "/", maxAge: maxAgeSec, secure: prod, sameSite: (prod ? "none" : "lax") as "none" | "lax", partitioned: prod };
+  return { httpOnly: true, path: "/", maxAge: maxAgeSec, secure: prod, sameSite: "lax" as const };
 }

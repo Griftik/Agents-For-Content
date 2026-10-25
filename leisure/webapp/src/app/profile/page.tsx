@@ -1,180 +1,162 @@
 import type { Metadata } from "next";
-import { saveProfile } from "@/app/actions";
 import { redirect } from "next/navigation";
-import { api, ApiError } from "@/lib/api";
-import type { Profile } from "@/lib/api-types";
-import { first } from "@/lib/format";
-import { parseStep } from "@/lib/onboarding";
-import { load } from "@/lib/load";
-import { getUserId } from "@/lib/session";
+import { saveProfile } from "@/app/actions";
+import { DeleteData } from "@/components/DeleteData";
+import { EmailForm } from "@/components/EmailForm";
 import { ApiDown, AuthGate, NoProfile } from "@/components/Gate";
+import { Learned } from "@/components/Learned";
 import { Masthead } from "@/components/Masthead";
 import { Onboarding } from "@/components/Onboarding";
 import { ShowNameSwitch } from "@/components/ShowNameSwitch";
-import { Slider } from "@/components/Slider";
+import { ValuePicker } from "@/components/ValuePicker";
+import { ApiError, api } from "@/lib/api";
+import type { AccountProfile, Profile } from "@/lib/api-types";
+import { first, moscowToday } from "@/lib/format";
+import { load } from "@/lib/load";
+import { TOP_VALUES, clusters, parseStep } from "@/lib/onboarding";
+import { hasUnmarkedPast } from "@/lib/plan";
+import { getProfileId, getUserId } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Профиль" };
 export const dynamic = "force-dynamic";
 
-const LEVELS: [number, string, string][] = [
-  [0, "—", "не показывать"],
-  [1, "иногда", "иногда"],
-  [2, "да", "интересно"],
-  [3, "главное", "в первую очередь"],
+const LEVELS = ["Не показывать", "Иногда", "Интересно", "Главное"];
+const BUDGET_CHIPS = [
+  { v: 0, l: "Не важно" },
+  { v: 1000, l: "до 1 000 ₽" },
+  { v: 2500, l: "до 2 500 ₽" },
+  { v: 5000, l: "до 5 000 ₽" },
 ];
+const TIMES = ["утро", "день", "вечер", "ночь"];
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export default async function ProfilePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
   const uid = await getUserId();
-  if (!uid) return <AuthGate />;
+  const pid = await getProfileId();
+  if (!uid || !pid) return <AuthGate />;
 
-  // Онбординг в Mini App: /profile?onboarding=welcome|1|2. Профиль здесь может ещё не существовать.
+  // Онбординг: /profile?onboarding=welcome|1|2. Профиль может ещё не существовать.
   const step = parseStep(first(sp.onboarding));
-  if (step) {
-    let prof: Profile | null = null;
-    try {
-      prof = await api.profile(uid);
-    } catch (e) {
-      if (!(e instanceof ApiError)) throw e;
-      if (e.status !== 404) return <ApiDown message={e.status ? String(e.status) : "нет связи"} />;
-    }
-    if (prof?.onboarded) redirect("/digest");
-    // согласие есть — приветствие пропускаем; нет (профиля нет или заготовка без согласия) — начинаем с него
-    const eff = prof?.has_consent ? (step === "welcome" ? "1" : step) : "welcome";
+  let prof: Profile | null = null;
+  try {
+    prof = await api.profile(pid);
+  } catch (e) {
+    if (!(e instanceof ApiError)) throw e;
+    if (e.status !== 404) return <ApiDown message={e.status ? String(e.status) : "нет связи"} />;
+  }
+  if (step || !prof?.has_consent || !prof.onboarded) {
+    if (prof?.onboarded && prof.has_consent) redirect("/profile");
+    const eff = prof?.has_consent ? (step === "welcome" || !step ? "1" : step) : "welcome";
     const cat = await load(() => api.catalog());
     if (cat.kind !== "ok") return <ApiDown message={cat.kind === "down" ? cat.message : undefined} />;
     return <Onboarding step={eff} profile={prof} catalog={cat.data} error={first(sp.error)} needConsent={first(sp.need) === "consent"} />;
   }
 
-  const loaded = await load(() => Promise.all([api.profile(uid), api.catalog(), api.digestAll(uid).then((a) => a.length)]));
+  const loaded = await load(() => Promise.all([api.catalog(), api.decisions(pid), api.profiles(uid).catch((): AccountProfile[] => [])]));
   if (loaded.kind === "no-profile") return <NoProfile />;
   if (loaded.kind === "down") return <ApiDown message={loaded.message} />;
-  const [p, catalog, total] = loaded.data;
+  const [catalog, decisions, profiles] = loaded.data;
+  const p = prof;
+  const list = profiles.length ? profiles : [{ id: uid, name: p.name || "я", kind: "self", onboarded: true }];
 
   const saved = first(sp.saved) === "1";
   const error = first(sp.error);
-  const values = catalog.values.map((v) => ({ name: v, w: p.values[v] ?? 0 })).sort((a, b) => b.w - a.w);
-  const topFive = new Set(values.slice(0, 5).map((v) => v.name));
-  const cats = [...new Set([...catalog.categories, ...Object.keys(p.interests)])];
+  const top = Object.entries(p.values).filter(([, w]) => w >= 5).map(([k]) => k).slice(0, TOP_VALUES);
+  const groups = clusters(catalog.values, catalog.value_clusters);
+  const cats = [...new Set([...catalog.categories, ...(catalog.business_categories ?? []), ...Object.keys(p.interests)])];
   const prm = p.params;
   const times = prm.times ?? [];
-  const areas = prm.areas ?? [];
-  const extraAreas = areas.filter((a) => !catalog.areas.includes(a));
-  const learned = p.learned;
-  const likes = (learned.likes ?? []) as string[];
-  const dislikes = (learned.dislikes ?? []) as string[];
-  const reasons = Object.entries(learned.reasons ?? {});
+  const budget = BUDGET_CHIPS.some((b) => b.v === (prm.budget ?? 0)) ? (prm.budget ?? 0) : 0;
+  const travel = Number(prm.travel_minutes ?? p.travel_minutes ?? 40);
+  const aff = p.affinity ?? {};
 
   return (
     <div className="wrap">
-      <Masthead eyebrow="Профиль" title="Что для тебя" accent="главное" tab="profile" digestCount={total} name={p.name || undefined} />
-      <main id="main" className="page" style={{ paddingTop: 18 }}>
-        {saved ? <p className="notice ok" role="status">Сохранил. Подборка пересчитается с новыми настройками.</p> : null}
+      <Masthead title="Профиль" tab="profile" profiles={list} activeId={pid} planDot={hasUnmarkedPast(decisions, moscowToday())} />
+      <main id="main" className="page" style={{ paddingTop: 4 }}>
+        {saved ? <p className="notice ok" role="status">Сохранено</p> : null}
         {error ? <p className="notice warn" role="alert">{error}</p> : null}
 
-        <section className="card learn" aria-labelledby="learned">
-          <h2 id="learned" style={{ fontSize: 24 }}>Что я узнал о тебе</h2>
-          {learned.n ? (
-            <dl>
-              {likes.length ? <><dt>чаще выбираешь</dt><dd>{likes.join(", ").toLowerCase()}</dd></> : null}
-              {dislikes.length ? <><dt>чаще отклоняешь</dt><dd>{dislikes.join(", ").toLowerCase()}</dd></> : null}
-              {reasons.length ? <><dt>причины «мимо»</dt><dd>{reasons.map(([k, v]) => `${k} (${v})`).join(", ")}</dd></> : null}
-            </dl>
-          ) : (
-            <p className="muted">Пока мало ответов. Отметь несколько событий в подборке, и здесь появится, что тебе нравится.</p>
-          )}
-        </section>
-
         <form action={saveProfile} className="profile">
-          <section className="card" aria-labelledby="vals">
+          <section className="card stack" aria-labelledby="who">
+            <h2 id="who" style={{ fontSize: 24 }}>Имя</h2>
+            <label className="sr" htmlFor="pname">Имя</label>
+            <input id="pname" name="name" type="text" maxLength={80} defaultValue={p.name} autoComplete="given-name"
+              style={{ minHeight: 48, width: "100%", maxWidth: 320, font: "16px var(--body)", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg)", color: "var(--fg)" }} />
+          </section>
+
+          <section className="card stack" aria-labelledby="vals">
             <h2 id="vals" style={{ fontSize: 24 }}>Ценности</h2>
-            <p className="muted" style={{ fontSize: 13.5, margin: "4px 0 8px" }}>От 0 до 5. Пять самых важных выделены.</p>
-            {values.map((v) => <Slider key={v.name} name={`v:${v.name}`} label={v.name} value={v.w} top={topFive.has(v.name)} />)}
+            <ValuePicker groups={groups} short={catalog.value_short ?? {}} initial={top} inline />
           </section>
 
           <section className="card" aria-labelledby="ints">
-            <h2 id="ints" style={{ fontSize: 24 }}>Направления</h2>
-            <p className="muted" style={{ fontSize: 13.5, margin: "4px 0 8px" }}>«—» — не показывать, «главное» — в первую очередь.</p>
+            <h2 id="ints" style={{ fontSize: 24, marginBottom: 6 }}>Направления</h2>
             {cats.map((c) => {
-              const cur = p.interests[c] ?? 2;
+              const cur = Math.min(3, Math.max(0, p.interests[c] ?? 1));
+              const id = `i-${c.replace(/\W+/g, "-")}`;
               return (
-                <fieldset key={c} className="irow" style={{ border: 0, borderTop: "1px solid var(--line)", margin: 0, padding: "9px 0" }}>
-                  <legend className="sr">{c}</legend>
-                  <span className="nm" aria-hidden="true">{c}</span>
-                  <span className="seg">
-                    {LEVELS.map(([n, label, title]) => (
-                      <label key={n} title={title}>
-                        <input type="radio" name={`i:${c}`} value={n} defaultChecked={cur === n} aria-label={`${c}: ${title}`} />
-                        <span>{label}</span>
-                      </label>
-                    ))}
-                  </span>
-                </fieldset>
+                <div key={c} className="irow2">
+                  <label className="nm" htmlFor={id}>{c}</label>
+                  <input id={id} type="range" name={`i:${c}`} min={0} max={3} step={1} defaultValue={cur} list="lvl" aria-valuetext={LEVELS[cur]} />
+                  <output className="svc" htmlFor={id} aria-hidden="true">{LEVELS[cur]}</output>
+                </div>
               );
             })}
           </section>
 
-          <section className="card" aria-labelledby="prm">
-            <h2 id="prm" style={{ fontSize: 24 }}>Параметры</h2>
-            <ShowNameSwitch initial={p.show_name !== false} />
-            <div className="prow">
-              <label className="nm" htmlFor="aesthetics">Красота места и формата обязательна</label>
-              <span className="sw"><input id="aesthetics" type="checkbox" name="aesthetics" defaultChecked={!!prm.aesthetics} /><i /></span>
+          <section className="card stack" aria-labelledby="bud">
+            <h2 id="bud" style={{ fontSize: 24 }}>Бюджет</h2>
+            <div className="pick" role="radiogroup" aria-labelledby="bud">
+              {BUDGET_CHIPS.map((b) => (
+                <label key={b.v}><input type="radio" name="budget" value={b.v} defaultChecked={budget === b.v} /><span>{b.l}</span></label>
+              ))}
             </div>
-            <div className="prow">
-              <label className="nm" htmlFor="adults30">Подбирать для взрослых 30+</label>
-              <span className="sw"><input id="adults30" type="checkbox" name="adults30" defaultChecked={!!prm.adults30} /><i /></span>
-            </div>
-            <div className="prow">
-              <label className="nm" htmlFor="kids">Идёшь с детьми</label>
-              <span className="sw"><input id="kids" type="checkbox" name="kids" defaultChecked={!!prm.kids} /><i /></span>
-            </div>
-            <div className="prow">
-              <label className="nm" htmlFor="budget">Бюджет на событие, ₽ <span className="muted">(0 — без ограничения)</span></label>
-              <input id="budget" type="number" name="budget" min={0} max={1000000} step={100} inputMode="numeric" defaultValue={prm.budget ?? 0} />
-            </div>
-            <fieldset className="prow" style={{ border: 0, borderTop: "1px solid var(--line)", margin: 0, flexWrap: "wrap" }}>
-              <legend className="sr">С кем</legend>
-              <span className="nm">С кем</span>
-              <span className="seg wrapseg">
-                {catalog.company.map((c) => (
-                  <label key={c}><input type="radio" name="company" value={c} defaultChecked={prm.company === c} /><span>{c}</span></label>
-                ))}
-              </span>
-            </fieldset>
-            <fieldset className="prow" style={{ border: 0, borderTop: "1px solid var(--line)", margin: 0, flexWrap: "wrap" }}>
-              <legend className="sr">Когда удобно</legend>
-              <span className="nm">Когда удобно</span>
-              <span className="seg wrapseg">
-                {catalog.times.map((t) => (
-                  <label key={t}><input type="checkbox" name="times" value={t} defaultChecked={times.includes(t)} /><span>{t}</span></label>
-                ))}
-              </span>
-            </fieldset>
-            <fieldset className="prow" style={{ border: 0, borderTop: "1px solid var(--line)", margin: 0, flexWrap: "wrap" }}>
-              <legend className="sr">Район</legend>
-              <span className="nm">Район</span>
-              <span className="seg wrapseg">
-                {catalog.areas.map((a) => (
-                  <label key={a}><input type="checkbox" name="areas" value={a} defaultChecked={areas.includes(a)} /><span>{a}</span></label>
-                ))}
-              </span>
-              {extraAreas.map((a) => <input key={a} type="hidden" name="areas" value={a} />)}
-            </fieldset>
           </section>
 
-          <section className="card" aria-labelledby="note">
-            <h2 id="note" style={{ fontSize: 24 }}>Заметка о себе</h2>
-            <p className="muted" style={{ fontSize: 13.5, margin: "4px 0 8px" }}>Свободный текст: что любишь, чего избегаешь. До 2000 символов.</p>
-            <label className="sr" htmlFor="notes">Заметка</label>
-            <textarea id="notes" name="notes" maxLength={2000} defaultValue={p.notes} />
+          <section className="card stack" aria-labelledby="tm">
+            <h2 id="tm" style={{ fontSize: 24 }}>Время</h2>
+            <div className="pick" role="group" aria-labelledby="tm">
+              {TIMES.map((t) => (
+                <label key={t}><input type="checkbox" name="times" value={t} defaultChecked={times.includes(t)} /><span>{cap(t)}</span></label>
+              ))}
+            </div>
+          </section>
+
+          <section className="card stack" aria-labelledby="tr">
+            <h2 id="tr" style={{ fontSize: 24 }}>На дорогу</h2>
+            <div className="range-row">
+              <input id="travel" type="range" name="travel" min={10} max={90} step={5} defaultValue={travel} aria-labelledby="tr" aria-valuetext={`${travel} минут`} />
+              <output className="svc fg" htmlFor="travel">{travel} мин</output>
+            </div>
           </section>
 
           <div className="savebar">
             <button type="submit" className="btn primary">Сохранить</button>
-            <a href="/policy">Политика обработки данных</a>
           </div>
         </form>
+
+        <section className="card stack" aria-labelledby="learned">
+          <h2 id="learned" style={{ fontSize: 24 }}>Что я о тебе узнал</h2>
+          <Learned tags={aff.tag ?? {}} cats={aff.cat ?? {}} />
+        </section>
+
+        <section className="card stack" aria-labelledby="friends">
+          <h2 id="friends" style={{ fontSize: 24 }}>Друзья</h2>
+          <ShowNameSwitch initial={p.show_name !== false} />
+        </section>
+
+        <section className="card stack" aria-labelledby="acc">
+          <h2 id="acc" style={{ fontSize: 24 }}>Почта</h2>
+          <EmailForm />
+        </section>
+
+        <section className="card stack" aria-labelledby="del">
+          <h2 id="del" className="sr">Данные</h2>
+          <DeleteData />
+          <p className="foot" style={{ marginTop: 6 }}><a href="/policy">Политика обработки данных</a></p>
+        </section>
       </main>
     </div>
   );
