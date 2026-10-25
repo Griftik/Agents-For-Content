@@ -92,7 +92,7 @@ def outlook_url(ev: Mapping, day: str | None = None, city: str = DEFAULT_CITY, m
 def is_local_url(url: str) -> bool:
     """localhost / 127.0.0.1 / ::1 — такие адреса Telegram не принимает в URL-кнопках."""
     host = (urlparse(url or "").hostname or "").lower()
-    return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.endswith(".localhost")
+    return host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.endswith(".localhost")  # nosec B104: сравнение строк, не bind
 
 
 def _share_parts(ev: Mapping, day: str | None, city: str, why: str | None) -> tuple[str, str, str, str, str, str]:

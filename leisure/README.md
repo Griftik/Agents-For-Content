@@ -128,6 +128,28 @@ cd leisure && python -m pytest                # тесты; test_api.py проп
 Через Docker (на VPS): `cd leisure && docker compose up -d --build` — api сам применяет миграции;
 seed: `docker compose exec api python -m leisure.seed.load`.
 
+## Деплой на сервер (docs/DEPLOY.md)
+
+Нужен VPS (2 vCPU / 4 ГБ) и домен. Пошагово для новичка — [docs/DEPLOY.md](docs/DEPLOY.md); коротко:
+
+```bash
+git clone https://github.com/Griftik/Agents-For-Content.git ~/Agents-For-Content
+cd ~/Agents-For-Content && ./leisure/server-setup.sh
+```
+
+`server-setup.sh` ставит Docker, собирает `leisure/.env` (домен, API_KEY, SECRET_KEY, SESSION_SECRET, пароль базы и админки,
+SMTP по желанию), поднимает compose с Caddy (HTTPS сам, `leisure/Caddyfile`: `/api/*` → API, остальное → веб), применяет
+миграции, грузит seed, ставит ежедневный бэкап в cron (04:00, `leisure/backup.sh`, 30 копий в `~/backups`) и печатает секреты
+для автодеплоя (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, переменная `DEPLOY_ENABLED=true`).
+
+**Обновление:** `./leisure/deploy.sh` — `git pull --ff-only`, **бэкап базы перед накатом** (`~/backups/catch-<дата>-<sha>.sql.gz`,
+`LAST_GOOD`), `docker compose up -d --build`, `alembic upgrade head`, проверка `/api/health` у API и веба; при провале —
+автоматический откат на `LAST_GOOD` с восстановлением дампа. Ручной откат — `./leisure/rollback.sh latest`.
+
+**CI/CD:** `.github/workflows/catch.yml` на push в `main` и `claude/leisure-planner-core` (пути `leisure/**`): test (PostgreSQL 16,
+миграции, seed, pytest без симулятора, сборка и vitest веба), security (bandit medium+, pip-audit, npm audit high), deploy по SSH
+только при `DEPLOY_ENABLED=true` после зелёных test и security.
+
 ## API (кратко)
 
 | Метод | Путь | Что |

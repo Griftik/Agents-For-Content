@@ -1,5 +1,6 @@
-# MVP на одном VPS (п. 5 спеки). Запуск из папки leisure/:  docker compose up -d --build
-# Секреты — в leisure/.env (см. .env.example). Для контейнеров DATABASE_URL указывает на сервис db.
+# Продакшен на одном VPS (docs/DEPLOY.md). Запуск из папки leisure/:  docker compose up -d --build
+# Секреты — в leisure/.env (см. .env.example); их печатает и собирает server-setup.sh. Обновление — ./deploy.sh (бэкап → накат →
+# проверка → откат при провале), бэкапы — ./backup.sh в ${HOME}/backups (том db:/backups). Наружу смотрит только caddy (80/443).
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -9,6 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leisure}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ${BACKUP_DIR:-${HOME}/backups}:/backups     # сюда пишет pg_dump из backup.sh и deploy.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U leisure -d leisure"]
       interval: 5s
@@ -29,8 +31,14 @@ services:
       DATABASE_URL: postgresql+psycopg://leisure:${POSTGRES_PASSWORD:-leisure}@db:5432/leisure
       REDIS_URL: redis://redis:6379/0
     command: sh -c "alembic -c leisure/alembic.ini upgrade head && uvicorn leisure.api.main:app --host 0.0.0.0 --port 8000"
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       db:
         condition: service_healthy
@@ -53,7 +61,6 @@ services:
     restart: unless-stopped
 
   # Веб-приложение (PWA) на Next.js (leisure/webapp). Сервер Next.js ходит в api с ключом; в браузер ключ не попадает.
-  # Telegram-бота и рассылок больше нет (docs/PIVOT-PWA.md, версия 2): человек сам открывает приложение. SMTP_* из .env — только для входа по почте.
   web:
     build:
       context: .
@@ -63,12 +70,40 @@ services:
       API_KEY: ${API_KEY:-}
       WEB_BASE_URL: ${WEB_BASE_URL:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     depends_on:
       api:
         condition: service_started
     restart: unless-stopped
 
+  # Единственный сервис с портами наружу: HTTPS по DOMAIN из .env, маршруты — Caddyfile.
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
-  pgdata:
+  pgdata:          # база: пересборки её не трогают
+  caddy_data:      # сертификаты Let's Encrypt
+  caddy_config:

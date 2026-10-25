@@ -22,7 +22,9 @@ for r in (catalog.router, events.router, profiles.router, decisions.router, dige
 
 
 @app.get("/health", tags=["служебное"])
+@app.get("/api/health", tags=["служебное"])
 def health() -> dict:
+    """Проверка живости для deploy.sh, healthcheck контейнера и мониторинга. Без ключа, без базы."""
     return {"ok": True}
 
 

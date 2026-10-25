@@ -42,7 +42,7 @@ def client():
 
 
 def test_health_and_catalog(client):
-    assert client.get("/health").json() == {"ok": True}
+    assert client.get("/health").json() == {"ok": True} and client.get("/api/health").json() == {"ok": True}
     cat = client.get("/api/catalog").json()
     assert len(cat["values"]) == 19 and cat["value_clusters"]["Люди"][-1] == "Близость" and "Джаз" in cat["categories"]
 
