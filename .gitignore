@@ -25,5 +25,3 @@ env/
 *.log
 .DS_Store
 
-# Сырые карточки конвейера сбора (leisure/collectors/pipeline.py --dry-run)
-leisure/data/

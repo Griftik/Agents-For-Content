@@ -13,12 +13,7 @@ service-account*.json
 rclone.conf
 *.session
 data
-leisure/tests
 docs
 *.log
-# Веб собирается отдельным образом (leisure/webapp/Dockerfile), в образ API он не нужен
-leisure/webapp
 **/node_modules
 **/.next
-leisure/sim/out
-leisure/tests/e2e
