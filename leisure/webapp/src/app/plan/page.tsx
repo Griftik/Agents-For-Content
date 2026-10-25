@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { removeFromPlan } from "@/app/actions";
+import { decide, removeFromPlan } from "@/app/actions";
 import { ApiDown, AuthGate, NoProfile } from "@/components/Gate";
 import { InviteButton } from "@/components/InviteButton";
 import { Masthead } from "@/components/Masthead";
@@ -24,16 +24,19 @@ function Item({ it }: { it: PlanItem }) {
       <span className="svc fg">{timeRange(ev) || "время уточняется"}{maybe ? " · может быть" : ""}</span>
       <div className="n"><a href={`/e/${ev.slug}`}>{ev.title}</a></div>
       <div className="v">{venue}{rest ? ` · ${rest}` : ""}</div>
-      {it.companions?.length ? <div className="v">{it.companions.length > 1 ? `С друзьями (${it.companions.length})` : `Вдвоём с ${it.companions[0]}`}</div> : null}
+      {it.companions?.length ? <span className="svc">{it.companions.length > 1 ? `С друзьями (${it.companions.length})` : `Вдвоём с ${it.companions[0]}`}</span> : null}
       {it.conflict ? <div className="warn">Пересекается по времени</div> : null}
       <div className="row">
-        {!maybe ? (
-          <>
-            <a className="btn small cal" href={it.links.gcal} target="_blank" rel="noopener noreferrer">Google Календарь</a>
-            <a className="btn small cal" href={it.links.outlook} target="_blank" rel="noopener noreferrer">Outlook</a>
-            <a className="btn small cal" href={`/api/events/${ev.slug}/ics?day=${it.day}`} download>.ics</a>
-          </>
-        ) : null}
+        {maybe ? (
+          <form action={decide} style={{ display: "contents" }}>
+            <input type="hidden" name="slug" value={ev.slug} />
+            <input type="hidden" name="day" value={it.day} />
+            <button type="submit" name="status" value="иду" className="btn small go">Иду</button>
+          </form>
+        ) : (
+          <a className="btn small cal" href={`/api/events/${ev.slug}/ics?day=${it.day}`} download>Календарь</a>
+        )}
+        {/^https?:\/\//.test(ev.url) ? <a className="btn small" href={ev.url} target="_blank" rel="noopener noreferrer">К билетам</a> : null}
         <InviteButton slug={ev.slug} day={it.day} />
         <form action={removeFromPlan} style={{ display: "contents" }}>
           <input type="hidden" name="slug" value={ev.slug} />
@@ -74,7 +77,7 @@ export default async function PlanPage() {
   return (
     <div className="wrap">
       <Masthead title="План" tab="plan" profiles={list} activeId={pid} planDot={hasUnmarkedPast(decisions, today)} />
-      <main id="main" className="page" style={{ paddingTop: 4, gap: 22 }}>
+      <main id="main" className="page reveal" style={{ paddingTop: 4, gap: 24 }}>
         {pastEvents.length ? (
           <section className="pday" aria-labelledby="past-h">
             <h2 id="past-h">Прошли <span className="svc">{pastEvents.length}</span></h2>
@@ -93,7 +96,7 @@ export default async function PlanPage() {
 
         {empty ? (
           <div className="fempty" role="status">
-            <h2>В плане пусто</h2>
+            <h2>Пока пусто</h2>
             <a className="btn primary" href="/digest?day=today">Рекомендации</a>
           </div>
         ) : null}

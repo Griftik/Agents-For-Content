@@ -1,47 +1,48 @@
 import type { EventT } from "@/lib/api-types";
-import { dateLong, placeLine, priceLabel, timeRange, wdShort } from "@/lib/format";
+import { dayLabel, timeLine } from "@/lib/feed";
+import { moscowToday, placeLine, priceLabel } from "@/lib/format";
 
-
-function Badges({ ev }: { ev: EventT }) {
-  return (
-    <>
-      {ev.free ? <span className="badge free">бесплатно</span> : null}
-      {ev.confidence === "нужно проверить" ? <span className="badge check">нужно проверить</span> : null}
-    </>
-  );
-}
-
-/** Публичная карточка события: заголовок, факты, описание, «Почему стоит». Общая для /e/<слаг> и приглашения. */
-export function PublicEvent({ ev, heading = "h1" }: { ev: EventT; heading?: "h1" | "h2" }) {
+/**
+ * Карточка-билет во всю страницу (DESIGN.md v2, EventPage): обложка только при фото, число-герой времени, название, место,
+ * линия отрыва, описание, подвал с ценой и направлением. Общая для страницы события и приглашения.
+ */
+export function PublicEvent({ ev, day, heading = "h1", cover }: { ev: EventT; day?: string | null; heading?: "h1" | "h2"; cover?: string | null }) {
   const { venue, rest } = placeLine(ev);
   const price = priceLabel(ev);
+  const today = moscowToday();
   const dates = [...ev.dates].sort();
-  const shownDates = dates.slice(0, 6);
+  const d = day && ev.dates.includes(day) ? day : (dates.find((x) => x >= today) ?? dates[0] ?? null);
+  const interval = ev.start_time && ev.end_time && ev.end_time !== ev.start_time ? `${ev.start_time}–${ev.end_time}` : "";
+  const dayText = d ? timeLine(d, today, null, null) : "";
+  const more = dates.filter((x) => x !== d && x >= today).slice(0, 4);
   const sourceOk = /^https?:\/\//.test(ev.url);
   const H = heading;
   return (
-    <article className="stack" style={{ gap: 14 }}>
-      <div className="fcover" style={{ borderRadius: "var(--r-card)", aspectRatio: "16 / 7" }}>
-        <span className="svc cat">{ev.category}</span>
+    <article className="ticket" aria-label={ev.title}>
+      {cover ? (
+        <div className="cover">
+          {/* обложка с чужого домена источника: next/image требует список доменов */}
+          <img src={cover} alt="" loading="lazy" /> {/* eslint-disable-line @next/next/no-img-element */}
+        </div>
+      ) : null}
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <span className="svc">{ev.category}</span>
+        {ev.confidence === "нужно проверить" ? <span className="svc warn">Нужно проверить</span> : null}
+        {d && d < today ? <span className="svc warn">Прошло</span> : null}
       </div>
-      <div className="row"><Badges ev={ev} /></div>
-      <H style={heading === "h2" ? { fontSize: 28 } : undefined}>{ev.title}</H>
-      <dl className="facts">
-        {dates.length ? (
-          <>
-            <dt>Когда</dt>
-            <dd className="num">
-              {shownDates.map((d) => `${wdShort(d)}, ${dateLong(d)}`).join(" · ")}{dates.length > shownDates.length ? ` · и ещё ${dates.length - shownDates.length}` : ""}
-              {timeRange(ev) ? <><br />{timeRange(ev)}</> : null}
-              {ev.time_text && ev.time_text.length > 11 && ev.time_text !== timeRange(ev) ? <><br /><span className="muted">Расписание: {ev.time_text}</span></> : null}
-            </dd>
-          </>
-        ) : null}
-        {venue ? <><dt>Где</dt><dd><b>{venue}</b>{rest ? <><br />{rest}</> : null}</dd></> : null}
-        {price || ev.price_text ? <><dt>Цена</dt><dd>{ev.price_text && ev.price_text !== price ? ev.price_text : price}</dd></> : null}
-        {sourceOk ? <><dt>Источник</dt><dd><a href={ev.url} rel="nofollow noopener noreferrer" target="_blank">{new URL(ev.url).hostname.replace(/^www\./, "")}</a></dd></> : null}
-      </dl>
-      {ev.description ? <p style={{ maxWidth: "70ch", fontSize: 16 }}>{ev.description}</p> : null}
+      <div className="when">
+        {ev.start_time ? <b>{ev.start_time}</b> : null}
+        <span className="svc fg">{[dayText, interval].filter(Boolean).join(" · ")}</span>
+      </div>
+      <H>{ev.title}</H>
+      <p className="place">{venue}{rest ? ` · ${rest}` : ""}</p>
+      {more.length ? <span className="svc">Ещё: {more.map((x) => dayLabel(x as `${number}-${number}-${number}`)).join(" · ")}</span> : null}
+      {ev.time_text && ev.time_text.length > 11 && !interval ? <span className="svc">{ev.time_text}</span> : null}
+      <div className="tear" aria-hidden="true" />
+      {ev.description ? <p className="desc">{ev.description}</p> : null}
+      <div className="bot">
+        <span className="svc">{[ev.free ? "Бесплатно" : (ev.price_text && ev.price_text !== price ? ev.price_text : price), sourceOk ? new URL(ev.url).hostname.replace(/^www\./, "") : ""].filter(Boolean).join(" · ")}</span>
+      </div>
     </article>
   );
 }

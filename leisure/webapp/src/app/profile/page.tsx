@@ -7,6 +7,7 @@ import { ApiDown, AuthGate, NoProfile } from "@/components/Gate";
 import { Learned } from "@/components/Learned";
 import { Masthead } from "@/components/Masthead";
 import { Onboarding } from "@/components/Onboarding";
+import { ProfileChips } from "@/components/ProfileSwitcher";
 import { ShowNameSwitch } from "@/components/ShowNameSwitch";
 import { ValuePicker } from "@/components/ValuePicker";
 import { ApiError, api } from "@/lib/api";
@@ -74,7 +75,8 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   return (
     <div className="wrap">
       <Masthead title="Профиль" tab="profile" profiles={list} activeId={pid} planDot={hasUnmarkedPast(decisions, moscowToday())} />
-      <main id="main" className="page" style={{ paddingTop: 4 }}>
+      <main id="main" className="page reveal" style={{ paddingTop: 4 }}>
+        <ProfileChips profiles={list} activeId={pid} />
         {saved ? <p className="notice ok" role="status">Сохранено</p> : null}
         {error ? <p className="notice warn" role="alert">{error}</p> : null}
 
@@ -82,8 +84,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           <section className="card stack" aria-labelledby="who">
             <h2 id="who" style={{ fontSize: 24 }}>Имя</h2>
             <label className="sr" htmlFor="pname">Имя</label>
-            <input id="pname" name="name" type="text" maxLength={80} defaultValue={p.name} autoComplete="given-name"
-              style={{ minHeight: 48, width: "100%", maxWidth: 320, font: "16px var(--body)", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg)", color: "var(--fg)" }} />
+            <input id="pname" name="name" type="text" maxLength={80} defaultValue={p.name} autoComplete="given-name" className="field" />
           </section>
 
           <section className="card stack" aria-labelledby="vals">

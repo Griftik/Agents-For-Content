@@ -8,17 +8,21 @@ const KIND_LABEL: Record<string, string> = { self: "я", parent: "родител
 const initial = (name: string) => (name.trim().charAt(0) || "Я").toUpperCase();
 
 /** Чип в шапке: инициал и имя активного профиля; нижний лист со списком профилей и «+ Новый профиль». */
-export function ProfileSwitcher({ profiles, activeId }: { profiles: AccountProfile[]; activeId: number }) {
+export function ProfileSwitcher({ profiles, activeId, compact = false }: { profiles: AccountProfile[]; activeId: number; compact?: boolean }) {
   const dlg = useRef<HTMLDialogElement>(null);
   const newDlg = useRef<HTMLDialogElement>(null);
   const active = profiles.find((p) => p.id === activeId) ?? profiles[0];
   const name = active?.name || "я";
   return (
     <>
-      <button type="button" className="pswitch" onClick={() => dlg.current?.showModal()} aria-haspopup="dialog" aria-label={`Профиль: ${name}`}>
-        <span className="ava" aria-hidden="true">{initial(name)}</span>
-        <span className="nm">{name}</span>
-      </button>
+      {compact ? (
+        <button type="button" className="chip" onClick={() => newDlg.current?.showModal()} aria-haspopup="dialog" aria-label="Новый профиль">+</button>
+      ) : (
+        <button type="button" className="pswitch" onClick={() => dlg.current?.showModal()} aria-haspopup="dialog" aria-label={`Профиль: ${name}`}>
+          <span className="ava" aria-hidden="true">{initial(name)}</span>
+          <span className="nm">{name}</span>
+        </button>
+      )}
       <dialog ref={dlg} className="sheet" aria-labelledby="psw-h">
         <h2 id="psw-h">Профиль</h2>
         <ul className="plist" role="listbox" aria-label="Профили">
@@ -44,7 +48,7 @@ export function ProfileSwitcher({ profiles, activeId }: { profiles: AccountProfi
         <form action={createProfileAction} className="stack" style={{ gap: 12 }}>
           <label className="stack" style={{ gap: 4 }}>
             <span className="svc">Имя</span>
-            <input name="pname" type="text" maxLength={40} required autoComplete="off" placeholder="Мама" style={{ minHeight: 48, font: "16px var(--body)", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg)", color: "var(--fg)" }} />
+            <input name="pname" type="text" maxLength={40} required autoComplete="off" placeholder="Мама" className="field" />
           </label>
           <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
             <legend className="svc" style={{ marginBottom: 6 }}>Кто это</legend>
@@ -55,11 +59,26 @@ export function ProfileSwitcher({ profiles, activeId }: { profiles: AccountProfi
             </span>
           </fieldset>
           <div className="row">
-            <button type="submit" className="btn primary">Создать</button>
+            <button type="submit" className="btn primary">Дальше</button>
             <button type="button" className="btn quiet" onClick={() => newDlg.current?.close()}>Отмена</button>
           </div>
         </form>
       </dialog>
     </>
+  );
+}
+
+/** На вкладке «Профиль» тот же набор развёрнут рядом чипов: `я` · `{имя}` · `+`. */
+export function ProfileChips({ profiles, activeId }: { profiles: AccountProfile[]; activeId: number }) {
+  return (
+    <div className="pchips" role="group" aria-label="Профили">
+      {profiles.map((p) => (
+        <button key={p.id} type="button" className="chip" aria-pressed={p.id === activeId} aria-current={p.id === activeId ? "true" : undefined}
+          onClick={() => p.id !== activeId && void switchProfileAction(p.id)}>
+          {p.id === activeId ? "● " : ""}{p.name}
+        </button>
+      ))}
+      <ProfileSwitcher profiles={profiles} activeId={activeId} compact />
+    </div>
   );
 }

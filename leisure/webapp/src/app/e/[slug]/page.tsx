@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
+import { decide } from "@/app/actions";
 import { ApiDown } from "@/components/Gate";
 import { InviteButton } from "@/components/InviteButton";
 import { InviteFlow } from "@/components/InviteFlow";
@@ -110,7 +111,7 @@ export default async function EventPage({ params, searchParams }: Props) {
         authed={uid != null}
         hasConsent={!!view.profile?.has_consent}
         prior={prior && PRIOR[prior.status] ? `${PRIOR[prior.status]}${prior.day ? `, ${wdFull(prior.day).toLowerCase()}` : ""}` : null}
-        card={<PublicEvent ev={ev} heading="h2" />}
+        card={<PublicEvent ev={ev} day={day} heading="h2" />}
       />
     );
   }
@@ -121,26 +122,35 @@ export default async function EventPage({ params, searchParams }: Props) {
 
   const dates = [...ev.dates].sort();
   const past = dates.length > 0 && dates[dates.length - 1] < moscowToday();
-  const going = view.decisions.find((d) => d.event_slug === slug && (d.status === "иду" || d.status === "сходил"));
+  const mine = view.decisions.find((d) => d.event_slug === slug);
+  const going = mine && (mine.status === "иду" || mine.status === "сходил") ? mine : null;
+  const nextDay = dates.find((d) => d >= moscowToday()) ?? dates[0] ?? "";
   const sourceOk = /^https?:\/\//.test(ev.url);
-
   return (
     <div className="wrap">
-      <main id="main" className="public">
-        <a className="back" href={uid ? "/digest" : "/"} aria-label="Назад">←</a>
-        {past ? <p className="notice warn" role="status">Это событие уже прошло.</p> : null}
-        <PublicEvent ev={ev} />
-        <div className="row actions">
-          {sourceOk ? <a className="btn primary" href={ev.url} target="_blank" rel="noopener noreferrer">К билетам</a> : null}
-          {uid ? <InviteButton slug={slug} day={going?.day ?? ev.dates[0] ?? null} small={false} /> : null}
+      <main id="main" className="public reveal" style={{ gap: 12, paddingTop: 8 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <a className="back" href={uid ? "/digest" : "/"} aria-label="Назад">←</a>
+          {uid && going ? <InviteButton slug={slug} day={going.day ?? nextDay} small={false} /> : null}
         </div>
-        {!uid ? (
-          <section className="cta" aria-labelledby="cta">
-            <h2 id="cta">Свои рекомендации</h2>
-            <a className="btn primary" href="/profile?onboarding=welcome">Начать</a>
-          </section>
+        <PublicEvent ev={ev} day={going?.day ?? nextDay} />
+        {uid && !past ? (
+          <form action={decide} className="stickybar">
+            <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="current" value={mine?.status ?? ""} />
+            <input type="hidden" name="op" value="toggle" />
+            {nextDay && !going ? <input type="hidden" name="day" value={nextDay} /> : null}
+            {sourceOk ? <a className="btn" href={ev.url} target="_blank" rel="noopener noreferrer">К билетам</a> : null}
+            <button type="submit" name="status" value="иду" className="btn primary" aria-pressed={!!going}>{going ? "В плане" : "Иду"}</button>
+          </form>
         ) : null}
-
+        {!uid ? (
+          <div className="stickybar">
+            {sourceOk ? <a className="btn" href={ev.url} target="_blank" rel="noopener noreferrer">К билетам</a> : null}
+            <a className="btn primary" href="/profile?onboarding=welcome">Начать</a>
+          </div>
+        ) : null}
+        {uid && past && sourceOk ? <div className="row"><a className="btn" href={ev.url} target="_blank" rel="noopener noreferrer">К билетам</a></div> : null}
         <p className="foot"><a href="/policy">Политика обработки данных</a></p>
       </main>
     </div>

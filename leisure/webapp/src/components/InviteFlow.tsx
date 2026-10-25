@@ -90,13 +90,13 @@ export function InviteFlow(p: InviteFlowProps) {
 
   return (
     <div className="wrap">
-      <main id="main" className="public">
+      <main id="main" className="public reveal" style={{ gap: 12, paddingTop: 8 }}>
         <header className="invite-head">
-          <span className="eyebrow">Приглашение</span>
+          <span className="svc">Приглашение</span>
           <h1>{names.title}</h1>
-          <p className="when">{[p.dayText.charAt(0).toUpperCase() + p.dayText.slice(1), p.timeText].filter(Boolean).join(" · ")}</p>
+          <span className="svc fg">{[p.dayText, p.timeText].filter(Boolean).join(" · ")}</span>
         </header>
-        {p.prior ? <p className="prior">Прежний ответ: {p.prior}</p> : null}
+        {p.prior ? <span className="svc">Прежний ответ: {p.prior}</span> : null}
         {p.card}
 
         <section className="invite-actions" aria-labelledby="act-h">
@@ -117,18 +117,17 @@ export function InviteFlow(p: InviteFlowProps) {
           {consentNeeded ? (
             <label className="stack" style={{ gap: 4 }}>
               <span className="svc">Имя, необязательно</span>
-              <input name="name" type="text" maxLength={80} autoComplete="given-name" value={name} onChange={(e) => setName(e.target.value)}
-                style={{ minHeight: 48, width: "100%", maxWidth: 320, font: "16px var(--body)", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg)", color: "var(--fg)" }} />
+              <input name="name" type="text" maxLength={80} autoComplete="given-name" value={name} onChange={(e) => setName(e.target.value)} className="field" />
             </label>
           ) : null}
-          <div className="row actions">
+          <div className="stickybar" style={{ padding: "4px 0 0" }}>
+            <button type="button" className="btn" onClick={() => choose("maybe")}>Может быть</button>
             <button type="button" className="btn primary" onClick={() => choose("going")} aria-busy={pending || undefined}>{names.going}</button>
-            <button type="button" className="btn" style={{ minHeight: 48 }} onClick={() => choose("maybe")}>Может быть</button>
-            <form action={declineInviteAction} style={{ display: "contents" }}>
-              <input type="hidden" name="code" value={p.code} />
-              <button type="submit" className="btn link" style={{ minHeight: 48 }}>Другие события под меня</button>
-            </form>
           </div>
+          <form action={declineInviteAction} className="row" style={{ justifyContent: "center" }}>
+            <input type="hidden" name="code" value={p.code} />
+            <button type="submit" className="btn link" style={{ minHeight: 48, marginLeft: 0 }}>Другие события под меня</button>
+          </form>
           <p role="status" aria-live="polite" className="muted" style={{ fontSize: 13.5 }}>
             {wanted && !p.authed ? "Готовим приложение…" : pending ? "Записываю…" : ""}
           </p>
@@ -160,7 +159,7 @@ function Done(p: InviteFlowProps & { state: Extract<AcceptState, { phase: "done"
 
   return (
     <div className="wrap">
-      <main id="main" className="public done">
+      <main id="main" className="public done reveal">
         <section className="stack" aria-labelledby="done-h">
           <h1 id="done-h">{going ? (p.gone ? "Ты идёшь" : "Вы идёте вместе") : "Записано в «может быть»"}</h1>
           <p>«{p.title}», {day}{going && p.timeText ? `, ${p.timeText}` : ""}.</p>

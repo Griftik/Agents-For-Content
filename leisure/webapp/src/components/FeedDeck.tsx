@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 
 import { feedDecideAction, undoDecisionAction, type FeedDecision } from "@/app/actions";
 import type { FeedItem } from "@/lib/api-types";
 import { timeLine } from "@/lib/feed";
-import { placeLine, priceLabel } from "@/lib/format";
+import { dateShort, placeLine, priceLabel, wdShort } from "@/lib/format";
 import { InviteButton } from "./InviteButton";
 
 const THRESHOLD = 0.35; // доля ширины
@@ -22,6 +22,11 @@ function Card({ it, today, counter, style, className, behind, onPointerDown, onP
   const price = priceLabel(ev);
   const w = typeof window === "undefined" ? 390 : window.innerWidth;
   const k = Math.min(1, Math.abs(dx ?? 0) / (w * THRESHOLD));
+  const isToday = it.day === today;
+  const end = ev.end_time && ev.end_time !== ev.start_time ? `до ${ev.end_time}` : "";
+  const near = timeLine(it.day, today, null, null); // «Сегодня», «Завтра», «Сб, 31 окт»
+  const wd = `${wdShort(it.day)} ${dateShort(it.day)}`;
+  const dayText = near === wd || /\d/.test(near) ? wd : `${near} · ${wd}`;
   return (
     <article
       className={`fcard ${className ?? ""}${behind ? " behind" : ""}`}
@@ -34,23 +39,29 @@ function Card({ it, today, counter, style, className, behind, onPointerDown, onP
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      <div className="fcover">
-        {/* обложка приходит с чужого домена источника: next/image требует список доменов, здесь обычный img */}
-        {it.cover ? <img src={it.cover} alt="" loading="lazy" /> : null} {/* eslint-disable-line @next/next/no-img-element */}
-        {!it.cover ? <span className="svc cat">{ev.category}</span> : null}
-        {!it.cover ? <span className="big" aria-hidden="true">{ev.title}</span> : null}
-        {it.can_make_it ? <span className="badge-ok">Успеваешь</span> : null}
-        <span className="svc counter">{counter}</span>
-        <span className="stamp go" style={{ opacity: (dx ?? 0) > 0 ? k : 0 }} aria-hidden="true">Иду</span>
-        <span className="stamp no" style={{ opacity: (dx ?? 0) < 0 ? k : 0 }} aria-hidden="true">Не моё</span>
+      {it.cover ? (
+        <div className="cover">
+          {/* обложка приходит с чужого домена источника: next/image требует список доменов, здесь обычный img */}
+          <img src={it.cover} alt="" loading="lazy" draggable={false} /> {/* eslint-disable-line @next/next/no-img-element */}
+        </div>
+      ) : null}
+      <div className="top">
+        {it.can_make_it ? <span className="svc ok">Успеваешь</span> : <span />}
+        <span className="svc">{counter}</span>
       </div>
-      <div className="fbody">
-        <h2>{ev.title}</h2>
-        <p className="svc fg">{timeLine(it.day, today, ev.start_time, ev.end_time)}</p>
-        <p className="place">{venue}{rest ? ` · ${rest}` : ""}</p>
-        {price ? <p className={`price${ev.free ? " free" : ""}`}>{ev.free ? "Бесплатно" : price}</p> : null}
-        <a className="more" href={`/e/${ev.slug}`} draggable={false}>Подробнее</a>
+      <div className="when">
+        {ev.start_time ? <b className={isToday ? "" : "sm"}>{ev.start_time}</b> : null}
+        <span className="svc fg">{[dayText, end].filter(Boolean).join(" · ")}</span>
       </div>
+      <h2>{ev.title}</h2>
+      <p className="place">{venue}{rest ? ` · ${rest}` : ""}</p>
+      <div className="tear" aria-hidden="true" />
+      <div className="bot">
+        <span className="svc">{[ev.free ? "Бесплатно" : price, ev.category].filter(Boolean).join(" · ")}</span>
+        <a href={`/e/${ev.slug}`} draggable={false}>Подробнее</a>
+      </div>
+      <span className="stamp go" style={{ opacity: (dx ?? 0) > 0 ? k : 0 }} aria-hidden="true">Иду</span>
+      <span className="stamp no" style={{ opacity: (dx ?? 0) < 0 ? k : 0 }} aria-hidden="true">Не моё</span>
     </article>
   );
 }
@@ -59,7 +70,7 @@ function Card({ it, today, counter, style, className, behind, onPointerDown, onP
  * Лента: одна карточка на экран, «Иду» и «Не моё» кнопками и свайпом (жест повторяет кнопки, не заменяет их). После действия 5 секунд
  * доступно «Отменить». Стрелки ←/→ делают то же, Enter — «Подробнее». Без JS страница показывает первую карточку и ссылку «Подробнее».
  */
-export function FeedDeck({ items, today, emptyLabel, nextHref }: { items: FeedItem[]; today: string; emptyLabel: string; nextHref: string | null }) {
+export function FeedDeck({ items, today, emptyLabel, nextLabel, nextHref }: { items: FeedItem[]; today: string; emptyLabel: string; nextLabel: string; nextHref: string | null }) {
   const [idx, setIdx] = useState(0);
   const [dx, setDx] = useState(0);
   const [phase, setPhase] = useState<"idle" | "drag" | "settle" | "fly">("idle");
@@ -108,7 +119,7 @@ export function FeedDeck({ items, today, emptyLabel, nextHref }: { items: FeedIt
       setInPlan(done);
       sheet.current?.showModal();
     }
-    setToast({ text: status === "иду" ? "В плане" : "Больше не покажу", slug: done.event.slug });
+    setToast({ text: status === "иду" ? "В плане" : "Убрал.", slug: done.event.slug });
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(null), UNDO_MS);
   }
@@ -169,7 +180,7 @@ export function FeedDeck({ items, today, emptyLabel, nextHref }: { items: FeedIt
     return (
       <div className="fempty" role="status">
         <h2>{emptyLabel}</h2>
-        {nextHref ? <a className="btn primary" href={nextHref}>Завтра</a> : null}
+        {nextHref ? <a className="btn primary" href={nextHref}>{nextLabel}</a> : null}
         {toast ? <Toasty toast={toast} onUndo={undo} /> : null}
       </div>
     );
@@ -192,6 +203,7 @@ export function FeedDeck({ items, today, emptyLabel, nextHref }: { items: FeedIt
           onPointerUp={onUp}
         />
       </div>
+      {next ? <div className="fc-next" aria-hidden="true" style={{ marginTop: -12 }} /> : null}
       <div className="actionbar" role="group" aria-label="Решение">
         <button type="button" className="btn" aria-disabled={busy || undefined} onClick={() => act("не моё")}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -207,9 +219,10 @@ export function FeedDeck({ items, today, emptyLabel, nextHref }: { items: FeedIt
         <h2 id="inplan-h">В плане</h2>
         {inPlan ? (
           <>
-            <p>«{inPlan.event.title}», {timeLine(inPlan.day, today, inPlan.event.start_time, inPlan.event.end_time).toLowerCase()}.</p>
+            <p>«{inPlan.event.title}», {timeLine(inPlan.day, today, inPlan.event.start_time, inPlan.event.end_time).toLowerCase()}{inPlan.event.venue ? `, ${inPlan.event.venue}` : ""}.</p>
             <div className="row">
               {/^https?:\/\//.test(inPlan.event.url) ? <a className="btn primary" href={inPlan.event.url} target="_blank" rel="noopener noreferrer">К билетам</a> : null}
+              <a className="btn cal" href={`/api/events/${inPlan.event.slug}/ics?day=${inPlan.day}`} download>Календарь</a>
               <InviteButton slug={inPlan.event.slug} day={inPlan.day} small={false} />
               <button type="button" className="btn quiet" onClick={() => sheet.current?.close()}>Дальше</button>
             </div>

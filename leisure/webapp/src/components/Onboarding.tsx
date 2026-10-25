@@ -10,7 +10,7 @@ import { ValuePicker } from "./ValuePicker";
 export function Onboarding({ step, profile, catalog, error, needConsent }: { step: OnboardingStep; profile: Profile | null; catalog: Catalog; error?: string; needConsent?: boolean }) {
   return (
     <div className="wrap">
-      <main id="main" className="onb">
+      <main id="main" className="onb reveal">
         {step === "welcome" ? <Welcome hasConsent={!!profile?.has_consent} error={error} needConsent={needConsent} /> : null}
         {step === "1" ? <StepValues catalog={catalog} profile={profile} error={error} /> : null}
         {step === "2" && profile ? <StepInterests catalog={catalog} profile={profile} error={error} /> : null}
@@ -40,7 +40,7 @@ function Welcome({ hasConsent, error, needConsent }: { hasConsent: boolean; erro
         {!hasConsent ? (
           <div className="stack" style={{ gap: 4 }}>
             <label htmlFor="who" className="svc">Имя, необязательно</label>
-            <input id="who" name="name" type="text" maxLength={80} autoComplete="given-name" style={{ minHeight: 44, width: "100%", maxWidth: 320, font: "15px var(--body)", padding: "9px 11px", border: "1px solid var(--line)", borderRadius: 10, background: "var(--bg)", color: "var(--fg)" }} />
+            <input id="who" name="name" type="text" maxLength={80} autoComplete="given-name" className="field" />
           </div>
         ) : null}
         {needConsent ? <p id="need" role="alert" className="field-error">Отметь согласие, чтобы продолжить.</p> : null}
@@ -58,7 +58,7 @@ function StepValues({ catalog, profile, error }: { catalog: Catalog; profile: Pr
     <>
       <div>
         <p className="svc">Шаг 1 / 2</p>
-        <h1>Что для тебя важно</h1>
+        <h1>{profile && profile.kind && profile.kind !== "self" && profile.name ? `Что важно для ${profile.name}` : "Что для тебя важно"}</h1>
       </div>
       {error ? <p role="alert" className="field-error">{error === "save" ? "Не получилось сохранить, попробуй ещё раз." : `Нужно выбрать ровно ${TOP_VALUES}.`}</p> : null}
       <ValuePicker groups={groups} short={catalog.value_short ?? {}} initial={fives.length === TOP_VALUES ? fives : []} />

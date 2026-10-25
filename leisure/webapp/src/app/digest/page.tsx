@@ -6,7 +6,7 @@ import { FeedDeck } from "@/components/FeedDeck";
 import { Masthead } from "@/components/Masthead";
 import { api } from "@/lib/api";
 import type { AccountProfile } from "@/lib/api-types";
-import { apiDate, parseDay, parseSegment } from "@/lib/feed";
+import { apiDate, dayLabel, parseDay, parseSegment } from "@/lib/feed";
 import { first, moscowToday } from "@/lib/format";
 import { load } from "@/lib/load";
 import { hasUnmarkedPast } from "@/lib/plan";
@@ -35,14 +35,18 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
   if (!profile.has_consent) return <NoProfile />;
   if (!profile.onboarded) redirect("/profile?onboarding=1");
   const list = profiles.length ? profiles : [{ id: uid, name: profile.name || "я", kind: "self", onboarded: true }];
-  const next = day === "today" ? `/digest?day=tomorrow&seg=${seg}` : day === "tomorrow" ? `/digest?day=day2&seg=${seg}` : null;
+  // T-FEED-END / T-FEED-EMPTY / T-FEED-LATE: одна строка и одно действие
+  const next = day === "today" ? `/digest?day=tomorrow&seg=${seg}` : day === "tomorrow" ? `/digest?day=day2&seg=${seg}` : day === "day2" ? `/digest?day=week&seg=${seg}` : null;
+  const nextLabel = day === "today" ? "Завтра" : day === "tomorrow" ? "Послезавтра" : "Неделя";
+  const lateToday = day === "today" && feed.items.length === 0 && new Date(Date.now() + 3 * 3600_000).getUTCHours() >= 20;
+  const emptyLabel = lateToday ? "Сегодня уже поздно" : day === "today" ? "На сегодня всё" : day === "week" ? "На неделю всё" : "На этот день всё";
 
   return (
     <div className="wrap">
-      <Masthead title="Рекомендации" tab="digest" profiles={list} activeId={pid} planDot={hasUnmarkedPast(decisions, today)} />
-      <main id="main" className="page" style={{ paddingTop: 4, gap: 14 }}>
+      <Masthead title={dayLabel(day)} tab="digest" profiles={list} activeId={pid} planDot={hasUnmarkedPast(decisions, today)} />
+      <main id="main" className="page reveal feed-main" style={{ paddingTop: 4, gap: 12 }}>
         <DayStrip day={day} segment={seg} today={today} />
-        <FeedDeck key={`${day}-${seg}`} items={feed.items} today={today} emptyLabel={day === "today" ? "На сегодня всё" : "Пока ничего"} nextHref={next} />
+        <FeedDeck key={`${day}-${seg}`} items={feed.items} today={today} emptyLabel={emptyLabel} nextLabel={nextLabel} nextHref={next} />
       </main>
     </div>
   );

@@ -6,9 +6,9 @@ const icon = (d: ReactNode) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
 );
 const TABS: { id: Tab; href: string; label: string; svg: ReactNode }[] = [
-  { id: "digest", href: "/digest", label: "Рекомендации", svg: icon(<><rect x="5" y="3" width="14" height="18" rx="3" /><path d="M9 8h6M9 12h6" /></>) },
-  { id: "plan", href: "/plan", label: "План", svg: icon(<><rect x="4" y="5" width="16" height="15" rx="3" /><path d="M8 3v4M16 3v4M4 10h16" /></>) },
-  { id: "profile", href: "/profile", label: "Профиль", svg: icon(<><circle cx="12" cy="8" r="4" /><path d="M4 20c1-4 4-6 8-6s7 2 8 6" /></>) },
+  { id: "digest", href: "/digest", label: "Лента", svg: icon(<><rect x="4" y="4" width="16" height="16" rx="4" /><path d="M4 14h16M9 14v6M15 14v6" /></>) },
+  { id: "plan", href: "/plan", label: "План", svg: icon(<><rect x="4" y="5" width="16" height="15" rx="3" /><path d="M4 10h16M9 3v4M15 3v4" /></>) },
+  { id: "profile", href: "/profile", label: "Профиль", svg: icon(<><circle cx="12" cy="9" r="4" /><path d="M5 20c1.2-3.5 4-5 7-5s5.8 1.5 7 5" /></>) },
 ];
 
 /** Нижняя навигация из трёх вкладок; точка на «Плане», пока есть прошедшие события без отметки. */

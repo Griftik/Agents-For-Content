@@ -9,7 +9,6 @@ import { copyText, splitShare } from "@/lib/invite-share";
 export function PastMark({ slug, initialStatus, initialRating }: { slug: string; initialStatus: string; initialRating: number | null }) {
   const [status, setStatus] = useState(initialStatus);
   const [rating, setRating] = useState<number | null>(initialRating);
-  const [hover, setHover] = useState<number | null>(null);
   const [ref, setRef] = useState<RateResult["refAsk"]>(null);
   const [note, setNote] = useState("");
   const went = status === "сходил";
@@ -19,7 +18,10 @@ export function PastMark({ slug, initialStatus, initialRating }: { slug: string;
     const res = await markPastAction(slug, w, r);
     if (!res.ok) return setNote("Не получилось сохранить, попробуй ещё раз.");
     setStatus(w ? "сходил" : "не сходил");
-    if (r != null) setRating(r);
+    if (r != null) {
+      setNote(rating != null && rating !== r ? `Оценка изменена: ${r} из 5.` : `Оценка ${r} из 5.`);
+      setRating(r);
+    } else setNote("Отмечено.");
     if (res.refAsk) setRef(res.refAsk);
   }
   async function share() {
@@ -44,9 +46,9 @@ export function PastMark({ slug, initialStatus, initialRating }: { slug: string;
       {went ? (
         <div className="stars" role="group" aria-label="Оценка">
           {[1, 2, 3, 4, 5].map((v) => (
-            <button key={v} type="button" aria-pressed={rating === v} className={(hover ?? rating ?? 0) >= v ? "lit" : ""}
-              aria-label={`${v} ${v === 1 ? "звезда" : v < 5 ? "звезды" : "звёзд"}`} onMouseEnter={() => setHover(v)} onMouseLeave={() => setHover(null)}
-              onClick={() => mark(true, v)}>★</button>
+            <button key={v} type="button" aria-pressed={rating === v} aria-label={`${v} ${v === 1 ? "звезда" : v < 5 ? "звезды" : "звёзд"}`} onClick={() => mark(true, v)}>
+              {rating === v ? "● " : ""}{v} ★
+            </button>
           ))}
         </div>
       ) : null}

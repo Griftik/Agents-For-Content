@@ -29,7 +29,9 @@ export const viewport: Viewport = {
   ],
 };
 
-const FONTS = "https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Oranienbaum&display=swap";
+const FONTS = "https://fonts.googleapis.com/css2?family=Piazzolla:wght@800&family=Golos+Text:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap";
+// Одно оркестрованное появление на запуск (DESIGN.md, раздел 4): атрибут ставится до первой отрисовки, один раз за сессию вкладки.
+const REVEAL = "try{if(!sessionStorage.getItem('leisure:revealed')){sessionStorage.setItem('leisure:revealed','1');document.documentElement.dataset.reveal='1'}}catch(e){}";
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const uid = await getUserId();
@@ -44,11 +46,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     }
   }
   return (
-    <html lang="ru">
+    <html lang="ru" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="stylesheet" href={FONTS} />
+        <script dangerouslySetInnerHTML={{ __html: REVEAL }} />
       </head>
       <body>
         <a className="skip-link" href="#main">К содержимому</a>

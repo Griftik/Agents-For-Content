@@ -10,14 +10,16 @@ export function DayStrip({ day, segment, today }: { day: DayKey; segment: Segmen
   const custom = !KEYS.includes(day);
   return (
     <div className="stack" style={{ gap: 10 }}>
-      <nav className="daystrip" aria-label="День">
-        {KEYS.map((k) => (
-          <a key={k} className="chip day" href={href(k, segment)} aria-current={day === k ? "true" : undefined}>{dayLabel(k)}</a>
-        ))}
-        {custom ? <a className="chip day" href={href(day, segment)} aria-current="true">{dayLabel(day)}</a> : null}
+      <nav className="dayrow" aria-label="День">
+        <div className="daystrip">
+          {KEYS.map((k) => (
+            <a key={k} className="chip day" href={href(k, segment)} aria-current={day === k ? "true" : undefined}>{dayLabel(k)}</a>
+          ))}
+          {custom ? <a className="chip day" href={href(day, segment)} aria-current="true">{dayLabel(day)}</a> : null}
+        </div>
         <form method="get" action="/digest" className="chip cal" aria-label="Выбрать дату">
           <input type="hidden" name="seg" value={segment} />
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3" /><path d="M8 3v4M16 3v4M4 10h16" /></svg>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3" /><path d="M4 10h16M9 3v4M15 3v4" /></svg>
           <DateInput today={today} segment={segment} />
         </form>
       </nav>
