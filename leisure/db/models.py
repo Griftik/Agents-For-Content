@@ -15,7 +15,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
 from leisure.core.catalog import (CONFIDENCE, CROWD, DECISION_STATUSES, EVENT_STATUSES, INVITE_KINDS, INVITE_STATUSES, KINDS, PLANS,
-                                  PROFILE_SOURCES)
+                                  PROFILE_KINDS, PROFILE_SOURCES)
 
 from .types import DateList, JSONType, TextList
 
@@ -114,10 +114,21 @@ class Event(Base, TimestampMixin):
         return self.title
 
 
+class Account(Base):
+    """Аккаунт веб-сессии: гость с первого экрана, почта по желанию (magic link). Данные людей лежат в profiles."""
+    __tablename__ = "accounts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)    # из guest_user_id_seq
+    email: Mapped[str | None] = mapped_column(String(254), unique=True, nullable=True)    # в нижнем регистре; null — не привязана
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    profiles: Mapped[list["Profile"]] = relationship(back_populates="account", order_by="Profile.created_at", passive_deletes=True)
+
+
 class Profile(Base, TimestampMixin):
     __tablename__ = "profiles"
 
-    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)  # Telegram id
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)  # id гостевой сессии (POST /api/session); у старых профилей — бывший Telegram id
     name: Mapped[str] = mapped_column(String(200), default="", nullable=False)
     username: Mapped[str] = mapped_column(String(100), default="", nullable=False)
     city: Mapped[str] = mapped_column(String(80), default="Москва", nullable=False)
@@ -139,14 +150,18 @@ class Profile(Base, TimestampMixin):
     source: Mapped[str] = mapped_column(_enum(PROFILE_SOURCES, "profile_source"), default="organic", server_default="organic", nullable=False)
     referred_by: Mapped[int | None] = mapped_column(ForeignKey("profiles.user_id", ondelete="SET NULL"), nullable=True)
     show_name: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
-    # Профиль создан в Mini App, а бот человеку ещё не писал и писать не может (не запускал бота / не дал права): Forbidden тогда не
-    # значит «заблокировал», профиль остаётся активным. True ставит /start или requestWriteAccess (PUT can_write).
+    # Человек разрешил приложению присылать push (веб ставит PUT can_write после диалога разрешения). «Входящие» работают и при false.
     can_write: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    # Несколько профилей на аккаунт (docs/PIVOT-PWA.md, версия 2): «я», «мама», «ребёнок». user_id — идентификатор профиля;
+    # у профиля «я», созданного гостевой сессией, он совпадает с id аккаунта.
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True, nullable=False)
+    kind: Mapped[str] = mapped_column(_enum(PROFILE_KINDS, "profile_kind"), default="self", server_default="self", nullable=False)
     offer_seen: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0", nullable=False)   # предложение своей подборки приглашённому: 0 не показывали, 1 показали («Потом»), 2 повтор показан или «Не нужно»
 
     # Когда повторить предложение онбординга приглашённому: день события по приглашению + 1 (ставит принятие going/maybe, один раз)
     offer_due: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    account: Mapped[Account] = relationship(back_populates="profiles")
     decisions: Mapped[list["Decision"]] = relationship(back_populates="profile", cascade="all, delete-orphan")
     digests: Mapped[list["Digest"]] = relationship(back_populates="profile", cascade="all, delete-orphan")
 
@@ -261,3 +276,16 @@ class GrowthEvent(Base):
     # открытия не множили знаменатели метрик. Удаляется вместе со строкой, когда человек даёт согласие (появляется invite_accepts).
     visitor: Mapped[str | None] = mapped_column(String(16), index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EmailToken(Base):
+    """Одноразовая ссылка-вход по почте (15 минут). Токен хранится хешем; почта привязывается к аккаунту при подтверждении."""
+    __tablename__ = "email_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(254), nullable=False)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id", ondelete="CASCADE"), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

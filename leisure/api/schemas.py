@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from leisure.core.catalog import (ALL_CATS, AREA_OPTIONS, COMPANY_OPTIONS, DECISION_STATUSES, KNOWN_TAGS, REASONS, SLOTS,
+from leisure.core.catalog import (ALL_CATS, AREA_OPTIONS, COMPANY_OPTIONS, DECISION_ALIASES, DECISION_STATUSES, KNOWN_TAGS, REASONS, SLOTS,
                                   VALUES)
 
 AFFINITY_MAX = 100.0
@@ -89,6 +89,7 @@ class ParamsIn(BaseModel):
     company: str | None = None
     times: list[str] | None = Field(default=None, max_length=4)
     areas: list[str] | None = Field(default=None, max_length=12)
+    travel_minutes: int | None = Field(default=None, ge=0, le=240)         # время в пути: на сегодня лента прячет старты раньше now + это (по умолчанию 40)
     interests_basis: list[str] | None = Field(default=None, max_length=5)   # служебное: пятёрка, от которой посчитаны интересы
     nudge_budget: bool | None = None                                         # служебное: подсказка про бюджет уже показана
 
@@ -162,7 +163,7 @@ class ProfileIn(BaseModel):
     digest_hour: int | None = Field(default=None, ge=0, le=23)
     ref_code: str | None = Field(default=None, max_length=8, description="код рекомендации/приглашения из start_param: новому человеку ставит source и referred_by")
     show_name: bool | None = None         # показывать ли имя друзьям (приглашения)
-    can_write: bool | None = None         # бот может писать человеку (Mini App: после requestWriteAccess true)
+    can_write: bool | None = None         # человек разрешил push (веб ставит после диалога разрешения)
     offer_seen: int | None = Field(default=None, ge=0, le=2)   # предложение своей подборки приглашённому: 0 / 1 («Потом») / 2 (повтор показан)
     consent: bool | None = None
     onboarded: bool | None = None  # бот ставит в конце онбординга; иначе считаем по шагу «интересы»
@@ -205,6 +206,8 @@ class ProfileIn(BaseModel):
 
 class ProfileOut(BaseModel):
     user_id: int
+    account_id: int = 0               # аккаунт (версия 2): у основного профиля равен user_id
+    kind: str = "self"                # self | parent | child | other
     name: str
     username: str
     city: str
@@ -223,6 +226,7 @@ class ProfileOut(BaseModel):
     show_name: bool = True
     can_write: bool = True
     offer_seen: int = 0
+    email: str | None = None          # почта аккаунта (вход на другом устройстве) или null
     offer_due: str | None = None      # YYYY-MM-DD: когда повторить предложение онбординга приглашённому (день события + 1) или null
     has_consent: bool = False         # согласие на обработку данных дано: веб зовёт /open только при нём
     source: str = "organic"
@@ -240,6 +244,7 @@ class DecisionIn(BaseModel):
     @field_validator("status")
     @classmethod
     def _status(cls, v):
+        v = DECISION_ALIASES.get(v, v)          # going/maybe/not_mine/went/skipped → русские статусы
         if v not in DECISION_STATUSES:
             raise ValueError(f"status должен быть одним из {DECISION_STATUSES}")
         return v
@@ -274,18 +279,21 @@ class DigestOut(BaseModel):
 
 class PlanItemOut(BaseModel):
     event: EventOut
-    status: str
+    status: str                     # иду | может | сходил | не сходил
     day: str
+    rating: int | None = None       # оценка 1–5 (после «сходил»)
     conflict: bool = False
     companions: list[str] = []      # с кем идёт по приглашениям («вдвоём с Имя»); скрытое имя — «другом»
     links: LinksOut
 
 
 class PlanOut(BaseModel):
-    weekend: list[str]
+    weekend: list[str]              # окно плана: 7 дней от сегодня (имя поля историческое)
+    today: str
     title: str
     days: dict[str, list[PlanItemOut]]
-    horizon: list[PlanItemOut]
+    horizon: list[PlanItemOut]      # «иду»/«может» дальше недели
+    past: list[PlanItemOut]         # прошедшие (до 30 дней): для отметок «сходил / не сходил» и оценки, новые сверху
     text: str
 
 
@@ -299,8 +307,8 @@ class InviteCreateIn(BaseModel):
 class InviteCreatedOut(BaseModel):
     code: str
     kind: str
-    url: str | None                     # https://t.me/<бот>/<app>?startapp=inv_<код>; null, пока не заданы бот и MINIAPP_SHORT_NAME
-    web_url: str                        # <WEB_BASE_URL>/e/<slug>?inv=<код>
+    url: str                            # <WEB_BASE_URL>/e/<slug>?inv=<код> (рекомендация — <WEB_BASE_URL>/?ref=<код>)
+    web_url: str                        # то же, что url (оставлено для совместимости)
     share_text: str                     # от первого лица, со ссылкой: для «Поделиться» и «Скопировать»
 
 
@@ -351,3 +359,71 @@ class CatalogOut(BaseModel):
     proposed_top: int = 5
     value_clusters: dict[str, list[str]] = {}
     value_short: dict[str, str] = {}
+
+
+# ─── продукт без Telegram (docs/PIVOT-PWA.md, версия 2): гостевая сессия, профили аккаунта, лента, вход по почте ───
+class SessionOut(BaseModel):
+    user_id: int                      # идентификатор гостя = id аккаунта = user_id основного профиля; профиль создаётся первым PUT /api/profile с consent
+
+
+class ProfileCreateIn(BaseModel):
+    user_id: int | None = None        # любой профиль аккаунта (обычно основной); можно заголовком X-User-Id
+    name: str = Field(min_length=1, max_length=200)
+    kind: str = Field(default="other", pattern="^(self|parent|child|other)$")
+
+
+class ProfileSummaryOut(BaseModel):
+    user_id: int
+    name: str
+    kind: str
+    onboarded: bool
+    is_main: bool                     # user_id == id аккаунта
+
+
+class ProfilesOut(BaseModel):
+    account_id: int
+    email: str | None
+    profiles: list[ProfileSummaryOut]
+
+
+class FeedItemOut(BaseModel):
+    event: EventOut
+    day: str                          # первый день окна, на который успеваешь
+    days: list[str]                   # все подходящие дни окна
+    score: int
+    why: list[WhyOut]                 # для «что я о тебе узнал»; в ленте v2 не показывается
+    can_make_it: bool                 # на сегодня: старт не раньше now + travel_minutes
+    links: LinksOut
+    decision: DecisionOut | None = None
+
+
+class FeedOut(BaseModel):
+    user_id: int
+    date: str                         # как запросили: today | tomorrow | week | YYYY-MM-DD
+    days: list[str]                   # дни окна
+    today: str
+    segment: str
+    travel_minutes: int
+    items: list[FeedItemOut]
+
+
+class EmailAuthIn(BaseModel):
+    user_id: int | None = None
+    email: str = Field(max_length=254)
+
+
+class EmailAuthOut(BaseModel):
+    user_id: int                      # аккаунт (его основной профиль), к которому веб привязывает сессию
+    account_id: int
+    email: str
+    moved: bool                       # true — почта уже была у другого аккаунта, сессию нужно перенести на него
+
+
+class RefAskOut(BaseModel):
+    url: str                          # ссылка-рекомендация на веб
+    share_text: str                   # от первого лица, со ссылкой (T-REF-SHARE)
+
+
+class DecisionPostOut(DecisionOut):
+    ref_ask: RefAskOut | None = None  # оценка 4–5 и не чаще раза в 14 дней: показать экран рекомендации
+    ask_reason: bool = False          # оценка 1–2: спросить, что было не так (причины как у «Мимо»)

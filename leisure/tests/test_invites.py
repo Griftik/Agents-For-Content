@@ -1,7 +1,7 @@
 """Рост через друзей (docs/GROWTH.md): приглашения в Mini App через API §6, уведомления пригласившему, «вдвоём с Имя», «Как прошло?»
 обоим, момент рекомендации в боте, ref-коды, show_name / can_write / offer_seen. Нужны БД с seed; id — от pid (tests/ids.py)."""
 import os
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import func, select, text
@@ -9,20 +9,29 @@ from sqlalchemy import func, select, text
 from leisure import settings
 from leisure.api import invites as inv_service
 from leisure.api import services
+from leisure.core.timeutil import day_phrase
 from leisure.db.models import Decision, GrowthEvent, Invite, InviteAccept, Profile
 from leisure.db.session import engine, session_factory
-from leisure.worker import messages as msg
-from leisure.worker import schedules
-from leisure.worker import send as send_mod
-from leisure.worker.send import SendResult
-
-from .chat import Chat
 from .ids import user_id
 
 H = {"X-API-Key": "test-key"}
 INVITER, F1, F2, F3, F4, F5, STRANGER = (user_id(n) for n in (60, 61, 62, 63, 64, 65, 66))
 ALL = (INVITER, F1, F2, F3, F4, F5, STRANGER)
-DAY = "2026-10-24"
+
+
+def _pick_days() -> tuple[str, str, str]:
+    """Два подряд идущих будущих дня, на которые в seed есть одно и то же событие (статусы приглашений считаются от реальной даты)."""
+    try:
+        with engine().connect() as c:
+            row = c.execute(text("select d::date from events e, unnest(e.dates) d where e.status = 'published' and d > current_date "
+                                 "and (d + 1) = any(e.dates) order by d limit 1")).first()
+        d0 = row[0]
+    except Exception:  # noqa: BLE001
+        d0 = date(2026, 10, 31)
+    return d0.isoformat(), (d0 + timedelta(days=1)).isoformat(), (d0 + timedelta(days=2)).isoformat()
+
+
+DAY, DAY1, DAY2 = _pick_days()
 
 
 def _db_ok() -> bool:
@@ -48,8 +57,6 @@ def client(db, monkeypatch):
 
     from leisure.api.main import app
 
-    monkeypatch.setattr(settings, "BOT_USERNAME", "dosug_bot")
-    monkeypatch.setattr(settings, "MINIAPP_SHORT_NAME", "app")
     for u in ALL:
         services.delete_profile(db, u)
     p = services.get_or_create_profile(db, INVITER, "Аня Иванова", "anya")
@@ -63,22 +70,21 @@ def client(db, monkeypatch):
 @pytest.fixture
 def event(db):
     from leisure.db.models import Event
-    return db.scalars(select(Event).where(Event.status == "published", text("dates @> ARRAY['2026-10-24','2026-10-25']::date[]"))
+    return db.scalars(select(Event).where(Event.status == "published", text(f"dates @> ARRAY['{DAY}','{DAY1}']::date[]"))
                       .order_by(Event.slug).limit(1)).one()
 
 
 @pytest.fixture
-def sent(monkeypatch):
-    """Перехват отправки бота: список (user_id, text, rows); результат успешный."""
-    out: list[tuple] = []
+def sent():
+    """Версия 2: отдельного канала уведомлений нет. Фикстура оставлена, чтобы не трогать сигнатуры: всегда пустой список."""
+    return []
 
-    def fake(msgs):
-        out.extend(msgs)
-        return SendResult(len(msgs), [], [])
 
-    monkeypatch.setattr(send_mod, "send_sync", fake)
-    monkeypatch.setattr(schedules, "send_sync", fake)
-    return out
+def _notified(db, code: str) -> int:
+    """Сколько принявших отмечено notified_at (пригласивший увидит «идёт с тобой» в плане)."""
+    db.expire_all()
+    inv = db.scalar(select(Invite).where(Invite.code == code))
+    return sum(1 for a in inv.accepts if a.notified_at is not None)
 
 
 def _create(client, event, user=INVITER, day=DAY, **extra):
@@ -97,12 +103,12 @@ def test_create_invite_returns_code_urls_and_first_person_text(client, event):
     out = _create(client, event)
     code = out["code"]
     assert len(code) == 8 and set(code) <= set(inv_service.CODE_ALPHABET) and not set(code) & set("01ILOU")
-    assert out["url"] == f"https://t.me/dosug_bot/app?startapp=inv_{code}"
+    assert out["url"] == f"http://localhost:3000/e/{event.slug}?inv={code}" and out["web_url"] == out["url"]
     assert out["web_url"].endswith(f"/e/{event.slug}?inv={code}")
     assert out["share_text"].startswith("Иду на «") and out["share_text"].endswith(f"Пойдёшь со мной? {out['url']}") and len(out["share_text"]) <= 300
-    assert "суббота, 24 окт" in out["share_text"]
+    assert day_phrase(DAY) in out["share_text"]
     assert _create(client, event)["code"] == code                              # повтор: тот же код
-    assert _create(client, event, day="2026-10-25")["code"] != code           # другой день — другое приглашение
+    assert _create(client, event, day=DAY1)["code"] != code           # другой день — другое приглашение
     r = client.post("/api/invites", headers={**H, "X-User-Id": str(INVITER)}, json={"event_slug": event.slug, "day": DAY})
     assert r.status_code == 200 and r.json()["code"] == code                  # user_id заголовком сервера веба
     assert client.post("/api/invites", headers=H, json={"user_id": INVITER, "event_slug": "net-takogo"}).status_code == 404
@@ -181,12 +187,12 @@ def test_accept_needs_consent_creates_profile_and_is_idempotent(client, db, even
     assert again.status_code == 200 and again.json()["decision"] == body["decision"]
     inv = db.scalar(select(Invite).where(Invite.code == code))
     db.refresh(inv)
-    assert (inv.opened, inv.accepted) == (1, 1) and len(sent) == 1                          # счётчики и уведомление не дублируются
+    assert (inv.opened, inv.accepted) == (1, 1) and _notified(db, code) == 1                          # счётчики и уведомление не дублируются
     assert client.get(f"/api/invites/{code}", headers=H, params={"user_id": F1}).json()["my_status"] == "going"
     # «может» → «иду»: решение меняется, уведомление уходит один раз (только на «иду»)
-    assert _accept(client, code, F2, status="maybe").json()["decision"]["status"] == "может" and len(sent) == 1
-    assert _accept(client, code, F2, status="going").json()["decision"]["status"] == "иду" and len(sent) == 2
-    assert _accept(client, code, F2, status="going").status_code == 200 and len(sent) == 2
+    assert _accept(client, code, F2, status="maybe").json()["decision"]["status"] == "может" and _notified(db, code) == 1
+    assert _accept(client, code, F2, status="going").json()["decision"]["status"] == "иду" and _notified(db, code) == 2
+    assert _accept(client, code, F2, status="going").status_code == 200 and _notified(db, code) == 2
     db.refresh(inv)
     assert inv.accepted == 2
     assert _accept(client, code, INVITER).status_code == 400                               # своё приглашение
@@ -206,240 +212,7 @@ def test_existing_onboarded_profile_keeps_source(client, db, event, sent):
     r = _accept(client, code, F1, consent=False)
     assert r.status_code == 200 and r.json()["profile_state"] == "onboarded"
     db.expire_all()
-    assert db.get(Profile, F1).source == "organic" and db.get(Profile, F1).referred_by is None and db.get(Profile, F1).can_write is True
-
-
-# ── уведомление пригласившему ──
-def test_inviter_gets_notification_with_name_or_friend(client, db, event, sent):
-    code = _create(client, event)["code"]
-    _accept(client, code, F1, name="Борис Петров")
-    uid, body, rows = sent[0]
-    assert uid == INVITER and body == f"Борис идёт с тобой: «{event.title}», суббота, 24 окт." and rows == [[{"text": "Мой план", "callback_data": "pl:s"}]]
-    client.put(f"/api/profile/{F2}", headers=H, json={"show_name": False, "name": "Скрытый"})   # профиль создаёт PUT, как в вебе
-    _accept(client, code, F2, name="Скрытый")
-    client.put(f"/api/profile/{F2}", headers=H, json={"show_name": False})
-    # show_name выключен ДО принятия: «Друг идёт с тобой»
-    code2 = _create(client, event, day="2026-10-25")["code"]
-    _accept(client, code2, F2, name="Скрытый")
-    assert sent[-1][1].startswith("Друг идёт с тобой: «")
-
-
-def test_failed_send_does_not_break_accept_and_worker_retries(client, db, event, monkeypatch):
-    calls = []
-
-    def boom(msgs):
-        calls.append(msgs)
-        raise RuntimeError("Telegram недоступен")
-
-    monkeypatch.setattr(send_mod, "send_sync", boom)
-    code = _create(client, event)["code"]
-    assert _accept(client, code, F1).status_code == 200                                    # принятие не сломалось
-    db.expire_all()
-    acc = db.scalar(select(InviteAccept).where(InviteAccept.user_id == F1))
-    assert acc.status == "going" and acc.notified_at is None
-    got = []
-    monkeypatch.setattr(send_mod, "send_sync", lambda m: (got.extend(m), SendResult(len(m), [], []))[1])
-    assert inv_service.notify_inviter(db, acc.invite, F1) is True and got[0][0] == INVITER
-    db.refresh(acc)
-    assert acc.notified_at is not None
-    assert inv_service.notify_inviter(db, acc.invite, F1) is False and len(got) == 1       # второй раз не шлём
-
-
-def test_first_three_friends_one_by_one_then_daily_summary(client, db, event, sent):
-    from datetime import datetime, timedelta, timezone
-
-    code = _create(client, event)["code"]
-    friends = [F1, F2, F3, F4, F5]
-    for i, f in enumerate(friends):
-        _accept(client, code, f, name=f"Друг{i}")
-    assert len(sent) == 3 and all("идёт с тобой: «" in m[1] and not m[1].startswith("Ещё") for m in sent)   # 4-й и 5-й копятся
-    t9 = datetime(2026, 10, 24, 6, 0, tzinfo=timezone.utc)                                 # 09:00 МСК — рано: после утреннего плана
-    assert inv_service.notify_many(db, t9, inviter_id=INVITER) == 0 and len(sent) == 3
-    t10 = datetime(2026, 10, 24, 7, 5, tzinfo=timezone.utc)                                # 10:05 МСК
-    assert inv_service.notify_many(db, t10, inviter_id=INVITER) == 1
-    assert sent[-1][1] == f"Ещё 2 друга идут с тобой: «{event.title}», суббота, 24 окт." and sent[-1][2] == [[{"text": "Мой план", "callback_data": "pl:s"}]]
-    assert inv_service.notify_many(db, t10 + timedelta(minutes=1), inviter_id=INVITER) == 0 and len(sent) == 4        # в тот же день больше нет
-    f6 = user_id(67)
-    try:
-        _accept(client, code, f6, name="Ещё")
-        assert len(sent) == 4                                                              # шестой — тоже в сводку, не по одному
-        assert inv_service.notify_many(db, t10 + timedelta(days=1), inviter_id=INVITER) == 1
-        assert sent[-1][1] == f"Ещё 1 друг идёт с тобой: «{event.title}», суббота, 24 окт."
-    finally:
-        services.delete_profile(db, f6)
-
-
-def test_summary_plural_forms():
-    assert msg.invite_joined_many_text(1, "Т", "2026-10-24").startswith("Ещё 1 друг идёт")
-    assert msg.invite_joined_many_text(2, "Т", "2026-10-24").startswith("Ещё 2 друга идут")
-    assert msg.invite_joined_many_text(5, "Т", "2026-10-24").startswith("Ещё 5 друзей идут")
-    assert msg.invite_joined_text(None, "Т", "2026-10-24") == "Друг идёт с тобой: «Т», суббота, 24 окт."
-
-
-# ── can_write: человек из Mini App, которому бот писать не может ──
-def test_friend_without_bot_access_is_skipped_silently_not_deactivated(client, db, event, sent, monkeypatch):
-    from datetime import datetime, timezone
-
-    code = _create(client, event)["code"]
-    services.set_decision(db, INVITER, event, "иду", day=date(2026, 10, 24))
-    _accept(client, code, F1)
-    p_inviter = db.get(Profile, INVITER)
-    assert db.get(Profile, F1).can_write is False and p_inviter.can_write is True
-    forbidden = []
-
-    def blocked(msgs):
-        forbidden.append(msgs)
-        return SendResult(0, list(range(len(msgs))), [msgs[0][0]])
-
-    monkeypatch.setattr(schedules, "send_sync", blocked)
-    monkeypatch.setattr(schedules, "_remindable_profiles", lambda s: [s.get(Profile, F1), s.get(Profile, INVITER)])
-    now = datetime(2026, 10, 24, 6, 30, tzinfo=timezone.utc)                                # 09:30 МСК, день события
-    assert schedules.job_plan_today(now) == 0 and forbidden                                # попытка была, ответ Forbidden
-    db.expire_all()
-    assert db.get(Profile, F1).active is True                                             # не «заблокировал»: профиль остаётся активным
-    assert db.get(Profile, INVITER).active is False                                       # а у настоящего пользователя бота — выключен
-    d = db.scalar(select(Decision).where(Decision.user_id == F1))
-    assert d.reminded_at is not None                                                      # и без повторов каждый час
-    # право выдано (requestWriteAccess) — веб сообщает PUT can_write
-    assert client.put(f"/api/profile/{F1}", headers=H, json={"can_write": True}).json()["can_write"] is True
-
-
-def test_bot_start_gives_can_write(client, db, event):
-    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True})
-    p = db.get(Profile, F1)
-    p.can_write = False
-    db.commit()
-    chat = Chat(F1)
-    chat.say("/start")
-    db.expire_all()
-    assert db.get(Profile, F1).can_write is True
-
-
-# ── план «вдвоём с Имя», «Как прошло?» обоим ──
-def test_plan_together_and_feedback_to_both(client, db, event, sent, monkeypatch):
-    from datetime import datetime, timezone
-
-    code = _create(client, event)["code"]
-    client.put(f"/api/profile/{INVITER}", headers=H, json={})
-    services.set_decision(db, INVITER, event, "иду", day=date(2026, 10, 24))
-    _accept(client, code, F1, name="Борис Петров")
-    mine = client.get(f"/api/plan/{INVITER}", headers=H, params={"today": DAY}).json()
-    theirs = client.get(f"/api/plan/{F1}", headers=H, params={"today": DAY}).json()
-    assert mine["days"][DAY][0]["companions"] == ["Борис"] and theirs["days"][DAY][0]["companions"] == ["Аня"]
-    assert "вдвоём с Борис" in msg.plan_overview_text({**mine, "horizon": []}) and msg.plan_card_text(mine["days"][DAY][0]).count("Вдвоём с Борис.") == 1
-    assert "Вдвоём с Аня." in msg.plan_today_text(theirs, DAY)
-    client.put(f"/api/profile/{F1}", headers=H, json={"show_name": False})
-    # F1 скрыл имя → пригласивший видит «другом»; второй друг → «С друзьями (2)»
-    mine = client.get(f"/api/plan/{INVITER}", headers=H, params={"today": DAY}).json()
-    assert mine["days"][DAY][0]["companions"] == ["другом"]
-    _accept(client, code, F2, name="Вера")
-    assert msg.plan_card_text(client.get(f"/api/plan/{INVITER}", headers=H, params={"today": DAY}).json()["days"][DAY][0]).count("С друзьями (2).") == 1
-    # «План на сегодня» и «Как прошло?» приходят обоим, в том числе не прошедшему онбординг
-    got = []
-    monkeypatch.setattr(schedules, "send_sync", lambda m: (got.extend(m), SendResult(len(m), [], []))[1])
-    monkeypatch.setattr(schedules, "_remindable_profiles", lambda s: [s.get(Profile, INVITER), s.get(Profile, F1)])
-    assert schedules.job_plan_today(datetime(2026, 10, 24, 6, 30, tzinfo=timezone.utc)) == 2
-    assert {m[0] for m in got if "План на сегодня" in m[1]} == {INVITER, F1}
-    got.clear()
-    assert schedules.job_how_was_it(datetime(2026, 10, 25, 9, 5, tzinfo=timezone.utc)) == 2
-    assert {m[0] for m in got if "Как прошло?" in m[1]} == {INVITER, F1}
-
-
-# ── момент рекомендации и низкая оценка (бот) ──
-def _rate_setup(db, event, user=INVITER):
-    services.set_decision(db, user, event, "иду", day=date(2026, 10, 24))
-    chat = Chat(user)
-    return chat, chat.send("Как прошло?", msg.rating_keyboard(str(event.id)))
-
-
-def test_ref_ask_after_4_5_once_in_14_days(client, db, event):
-    from datetime import datetime, timedelta, timezone
-
-    chat, mid = _rate_setup(db, event)
-    chat.tap(mid, "5 ★")
-    ask = chat.world.last_bot_message(INVITER)
-    assert ask.text == "Рад, что зашло. Если есть кому посоветовать такие выходные, вот ссылка."
-    btn = ask.buttons()[0]
-    assert btn["text"] == "Поделиться" and btn["url"].startswith("https://t.me/share/url?") and "startapp%3Dref_" in btn["url"]
-    n = len(chat.world.chats[INVITER])
-    chat.tap(mid, "4 ★")                                                                  # снова хорошая оценка: рано
-    assert len(chat.world.chats[INVITER]) == n
-    row = db.scalars(select(GrowthEvent).where(GrowthEvent.user_id == INVITER, GrowthEvent.kind == "ref_ask")).all()
-    assert len(row) == 1
-    row[0].created_at = datetime.now(timezone.utc) - timedelta(days=15)
-    db.commit()
-    chat.tap(mid, "5 ★")
-    assert chat.world.last_bot_message(INVITER).text.startswith("Рад, что зашло")
-    assert db.scalar(select(Invite).where(Invite.inviter_id == INVITER, Invite.kind == "ref")) is not None
-    n = len(chat.world.chats[INVITER])
-    chat.tap(mid, "3 ★")                                                                  # тройка: ничего
-    assert len(chat.world.chats[INVITER]) == n
-
-
-def test_low_rating_asks_what_was_wrong_with_reasons(client, db, event):
-    chat, mid = _rate_setup(db, event)
-    chat.tap(mid, "2 ★")
-    q = chat.world.last_bot_message(INVITER)
-    assert q.text == "Жаль, что не зашло. Что было не так? Это необязательно."
-    assert [b["text"] for r in q.rows for b in r] == ["Не моё", "Дорого", "Далеко", "Уже был", "Ещё…"]
-    assert not any("startapp=ref" in b.get("url", "") for m in chat.world.chats[INVITER] for b in m.buttons())   # рекомендацию не просим
-    chat.tap(q.mid, "Ещё…")
-    assert [b["text"] for r in chat.world.get(INVITER, q.mid).rows for b in r] == ["Не то время", "Не та компания"]
-    assert chat.tap(q.mid, "Не то время") == "Учту."
-    d = db.scalar(select(Decision).where(Decision.user_id == INVITER))
-    db.refresh(d)
-    assert d.reason == "не в это время" and d.status == "иду" and d.rating == 2             # статус и оценка на месте
-    assert chat.world.get(INVITER, q.mid).rows is None
-
-
-# ── ref-коды и источник профиля ──
-def test_ref_link_sets_source_via_api_and_bot_start(client, db):
-    ref = client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()
-    assert ref["url"] == f"https://t.me/dosug_bot/app?startapp=ref_{ref['code']}" and "Попробуй: " in ref["share_text"]
-    assert client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()["code"] == ref["code"]
-    # человек без согласия: /open профиль не создаёт, источник проставит PUT /api/profile с ref_code
-    r = client.post(f"/api/invites/{ref['code']}/open", headers=H, json={"user_id": F1, "name": "Гость"})
-    assert r.status_code == 200
-    db.expire_all()
-    assert db.get(Profile, F1) is None
-    client.put(f"/api/profile/{F1}", headers=H, json={"name": "Гость", "ref_code": ref["code"]})
-    db.expire_all()
-    p = db.get(Profile, F1)
-    assert p.source == "ref" and p.referred_by == INVITER and p.can_write is False and p.consent_at is None
-    client.post(f"/api/invites/{ref['code']}/open", headers=H, json={"user_id": F1})        # повтор безвреден
-    assert db.scalar(select(Invite).where(Invite.code == ref["code"])).opened == 1
-    # бот: /start ref_<код> — тот же эффект для нового человека, обычный онбординг
-    chat = Chat(F2)
-    chat.say(f"/start ref_{ref['code']}")
-    db.expire_all()
-    assert db.get(Profile, F2).source == "ref" and db.get(Profile, F2).referred_by == INVITER
-    assert chat.last_text().startswith("Я подбираю события")
-    chat.say(f"/start ref_{ref['code']}")                                                  # не накручивается
-    assert db.scalar(select(Invite).where(Invite.code == ref["code"])).opened == 2          # F1 по PUT, F2 в боте
-    # своя ссылка и чужой формат источник не меняют
-    chat3 = Chat(INVITER)
-    chat3.say(f"/start ref_{ref['code']}")
-    assert db.get(Profile, INVITER).source == "organic"
-    chat4 = Chat(F3)
-    chat4.say("/start ref_NOSUCH00")
-    assert db.get(Profile, F3).source == "organic"
-
-
-def test_deeplink_to_event_marks_share_source(client, db, event):
-    chat = Chat(F4)
-    chat.say(f"/start e_{event.slug}")
-    db.expire_all()
-    assert db.get(Profile, F4).source == "share"
-
-
-def test_ref_joined_on_consent_counts_as_accepted(client, db):
-    ref = client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()
-    chat = Chat(F2)
-    chat.say(f"/start ref_{ref['code']}")
-    chat.tap(chat.last_mid(), "Принять и начать")
-    inv = db.scalar(select(Invite).where(Invite.code == ref["code"]))
-    db.refresh(inv)
-    assert inv.opened == 1 and inv.accepted == 1
+    assert db.get(Profile, F1).source == "organic" and db.get(Profile, F1).referred_by is None and db.get(Profile, F1).can_write is False
 
 
 # ── профиль: show_name / can_write / offer_seen ──
@@ -486,10 +259,8 @@ def test_inviter_deleted_gives_gone_status_and_friend_can_still_accept(client, d
     db.expire_all()
     d = db.scalar(select(Decision).where(Decision.user_id == F1))
     assert d.status == "иду" and d.invite_id is not None and db.get(Profile, F1).referred_by is None
-    n = len(sent)
     r = _accept(client, code, F2)
     assert r.status_code == 200 and r.json()["together_with"] is None and r.json()["decision"]["status"] == "иду"
-    assert len(sent) == n                                                      # уведомлять некого
     assert services.companion_names(db, F2, db.scalar(select(Decision).where(Decision.user_id == F2))) == []
     db.expire_all()
     assert db.get(Profile, F2).source == "invite" and db.get(Profile, F2).referred_by is None
@@ -506,11 +277,11 @@ def test_declined_records_without_decision_or_consent(client, db, event, sent):
     assert db.scalar(select(Decision).where(Decision.user_id == F1)) is None
     ev = db.scalars(select(GrowthEvent).where(GrowthEvent.kind == "invite_declined", GrowthEvent.invite_code == code)).all()
     assert len(ev) == 1 and ev[0].user_id is None
-    assert db.scalar(select(Invite).where(Invite.code == code)).accepted == 0 and not sent
+    assert db.scalar(select(Invite).where(Invite.code == code)).accepted == 0 and _notified(db, code) == 0
     assert _accept(client, code, F1, status="declined", consent=False).status_code == 200            # повтор безвреден
     assert db.get(Profile, F1) is None
     # человек с согласием: запись declined создаётся
-    p3 = services.get_or_create_profile(db, F3, "Согласная", "s", via_bot=False)
+    p3 = services.get_or_create_profile(db, F3, "Согласная", "s")
     services.update_profile(db, p3, {"consent": True})
     assert _accept(client, code, F3, status="declined", consent=False).json()["decision"] is None
     db.expire_all()
@@ -608,7 +379,7 @@ def test_open_without_consent_creates_no_profile_and_counts_in_growth_events(cli
     assert db.get(Profile, F1).consent_at is not None and acc.was_new is True and acc.status == "going"
     assert _anon_opens(db, code) == 1                                   # F1 теперь считается по invite_accepts, его строка журнала снята
     # человек с согласием: открытие учитывается как раньше (InviteAccept), журнал не растёт
-    p = db.get(Profile, F4) or services.get_or_create_profile(db, F4, "Дарья", "d", via_bot=False)
+    p = db.get(Profile, F4) or services.get_or_create_profile(db, F4, "Дарья", "d")
     services.update_profile(db, p, {"consent": True})
     client.post(f"/api/invites/{code}/open", headers=H, json={"user_id": F4})
     db.expire_all()
@@ -646,15 +417,15 @@ def test_accept_sets_offer_due_to_event_day_plus_one_once(client, db, event, sen
     assert _accept(client, code, F1, status="declined", consent=False).status_code == 200
     assert client.get(f"/api/profile/{F1}", headers=H).status_code == 404                     # отказ профиль и срок не создаёт
     assert _accept(client, code, F1, status="maybe").status_code == 200
-    assert client.get(f"/api/profile/{F1}", headers=H).json()["offer_due"] == "2026-10-25"
-    other = _create(client, event, day="2026-10-25")["code"]
+    assert client.get(f"/api/profile/{F1}", headers=H).json()["offer_due"] == DAY1
+    other = _create(client, event, day=DAY1)["code"]
     assert _accept(client, other, F1).status_code == 200
-    assert client.get(f"/api/profile/{F1}", headers=H).json()["offer_due"] == "2026-10-25"    # не сдвигается
+    assert client.get(f"/api/profile/{F1}", headers=H).json()["offer_due"] == DAY1    # не сдвигается
     assert _accept(client, other, F2).status_code == 200
-    assert client.get(f"/api/profile/{F2}", headers=H).json()["offer_due"] == "2026-10-26"
+    assert client.get(f"/api/profile/{F2}", headers=H).json()["offer_due"] == DAY2
     # PUT offer_seen работает как раньше, offer_due им не трогается
     r = client.put(f"/api/profile/{F2}", headers=H, json={"offer_seen": 1}).json()
-    assert r["offer_seen"] == 1 and r["offer_due"] == "2026-10-26"
+    assert r["offer_seen"] == 1 and r["offer_due"] == DAY2
 
 
 def _gm(client):
@@ -666,7 +437,7 @@ def test_growth_metrics_count_openers_without_consent_in_denominators(client, db
     code = _create(client, event)["code"]
     ref = client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()["code"]
     # человек с профилем и согласием (не новый)
-    p4 = services.get_or_create_profile(db, F4, "Дарья", "d", via_bot=False)
+    p4 = services.get_or_create_profile(db, F4, "Дарья", "d")
     services.update_profile(db, p4, {"consent": True})
     before = _gm(client)
     op = lambda u, c=code: client.post(f"/api/invites/{c}/open", headers=H, json={"user_id": u})   # noqa: E731
@@ -684,80 +455,73 @@ def test_growth_metrics_count_openers_without_consent_in_denominators(client, db
     assert rec[0] - before["recommendation"][0] == 1 and rec[1] == before["recommendation"][1]
 
 
-# ── ТЗ-11: Шаг 1 для профиля из Mini App, HTML в уведомлениях, /start w_<код> ──
-def test_start_after_miniapp_consent_opens_step_one_with_values_unset(client, db):
-    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True, "name": "Из Mini App"})
-    assert services.get_profile(db, F1).values or True
-    chat = Chat(F1)
-    chat.say("/start")
-    txt = chat.last_text()
-    assert "Шаг 1 из 2" in txt and "Шаг 2 из 2" not in txt
-    assert not any(b["text"] == "Дальше →" for r in chat.world.get(F1, chat.last_mid()).rows for b in r)   # пять по умолчанию не выбраны
+# ── версия 2: «идёт с тобой» в плане, момент рекомендации и низкая оценка через API, ref-коды без бота ──
+def test_plan_shows_companions_for_both_sides(client, db, event):
+    code = _create(client, event)["code"]
+    services.set_decision(db, INVITER, event, "иду", day=date.fromisoformat(DAY))
+    assert _accept(client, code, F1, name="Борис Петров").status_code == 200
+    mine = client.get(f"/api/plan/{INVITER}", headers=H, params={"today": DAY}).json()
+    theirs = client.get(f"/api/plan/{F1}", headers=H, params={"today": DAY}).json()
+    assert mine["days"][DAY][0]["companions"] == ["Борис"] and theirs["days"][DAY][0]["companions"] == ["Аня"]
+    assert _notified(db, code) == 1
+    client.put(f"/api/profile/{F1}", headers=H, json={"show_name": False})
+    mine = client.get(f"/api/plan/{INVITER}", headers=H, params={"today": DAY}).json()
+    assert mine["days"][DAY][0]["companions"] == ["другом"]
+    _accept(client, code, F2, name="Вера")
+    assert client.get(f"/api/plan/{INVITER}", headers=H, params={"today": DAY}).json()["days"][DAY][0]["companions"] == ["другом", "Вера"]
+
+
+def _rate(client, user, event, n):
+    return client.post("/api/decisions", headers=H, json={"user_id": user, "event": event.slug, "status": "went", "rating": n,
+                                                          "day": "2026-10-24"})
+
+
+def test_rating_4_5_gives_ref_ask_once_in_14_days_and_low_rating_asks_reason(client, db, event, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    services.set_decision(db, INVITER, event, "иду", day=date(2026, 10, 24))
+    r = _rate(client, INVITER, event, 5).json()
+    assert r["status"] == "сходил" and r["rating"] == 5 and r["ask_reason"] is False
+    assert r["ref_ask"]["url"].startswith("http://localhost:3000/?ref=") and r["ref_ask"]["share_text"].endswith(r["ref_ask"]["url"])
+    assert db.scalar(select(GrowthEvent).where(GrowthEvent.user_id == INVITER, GrowthEvent.kind == "ref_ask")) is not None
+    assert _rate(client, INVITER, event, 4).json()["ref_ask"] is None                     # снова хорошая оценка: рано
+    monkeypatch.setattr(inv_service, "REF_ASK_EVERY", timedelta(seconds=0))
+    assert _rate(client, INVITER, event, 5).json()["ref_ask"] is not None                 # прошло 14 дней — снова можно
+    assert _rate(client, INVITER, event, 3).json()["ref_ask"] is None
+    low = _rate(client, INVITER, event, 2).json()
+    assert low["ask_reason"] is True and low["ref_ask"] is None
+    r = client.post("/api/decisions", headers=H, json={"user_id": INVITER, "event": event.slug, "status": "went", "rating": 2,
+                                                       "reason": "не в это время", "day": "2026-10-24"}).json()
+    d = db.scalar(select(Decision).where(Decision.user_id == INVITER))
+    db.refresh(d)
+    assert d.status == "сходил" and d.rating == 2 and r["status"] == "сходил"
+    # «сходил» / «не сходил» раньше дня события нельзя
+    assert client.post("/api/decisions", headers=H, json={"user_id": INVITER, "event": event.slug, "status": "skipped",
+                                                          "day": "2099-01-01"}).status_code == 400
+
+
+def test_ref_link_sets_source_via_put_and_consent_counts_as_joined(client, db):
+    ref = client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()
+    assert ref["url"] == f"http://localhost:3000/?ref={ref['code']}" and ref["web_url"] == ref["url"] and "Попробуй: " in ref["share_text"]
+    assert client.post("/api/invites", headers=H, json={"user_id": INVITER, "kind": "ref"}).json()["code"] == ref["code"]
+    # человек без согласия: /open профиль не создаёт, источник ставит PUT /api/profile с ref_code
+    assert client.post(f"/api/invites/{ref['code']}/open", headers=H, json={"user_id": F1, "name": "Гость"}).status_code == 200
+    db.expire_all()
+    assert db.get(Profile, F1) is None
+    client.put(f"/api/profile/{F1}", headers=H, json={"name": "Гость", "ref_code": ref["code"]})
     db.expire_all()
     p = db.get(Profile, F1)
-    assert not [v for v, w in (p.values or {}).items() if w == 5] and p.onboarded_at is None
-    # дальше обычный путь: пятое значение открывает Шаг 2
-    mid = chat.last_mid()
-    for label in ("Творчество", "Забота", "Развитие", "Свобода", "Семья"):
-        chat.tap(mid, label)
-    assert "Шаг 2 из 2" in chat.last_text()
-
-
-def test_start_with_chosen_values_still_continues_on_step_two(client, db):
-    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True})
-    chat = Chat(F1)
-    chat.say("/start")
-    mid = chat.last_mid()
-    for label in ("Творчество", "Забота", "Развитие", "Свобода", "Семья"):
-        chat.tap(mid, label)
-    chat2 = Chat(F1)
-    chat2.say("/start")
-    assert "Шаг 2 из 2" in chat2.last_text()
-
-
-def test_notifications_escape_html_in_title_and_name():
-    t = msg.invite_joined_text("Б&<Борис", "Рок & <Ролл>", DAY)
-    assert "Б&amp;&lt;Борис" in t and "Рок &amp; &lt;Ролл&gt;" in t and "<Ролл>" not in t
-    many = msg.invite_joined_many_text(2, "Рок & <Ролл>", DAY)
-    assert "&amp;" in many and "&lt;Ролл&gt;" in many and "<Ролл>" not in many
-    assert msg.invite_joined_text(None, "A", None).startswith("Друг идёт с тобой")
-
-
-def test_accept_notification_is_escaped_end_to_end(client, db, event, sent):
-    old = event.title
-    event.title = "Рок & <Ролл>"
-    db.commit()
-    try:
-        code = _create(client, event)["code"]
-        assert _accept(client, code, F1, name="Б&<Борис").status_code == 200
-        assert len(sent) == 1 and "Б&amp;&lt;Борис" in sent[0][1] and "Рок &amp; &lt;Ролл&gt;" in sent[0][1]
-        assert "<Ролл>" not in sent[0][1]
-    finally:
-        event.title = old
-        db.commit()
-
-
-def test_start_w_code_gives_write_access_and_short_reply_when_consent_exists(client, db, event):
-    code = _create(client, event)["code"]
-    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True, "name": "Гость"})
-    assert db.get(Profile, F1).can_write is False
-    chat = Chat(F1)
-    chat.say(f"/start w_{code}")
-    assert chat.last_text() == "Готово: план будет приходить в Telegram."
-    assert len([m for m in chat.world.chats[F1] if not m.from_user]) == 1       # один ответ бота, онбординга нет
+    assert p.source == "ref" and p.referred_by == INVITER and p.consent_at is None
+    inv = db.scalar(select(Invite).where(Invite.code == ref["code"]))
+    assert inv.opened == 1 and inv.accepted == 0
+    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True})                   # согласие: пришедший по ссылке принят
+    db.refresh(inv)
+    assert inv.accepted == 1
+    client.put(f"/api/profile/{F1}", headers=H, json={"consent": True, "ref_code": ref["code"]})   # повтор не накручивает
+    db.refresh(inv)
+    assert (inv.opened, inv.accepted) == (1, 1)
+    # свой код и чужой формат источник не меняют
+    client.put(f"/api/profile/{INVITER}", headers=H, json={"ref_code": ref["code"]})
+    client.put(f"/api/profile/{F3}", headers=H, json={"ref_code": "NOSUCH00"})
     db.expire_all()
-    assert db.get(Profile, F1).can_write is True and db.get(Profile, F1).onboarded_at is None
-    ev = db.scalars(select(GrowthEvent).where(GrowthEvent.user_id == F1, GrowthEvent.kind == "write_access")).all()
-    assert len(ev) == 1 and ev[0].invite_code == code
-    # неизвестный код: тот же ответ, в журнал ничего
-    chat2 = Chat(F2)
-    client.put(f"/api/profile/{F2}", headers=H, json={"consent": True})
-    chat2.say("/start w_NOSUCH00")
-    assert chat2.last_text() == "Готово: план будет приходить в Telegram."
-    assert db.scalar(select(func.count()).select_from(GrowthEvent).where(GrowthEvent.user_id == F2)) == 0
-    # без согласия обычное приветствие, can_write всё равно включён
-    chat3 = Chat(F3)
-    chat3.say(f"/start w_{code}")
-    assert chat3.last_text().startswith("Я подбираю события")
-    db.expire_all()
-    assert db.get(Profile, F3).can_write is True
+    assert db.get(Profile, INVITER).source == "organic" and db.get(Profile, F3).source == "organic"

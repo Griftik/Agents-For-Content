@@ -41,11 +41,15 @@ REDIS_URL = _opt("REDIS_URL", "redis://localhost:6379/0")
 # ─── Продукт ───
 DEFAULT_CITY = _opt("LEISURE_CITY", "Москва")
 DEFAULT_TZ = _opt("LEISURE_TZ", "Europe/Moscow")
-WEB_BASE_URL = _opt("WEB_BASE_URL", "http://localhost:8000")  # публичные страницы событий /e/<slug>
+WEB_BASE_URL = _opt("WEB_BASE_URL", "http://localhost:3000")  # публичный адрес веб-приложения: /e/<slug>?inv=<код>, /?ref=<код>, ссылки в уведомлениях
 
-# Mini App (приглашения, docs/GROWTH.md): имя бота без @ и короткое имя приложения из @BotFather → https://t.me/<бот>/<app>?startapp=…
-BOT_USERNAME = _opt("NEXT_PUBLIC_BOT_USERNAME").lstrip("@")
-MINIAPP_SHORT_NAME = _opt("MINIAPP_SHORT_NAME")
+# ─── Почта для magic link (§2.2). Без SMTP_HOST письма не уходят: POST /api/auth/email отвечает 503. ───
+SMTP_HOST = _opt("SMTP_HOST")
+SMTP_PORT = int(_opt("SMTP_PORT", "587"))
+SMTP_USER = _opt("SMTP_USER")
+SMTP_PASSWORD = _opt("SMTP_PASSWORD")
+SMTP_FROM = _opt("SMTP_FROM", SMTP_USER)
+SMTP_SSL = _opt("SMTP_SSL", "0") == "1"             # 1 — SMTPS (порт 465); иначе STARTTLS, если сервер умеет
 
 # ─── Админка ───
 ADMIN_USER = _opt("ADMIN_USER", "admin")
@@ -70,10 +74,6 @@ def collectors_disabled() -> frozenset[str]:
 
 
 # ─── Секреты (лениво) ───
-def bot_token() -> str:
-    return _req("LEISURE_BOT_TOKEN")
-
-
 def openrouter_key() -> str:
     return _req("OPENROUTER_KEY")
 

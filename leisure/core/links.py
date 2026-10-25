@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from urllib.parse import urlencode, urlparse
 
-from .timeutil import DAY_FULL, day_phrase, event_dates, event_times, fmt_date, start_hour, time_for_day, time_text, weekend_title
+from .timeutil import day_phrase, event_dates, event_times, fmt_date, start_hour, time_for_day, time_text, weekend_title
 
 DEFAULT_CITY = "Москва"
 DEFAULT_TZ = "Europe/Moscow"
+WEEKDAY_FULL = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
 
 
 def _clean_url(u: str) -> str:
@@ -230,7 +231,7 @@ def plan_text(by_day: Mapping[str, Sequence[Mapping]], weekend: Sequence[str],
         items = sorted(by_day.get(day, []), key=lambda e: start_hour(time_text(e)) if start_hour(time_text(e)) is not None else 99)
         if not items:
             continue
-        lines += ["", f"{DAY_FULL[i] if i < len(DAY_FULL) else day}, {fmt_date(day)}"]
+        lines += ["", f"{WEEKDAY_FULL[date.fromisoformat(day).weekday()]}, {fmt_date(day)}"]
         for ev in items:
             t = time_text(ev)
             line = f"• {t + ' — ' if t else ''}{ev.get('title')} · {ev.get('venue') or ''}"

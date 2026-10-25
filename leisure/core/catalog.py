@@ -109,9 +109,12 @@ KINDS: list[str] = ["событие", "выставка", "место"]
 CROWD: list[str] = ["камерно", "людно"]
 CONFIDENCE: list[str] = ["подтверждено", "вероятно", "нужно проверить"]
 EVENT_STATUSES: list[str] = ["draft", "published", "archived"]
-DECISION_STATUSES: list[str] = ["иду", "может", "интересно", "мимо", "пропуск"]
+DECISION_STATUSES: list[str] = ["иду", "может", "интересно", "мимо", "пропуск", "не моё", "сходил", "не сходил"]
+# «не моё» — сильный отказ с карточки (сильнее «мимо»); «сходил» / «не сходил» отмечают в плане после даты события
+DECISION_ALIASES: dict[str, str] = {"went": "сходил", "skipped": "не сходил", "not_mine": "не моё", "going": "иду", "maybe": "может"}
+PROFILE_KINDS: list[str] = ["self", "parent", "child", "other"]   # кем профиль приходится владельцу аккаунта
 PLANS: list[str] = ["free", "pro"]
-PROFILE_SOURCES: list[str] = ["organic", "invite", "ref", "share"]   # откуда пришёл человек (docs/GROWTH.md)
+PROFILE_SOURCES: list[str] = ["organic", "invite", "ref", "share"]   # откуда пришёл человек (docs/GROWTH.md); share после ухода из Telegram никем не ставится, значение оставлено в enum БД
 INVITE_KINDS: list[str] = ["event", "ref"]
 INVITE_STATUSES: list[str] = ["opened", "going", "maybe", "declined"]
 COMPANY_OPTIONS: list[str] = ["один", "с партнёром", "с друзьями", "с детьми", "любая"]

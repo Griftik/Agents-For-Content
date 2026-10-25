@@ -1,4 +1,4 @@
-# Планировщик досуга — зависимости ядра, API, бота и воркера (Python 3.12+).
+# Планировщик досуга — зависимости ядра, API и воркера (Python 3.12+).
 fastapi>=0.115
 uvicorn[standard]>=0.30
 sqlalchemy[asyncio]>=2.0      # greenlet нужен SQLAdmin
@@ -8,7 +8,6 @@ pydantic>=2.7
 pyyaml>=6.0
 sqladmin>=0.18
 itsdangerous>=2.2          # сессии админки (sqladmin AuthenticationBackend)
-aiogram>=3.13
 apscheduler>=3.10,<4
 httpx>=0.27
 python-dotenv>=1.0

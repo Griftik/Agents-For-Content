@@ -28,14 +28,6 @@ def new_code(session: Session) -> str:
             return code
 
 
-def miniapp_url(code: str, kind: str = "event") -> str | None:
-    """Ссылка в Mini App: https://t.me/<бот>/<app>?startapp=inv_<код> (рекомендация — ref_<код>). None, пока не заданы
-    NEXT_PUBLIC_BOT_USERNAME и MINIAPP_SHORT_NAME."""
-    if not settings.BOT_USERNAME or not settings.MINIAPP_SHORT_NAME:
-        return None
-    return f"https://t.me/{settings.BOT_USERNAME}/{settings.MINIAPP_SHORT_NAME}?startapp={'inv' if kind == 'event' else 'ref'}_{code}"
-
-
 def web_url(inv: Invite) -> str:
     """Страница в вебе: /e/<slug>?inv=<код> (для рекомендации — главная с ?ref=<код>)."""
     base = settings.WEB_BASE_URL.rstrip("/")
@@ -255,11 +247,11 @@ class OwnInvite(Exception):
 
 
 def create_for_api(session: Session, user_id: int, ev: Event | None, day: date | None, kind: str = "event") -> dict:
-    """POST /api/invites: код, ссылка в Mini App (url), страница в вебе (web_url) и текст от первого лица (share_text)."""
+    """POST /api/invites: код, ссылка на веб-приложение (url = web_url: /e/<slug>?inv=<код> или /?ref=<код>) и текст от первого лица."""
     from leisure.core.links import invite_text
 
     inv = create_invite(session, user_id, ev, day, kind)
-    link = miniapp_url(inv.code, kind) or web_url(inv)
+    link = web_url(inv)
     if kind == "event":
         share = invite_text(ev.as_core(), day.isoformat() if day else None, link)
     else:
@@ -267,7 +259,7 @@ def create_for_api(session: Session, user_id: int, ev: Event | None, day: date |
                  f"Настройка занимает минуту. Попробуй: {link}")             # T-REF-SHARE
     if kind == "event":
         log_growth(session, user_id, "invite_share")
-    return {"code": inv.code, "kind": kind, "url": miniapp_url(inv.code, kind), "web_url": web_url(inv), "share_text": share}
+    return {"code": inv.code, "kind": kind, "url": link, "web_url": link, "share_text": share}
 
 
 def view(session: Session, inv: Invite, user_id: int | None = None) -> dict:
@@ -330,7 +322,7 @@ def web_open(session: Session, inv: Invite, user_id: int, name: str = "", userna
     if p is None or p.consent_at is None:
         log_open_without_consent(session, inv, kind, user_id)
         return None
-    p = services.get_or_create_profile(session, user_id, name, username, via_bot=False)
+    p = services.get_or_create_profile(session, user_id, name, username)
     acc, _ = open_invite(session, inv, user_id)
     if inv.kind == "ref":
         adopt_new_profile(session, p, inv)
@@ -373,7 +365,7 @@ def web_accept(session: Session, inv: Invite, user_id: int, status: str, name: s
     if was_new:
         if not consent:
             raise ConsentRequired()              # профиль при этом не создаётся
-        p = services.get_or_create_profile(session, user_id, name, username, via_bot=False)
+        p = services.get_or_create_profile(session, user_id, name, username)
         services.update_profile(session, p, {"consent": True}, auto_onboarded=False)
     open_invite(session, inv, user_id, was_new=was_new)
     adopt_new_profile(session, p, inv)
@@ -399,93 +391,12 @@ def apply_ref_code(session: Session, p: Profile, code: str) -> bool:
     return p.source != before
 
 
-INDIVIDUAL_NOTICES = 3          # по одному приглашению первые три друга сообщаются отдельно, дальше — сводка раз в день
-
-
-def _rank(session: Session, acc: InviteAccept) -> int:
-    """Порядковый номер принявшего «иду» среди принявших это приглашение (1 — первый)."""
-    return int(session.scalar(select(func.count()).select_from(InviteAccept).where(
-        InviteAccept.invite_id == acc.invite_id, InviteAccept.accepted_at.is_not(None),
-        (InviteAccept.accepted_at < acc.accepted_at) | ((InviteAccept.accepted_at == acc.accepted_at) & (InviteAccept.id <= acc.id)))) or 0)
-
-
-def _deliver(session: Session, inviter_id: int, text: str) -> bool | None:
-    """Отправить пригласившему через бота. True — ушло; False — не ушло, повторить позже; None — писать не нужно/нельзя."""
-    from leisure.worker import send as send_mod
-
-    inviter = session.get(Profile, inviter_id) if inviter_id else None
-    if inviter is None or not inviter.active:
-        return None
-    res = send_mod.send_sync([(inviter_id, text, [[{"text": "Мой план", "callback_data": "pl:s"}]])])
-    for uid in res.blocked:
-        services.mark_blocked(session, uid)
-    if res.blocked:
-        return None
-    return 0 not in res.undelivered
-
-
 def notify_inviter(session: Session, inv: Invite, user_id: int) -> bool:
-    """Сообщить пригласившему «Имя идёт с тобой» через бота (worker.send), сразу после принятия — только первым трём друзьям по
-    приглашению; остальных (4-й и дальше) соберёт сводка раз в день (notify_many). Ошибки отправки не ломают принятие:
-    уведомление остаётся неотправленным, его доберёт worker.schedules.job_invite_notifications. True — доставлено."""
-    from leisure.worker.messages import invite_joined_text
-
+    """Версия 2 (docs/PIVOT-PWA.md): отдельного канала уведомлений нет — пригласивший видит «Имя идёт с тобой» в плане
+    (companions у события). Здесь только отметка notified_at на принятии: один раз, только для «иду»."""
     acc = session.scalar(select(InviteAccept).where(InviteAccept.invite_id == inv.id, InviteAccept.user_id == user_id))
     if acc is None or acc.status != "going" or acc.notified_at is not None or acc.accepted_at is None:
         return False
-    if _rank(session, acc) > INDIVIDUAL_NOTICES:
-        return False
-    try:
-        if inv.event is None:
-            acc.notified_at = datetime.now(timezone.utc)
-            session.commit()
-            return False
-        text = invite_joined_text(display_name(session.get(Profile, user_id)), inv.event.title, inv.day.isoformat() if inv.day else None)
-        done = _deliver(session, inv.inviter_id, text)
-        if done is not False:
-            acc.notified_at = datetime.now(timezone.utc)
-            session.commit()
-        return bool(done)
-    except Exception:  # noqa: BLE001
-        session.rollback()
-        return False
-
-
-def notify_many(session: Session, now: datetime | None = None, hour: int = 10, inviter_id: int | None = None) -> int:
-    """Сводка раз в день: по каждому приглашению один T-INVITE-JOINED-MANY («Ещё N идут») о принявших с четвёртого и дальше.
-    Уходит после утреннего плана — когда у пригласившего (по его часовому поясу) наступил `hour`. Возвращает число сводок."""
-    from leisure.worker.messages import invite_joined_many_text
-
-    now = now or datetime.now(timezone.utc)
-    rows = session.scalars(select(InviteAccept).join(Invite).where(
-        Invite.kind == "event", InviteAccept.status == "going", InviteAccept.accepted_at.is_not(None),
-        InviteAccept.notified_at.is_(None), *([Invite.inviter_id == inviter_id] if inviter_id else [])).order_by(InviteAccept.accepted_at)).all()
-    by_invite: dict[int, list[InviteAccept]] = {}
-    for acc in rows:
-        if _rank(session, acc) > INDIVIDUAL_NOTICES:
-            by_invite.setdefault(acc.invite_id, []).append(acc)
-    sent = 0
-    for invite_id, accs in by_invite.items():
-        inv = session.get(Invite, invite_id)
-        inviter = session.get(Profile, inv.inviter_id) if inv.inviter_id else None
-        if inviter is None or inv.event is None:
-            for acc in accs:
-                acc.notified_at = now
-            session.commit()
-            continue
-        if services.local_now(inviter, now).hour < hour:
-            continue
-        done = _deliver(session, inv.inviter_id, invite_joined_many_text(len(accs), inv.event.title, inv.day.isoformat() if inv.day else None))
-        if done is not False:
-            for acc in accs:
-                acc.notified_at = now
-            session.commit()
-            sent += int(bool(done))
-    return sent
-
-
-def pending_notifications(session: Session) -> list[InviteAccept]:
-    """Принятые «иду» по приглашениям, о которых пригласивший ещё не уведомлён."""
-    return list(session.scalars(select(InviteAccept).join(Invite).where(
-        Invite.kind == "event", InviteAccept.status == "going", InviteAccept.accepted_at.is_not(None),
-        InviteAccept.notified_at.is_(None)).order_by(InviteAccept.accepted_at)))
+    acc.notified_at = datetime.now(timezone.utc)
+    session.commit()
+    return True

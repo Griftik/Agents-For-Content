@@ -7,24 +7,31 @@ from __future__ import annotations
 import uuid
 import logging
 from collections.abc import Iterable
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from leisure import settings
 from leisure.core.affinity import compute_affinity, describe_affinity, describe_affinity_text
-from leisure.core.catalog import DECISION_STATUSES, default_profile
+from leisure.core.catalog import DECISION_ALIASES, DECISION_STATUSES, PROFILE_KINDS, default_profile
 from leisure.core.config import scoring_config
-from leisure.core.links import gcal_url, ics_text, is_local_url, outlook_url, plan_text, tg_share_url
+from leisure.core.links import gcal_url, ics_text, outlook_url, plan_text, tg_share_url
 from leisure.core.recommend import Digest as CoreDigest, build_digest
 from leisure.core.scoring import ScoreResult, score_events
 from leisure.core.timeutil import (event_dates, event_times, is_free, is_horizon, reco_slot, slot_of, trim_past, weekend_days,
                                    weekend_for, weekend_iso, weekend_title)
-from leisure.db.models import Decision, Digest, Event, Profile
+from leisure.db.models import Account, Decision, Digest, Event, Profile
 
 log = logging.getLogger("leisure.services")
+
+
+class DecisionTooEarly(ValueError):
+    """«Сходил» / «не сходил» можно отметить только после дня события."""
+
+    def __init__(self, day):
+        super().__init__("отметить «сходил» или «не сходил» можно после дня события" + (f" ({day.isoformat()})" if day else ""))
 
 
 class ProfileMissing(LookupError):
@@ -52,17 +59,6 @@ def local_today(p: Profile | None = None, now: datetime | None = None) -> date:
 def local_now(p: Profile | None = None, now: datetime | None = None) -> datetime:
     """Момент в часовом поясе профиля (или города по умолчанию)."""
     return (now or utcnow()).astimezone(_zone(p.tz if p else None))
-
-
-def web_links_enabled() -> bool:
-    """Можно ли ставить URL-кнопки на страницы веба: localhost Telegram отклоняет (BUTTON_URL_INVALID)."""
-    return not is_local_url(settings.WEB_BASE_URL)
-
-
-def warn_local_web_url() -> None:
-    if not web_links_enabled():
-        log.warning("WEB_BASE_URL=%s указывает на локальный адрес: бот не ставит URL-кнопки (политика, «Весь дайджест», "
-                    "«Другу»), а даёт ссылки текстом. Задай публичный адрес в WEB_BASE_URL.", settings.WEB_BASE_URL)
 
 
 def today_or(p: Profile | None, today: date | None) -> date:
@@ -115,36 +111,57 @@ def get_profile(session: Session, user_id: int) -> Profile | None:
     return session.get(Profile, user_id)
 
 
-def get_or_create_profile(session: Session, user_id: int, name: str = "", username: str = "", via_bot: bool = True) -> Profile:
-    """via_bot=False — профиль создаёт Mini App/API: бот этому человеку ещё писать не может (can_write=False до /start или права)."""
+def new_user_id(session: Session) -> int:
+    """Новый идентификатор из guest_user_id_seq (с 10^12): для гостевой сессии и дополнительных профилей аккаунта."""
+    uid = session.execute(text("select nextval('guest_user_id_seq')")).scalar_one()
+    return int(uid)
+
+
+def get_or_create_profile(session: Session, user_id: int, name: str = "", username: str = "", can_write: bool = False,
+                          account_id: int | None = None, kind: str = "self") -> Profile:
+    """Профиль создаёт веб (первый PUT с согласием). Основной профиль аккаунта: user_id = id аккаунта (аккаунт заводится здесь же,
+    если его ещё нет); дополнительные — через create_profile. can_write оставлено на будущее (push сняты), по умолчанию false."""
     p = session.get(Profile, user_id)
     if p is None:
+        acc_id = account_id or user_id
+        if session.get(Account, acc_id) is None:
+            session.add(Account(id=acc_id))
+            session.flush()
         d = default_profile()
-        p = Profile(user_id=user_id, name=name, username=username, city=settings.DEFAULT_CITY, values=d["values"],
-                    interests=d["interests"], params=d["params"], notes="", tz=settings.DEFAULT_TZ, can_write=via_bot)
+        p = Profile(user_id=user_id, account_id=acc_id, kind=kind if kind in PROFILE_KINDS else "other", name=name, username=username,
+                    city=settings.DEFAULT_CITY, values=d["values"], interests=d["interests"], params=d["params"], notes="",
+                    tz=settings.DEFAULT_TZ, can_write=can_write)
         session.add(p)
         session.commit()
         session.refresh(p)
     return p
 
 
+def account_profiles(session: Session, account_id: int) -> list[Profile]:
+    return session.scalars(select(Profile).where(Profile.account_id == account_id).order_by(Profile.created_at, Profile.user_id)).all()
+
+
+def create_profile(session: Session, account_id: int, name: str, kind: str = "other") -> Profile:
+    """Дополнительный профиль аккаунта («мама», «ребёнок»): свой user_id, свои ценности/интересы/решения; согласие наследуется от
+    владельца, онбординг — отдельно."""
+    owner = session.get(Profile, account_id) or next(iter(account_profiles(session, account_id)), None)
+    if owner is None:
+        raise ProfileMissing(account_id)
+    p = get_or_create_profile(session, new_user_id(session), name=name, account_id=account_id, kind=kind)
+    p.consent_at, p.tz, p.city = owner.consent_at, owner.tz, owner.city
+    session.commit()
+    session.refresh(p)
+    return p
+
+
 def set_active(session: Session, user_id: int, active: bool) -> bool:
-    """Включить/выключить рассылки (заблокировавшего бота выключаем, вернувшегося по /start включаем)."""
+    """Включить/выключить рассылки уведомлений (профиль active=false не получает подборки, планы и «Как прошло?»)."""
     p = session.get(Profile, user_id)
     if p is None or p.active == active:
         return False
     p.active = active
     session.commit()
     return True
-
-
-def mark_blocked(session: Session, user_id: int) -> bool:
-    """Telegram ответил Forbidden. Заблокировавшему бота выключаем рассылки; человеку, которому бот ещё не мог писать
-    (профиль из Mini App, can_write=False), — ничего: молча пропускаем. True — рассылки выключены."""
-    p = session.get(Profile, user_id)
-    if p is None or not p.can_write:
-        return False
-    return set_active(session, user_id, False)
 
 
 def update_profile(session: Session, p: Profile, data: dict, auto_onboarded: bool = True) -> Profile:
@@ -178,7 +195,13 @@ def delete_profile(session: Session, user_id: int) -> bool:
     p = session.get(Profile, user_id)
     if p is None:
         return False
-    session.delete(p)
+    if p.user_id == p.account_id:           # основной профиль: уходит весь аккаунт со всеми профилями, решениями, токенами входа
+        acc = session.get(Account, p.account_id)
+        for extra in account_profiles(session, p.account_id):
+            session.delete(extra)
+        session.delete(acc)
+    else:
+        session.delete(p)
     session.commit()
     return True
 
@@ -192,8 +215,9 @@ def profile_view(p: Profile, decisions: list[Decision] | None = None) -> dict:
         "digest_day": p.digest_day, "digest_hour": p.digest_hour, "plan": p.plan, "affinity": aff,
         "learned": describe_affinity(aff, decs), "learned_text": describe_affinity_text(aff, decs),
         "onboarded": p.onboarded_at is not None, "show_name": p.show_name, "source": p.source, "can_write": p.can_write,
+        "account_id": p.account_id, "kind": p.kind,
         "offer_seen": p.offer_seen, "offer_due": p.offer_due.isoformat() if p.offer_due else None,
-        "has_consent": p.consent_at is not None,
+        "has_consent": p.consent_at is not None, "email": p.account.email if p.account else None,
         "affinity_manual_at": p.affinity_manual_at.isoformat() if p.affinity_manual_at else None,
     }
 
@@ -255,6 +279,7 @@ def set_decision(session: Session, user_id: int, ev: Event, status: str, reason:
     day — день с карточки; если передан, обновляет Decision.day и при повторном решении. Смена дня сбрасывает флаги
     напоминания и запроса оценки (они относятся к конкретному дню).
     """
+    status = DECISION_ALIASES.get(status, status)
     if status not in DECISION_STATUSES:
         raise ValueError(f"status должен быть одним из {DECISION_STATUSES}")
     p = get_profile(session, user_id)
@@ -265,9 +290,14 @@ def set_decision(session: Session, user_id: int, ev: Event, status: str, reason:
         d = Decision(user_id=user_id, event_id=ev.id)
         session.add(d)
     old_day = d.day
+    new_day = day or d.day or _default_day(ev, local_today(p))
+    if status in ("сходил", "не сходил"):           # отметки в плане: только после дня события
+        if new_day is None or new_day > local_today(p):
+            session.rollback()
+            raise DecisionTooEarly(new_day)
     d.status = status
-    d.reason = reason if status in ("мимо", "пропуск") else None
-    d.day = day or d.day or _default_day(ev, local_today(p))
+    d.reason = reason if status in ("мимо", "пропуск", "не моё") else None
+    d.day = new_day
     if old_day is not None and d.day != old_day:
         d.reminded_at = d.feedback_asked_at = None
     if rating is not None:
@@ -462,42 +492,76 @@ def day_plan(decisions: Iterable[Decision], day: date, session: Session | None =
     return {"weekend": [iso], "days": {iso: items}}
 
 
-def decisions_to_remind(session: Session, user_id: int, day: date) -> list[Decision]:
-    """«Иду» на этот день, о которых ещё не напоминали."""
-    return session.scalars(select(Decision).where(Decision.user_id == user_id, Decision.status == "иду", Decision.day == day,
-                                                  Decision.reminded_at.is_(None)).order_by(Decision.id)).all()
-
-
-def decisions_to_ask(session: Session, user_id: int, day: date) -> list[Decision]:
-    """«Иду» на этот день без оценки, о которых ещё не спрашивали «Как прошло?»."""
-    return session.scalars(select(Decision).where(Decision.user_id == user_id, Decision.status == "иду", Decision.day == day,
-                                                  Decision.rating.is_(None), Decision.feedback_asked_at.is_(None))
-                           .order_by(Decision.id)).all()
+PLAN_DAYS = 7          # окно плана: сегодня и шесть дней вперёд
+PAST_DAYS = 30         # прошедшие события держим для отметок «сходил / не сходил» и оценки
+PLAN_STATUSES = ("иду", "может", "сходил", "не сходил")
 
 
 def plan(session: Session, p: Profile, today: date | None = None) -> dict:
+    """План профиля (версия 2): 7 дней от сегодня по дням, «дальше» — за окном, «прошедшие» — за последние 30 дней с отметками.
+    Решения без живого опубликованного события пропускаются; «вдвоём с Имя» — companions."""
     today = today_or(p, today)
-    weekend = weekend_iso(today)
-    events = {e["id"]: e for e in upcoming_events(session, p.city, today)}
-    decs = [d for d in user_decisions(session, p.user_id) if d.status in ("иду", "может") and d.event_id and str(d.event_id) in events]
-    days: dict[str, list[dict]] = {d: [] for d in weekend}
+    window = [(today + timedelta(days=i)).isoformat() for i in range(PLAN_DAYS)]
+    since = (today - timedelta(days=PAST_DAYS)).isoformat()
+    rows = session.scalars(select(Event).where(Event.status == "published", Event.city == p.city)).all()
+    events = {str(r.id): r.as_core() for r in rows}
+    days: dict[str, list[dict]] = {d: [] for d in window}
     horizon: list[dict] = []
-    for d in decs:
-        ev = events[str(d.event_id)]
-        if is_horizon(ev, weekend):
-            hday = d.day.isoformat() if d.day and d.day.isoformat() in event_dates(ev) else event_dates(ev)[0]
-            horizon.append({"event": event_view(ev), "status": d.status, "day": hday, "links": links_for(ev, hday),
-                            "companions": companion_names(session, p.user_id, d)})
+    past: list[dict] = []
+    for d in user_decisions(session, p.user_id):
+        ev = events.get(str(d.event_id)) if d.event_id else None
+        if ev is None or d.status not in PLAN_STATUSES:
             continue
-        wd = weekend_days(ev, weekend)
-        day = d.day.isoformat() if d.day and d.day.isoformat() in wd else wd[0]
-        days[day].append({"event": event_view(ev), "status": d.status, "day": day, "links": links_for(ev, day),
-                          "companions": companion_names(session, p.user_id, d)})
+        ds = event_dates(ev)
+        if d.day and d.day.isoformat() in ds:
+            day = d.day.isoformat()
+        else:
+            day = next((x for x in ds if x >= today.isoformat()), ds[-1] if ds else None)
+        if day is None:
+            continue
+        item = {"event": event_view(ev), "status": d.status, "day": day, "rating": d.rating, "links": links_for(ev, day),
+                "companions": companion_names(session, p.user_id, d)}
+        if day < today.isoformat():
+            if day >= since:
+                past.append(item)
+        elif day in days:
+            days[day].append(item)
+        else:
+            horizon.append(item)
     for day, items in days.items():
         _mark_conflicts(items, day)
-    text = plan_text({d: [it["event"] for it in items if it["status"] == "иду"] for d, items in days.items()}, weekend,
+    horizon.sort(key=lambda it: it["day"])
+    past.sort(key=lambda it: it["day"], reverse=True)
+    text = plan_text({d: [it["event"] for it in items if it["status"] == "иду"] for d, items in days.items()}, window,
                      [h["event"] for h in horizon if h["status"] == "иду"])
-    return {"weekend": weekend, "title": weekend_title(weekend), "days": days, "horizon": horizon, "text": text}
+    return {"weekend": window, "today": today.isoformat(), "title": weekend_title(window), "days": days, "horizon": horizon,
+            "past": past, "text": text}
+
+
+def feed(session: Session, p: Profile, spec: str = "today", segment: str = "all", limit: int | None = None,
+         today: date | None = None, now: datetime | None = None, include_missed: bool = False) -> dict:
+    """GET /api/feed: лента профиля на день или период (core.feed.build_feed). now — местное время профиля без пояса (тесты,
+    симулятор); без now и today берётся текущее время профиля, с одним today время суток не учитывается."""
+    from leisure.core.feed import build_feed, parse_window
+
+    if now is None and today is None:
+        now = local_now(p).replace(tzinfo=None)
+    today = today or (now.date() if now else local_today(p))
+    days = parse_window(spec, today)
+    events = upcoming_events(session, p.city, today)
+    decs = [d.as_core() for d in user_decisions(session, p.user_id)]
+    travel = (p.params or {}).get("travel_minutes")
+    items = build_feed(events, p.as_core(), decs, days, today, now=now, segment=segment, travel_minutes=travel, limit=limit,
+                       include_missed=include_missed)
+    dm = decision_map(session, p.user_id)
+    why_limit = int(scoring_config()["why"]["max_total"])
+    out = [{"event": event_view(it.event), "day": it.day, "days": it.days, "score": it.result.score,
+            "why": it.result.why_dicts(why_limit), "can_make_it": it.can_make_it,
+            "links": links_for(it.event, it.day, it.event.get("why_fit_hint") or None), "decision": dm.get(str(it.event["id"]))}
+           for it in items]
+    travel_out = int(travel) if travel is not None else int(scoring_config()["feed"]["travel_minutes"])
+    return {"user_id": p.user_id, "date": spec, "days": [d.isoformat() for d in days], "today": today.isoformat(),
+            "segment": segment, "travel_minutes": travel_out, "items": out}
 
 
 def ics_for(ev: dict, day: date | str | None) -> str:

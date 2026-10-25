@@ -280,6 +280,8 @@ body:has(.bottom-nav) { padding-bottom: calc(var(--nav-h) + 16px + env(safe-area
 .tear::before, .tear::after { content: ""; position: absolute; top: -11px; width: 20px; height: 20px; border-radius: 50%; background: var(--bg); }
 .tear::before { left: -10px; }
 .tear::after { right: -10px; }
+.fcard .desc { font-size: 16px; line-height: 1.45; color: var(--fg); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.fcard .desc.svc { font-size: 11px; line-height: 1.5; color: var(--muted); }
 .fcard .bot { display: flex; justify-content: space-between; align-items: center; margin-top: auto; gap: 8px; }
 .fcard .bot a { font: 600 13.5px var(--body); color: var(--accent); text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
 .fc-next { height: 8px; margin: 0 14px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 16px 16px; opacity: .6; }

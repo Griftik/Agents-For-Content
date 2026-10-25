@@ -56,6 +56,7 @@ function Card({ it, today, counter, style, className, behind, onPointerDown, onP
       <h2>{ev.title}</h2>
       <p className="place">{venue}{rest ? ` · ${rest}` : ""}</p>
       <div className="tear" aria-hidden="true" />
+      {ev.description ? <p className="desc">{ev.description}</p> : ev.tags?.length ? <p className="desc svc">{ev.tags.slice(0, 4).join(" · ")}</p> : null}
       <div className="bot">
         <span className="svc">{[ev.free ? "Бесплатно" : price, ev.category].filter(Boolean).join(" · ")}</span>
         <a href={`/e/${ev.slug}`} draggable={false}>Подробнее</a>

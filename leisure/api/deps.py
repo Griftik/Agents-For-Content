@@ -18,3 +18,13 @@ def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "API_KEY не настроен — закрытые маршруты недоступны")
     if not x_api_key or not secrets.compare_digest(x_api_key.encode(), settings.API_KEY.encode()):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "нужен заголовок X-API-Key")
+
+
+def resolve_user_id(body_uid: int | None, header_uid: str | None, query_uid: int | None = None) -> int:
+    """user_id сессии веба: в теле, в query или заголовком X-User-Id (его выставляет сервер веба после проверки cookie)."""
+    for v in (body_uid, query_uid):
+        if v is not None:
+            return v
+    if header_uid and header_uid.lstrip("-").isdigit():
+        return int(header_uid)
+    raise HTTPException(422, "нужен user_id (в теле, в query или заголовком X-User-Id)")

@@ -1,4 +1,4 @@
-"""Просьбы фронтенда к API и боту: решение и ссылки в элементах дайджеста, ручная правка affinity, диплинк /start e_<slug>.
+"""Просьбы фронтенда к API: решение и ссылки в элементах дайджеста, ручная правка affinity.
 
 Нужны БД с seed. Тестовые профили (id от pid, tests/ids.py) удаляются после теста.
 """
@@ -15,10 +15,9 @@ from leisure.api import services  # noqa: E402
 from leisure.db.models import Decision, Event, Profile  # noqa: E402
 from leisure.db.session import engine, session_factory  # noqa: E402
 
-from .chat import Chat  # noqa: E402
 from .ids import user_id  # noqa: E402
 
-API_UID, LINK_UID = user_id(30), user_id(31)
+API_UID = user_id(30)
 H = {"X-API-Key": "test-key"}
 TODAY = {"today": "2026-10-24"}
 
@@ -106,45 +105,3 @@ def test_manual_affinity_equal_to_computed_removes_adjustment(db):
     services.update_profile(db, p, {"affinity": {"tag": {"музыка": 0.0}}})     # вернули вычисленное (решений нет → 0)
     assert p.affinity_manual["tag"] == {} and p.affinity["tag"].get("музыка", 0) == 0
     services.delete_profile(db, API_UID)
-
-
-# ── 2. диплинк /start e_<slug> ──
-@pytest.fixture
-def link(db):
-    services.delete_profile(db, LINK_UID)
-    ev = db.scalars(select(Event).where(Event.status == "published").order_by(Event.slug).limit(2)).all()[1]
-    yield ev
-    services.delete_profile(db, LINK_UID)
-
-
-def test_deeplink_new_user_gets_card_and_setup_offer_and_needs_consent(db, link):
-    chat = Chat(LINK_UID)
-    chat.say(f"/start e_{link.slug}")
-    card, offer = chat.world.chats[LINK_UID][1], chat.world.chats[LINK_UID][2]
-    assert card.text.startswith(link.title) and "Совпадение" not in card.text           # профиля нет — оценивать нечем
-    assert [b["text"] for r in card.rows[:2] for b in r] == ["Иду", "Может быть", "Интересно", "Мимо"]
-    assert offer.text.startswith("Чтобы подборки приходили под тебя, нужна короткая настройка") and "Принять и начать" in [b["text"] for b in offer.buttons()]
-    toast = chat.press(card.mid, chat.cbs(card.mid, "Иду"))
-    assert toast.startswith("Чтобы сохранить ответ, нужна короткая настройка")
-    assert db.scalar(select(Decision).where(Decision.user_id == LINK_UID)) is None     # без согласия ничего не пишем
-    chat.press(offer.mid, "ob:consent")                                                  # согласие → решения работают
-    assert chat.press(card.mid, chat.cbs(card.mid, "Иду")).startswith("В плане: ")
-    assert db.scalar(select(Decision).where(Decision.user_id == LINK_UID)).status == "иду"
-
-
-def test_deeplink_for_configured_user_is_card_only_with_score(db, link):
-    p = services.get_or_create_profile(db, LINK_UID, "Л", "l")
-    services.update_profile(db, p, {"consent": True, "onboarded": True})
-    chat = Chat(LINK_UID)
-    chat.say(f"/start e_{link.slug}")
-    msgs = [m for m in chat.world.chats[LINK_UID] if not m.from_user]
-    assert len(msgs) == 1 and msgs[0].text.startswith(link.title) and "Совпадение" in msgs[0].text
-
-
-def test_deeplink_unknown_event_says_so_and_continues_normal_start(db, link):
-    chat = Chat(LINK_UID)
-    chat.say("/start e_net-takogo-sobytiya")
-    texts_ = chat.texts()
-    assert texts_[0] == "Этого события уже нет в афише. Подборка на выходные: /digest." and texts_[1].startswith("Я подбираю события")
-    chat.say("/start fb_campaign")                                                       # чужой параметр — обычный старт
-    assert chat.last_text().startswith("Я подбираю события")

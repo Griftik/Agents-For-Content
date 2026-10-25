@@ -43,6 +43,10 @@ def decision_weight(d: Mapping, cfg: dict | None = None) -> float | None:
     rating = d.get("rating")
     if rating:
         w += (float(rating) - 3) / 2 * float(L["rating_scale"])
+        low = L.get("low_rating") or {}
+        lw = low.get(int(rating), low.get(str(int(rating))))
+        if lw is not None and status in ("сходил", "не сходил"):
+            w = min(w, float(lw))              # отметка в плане с низкой оценкой: минус на теги и категорию (у «иду» — формула прототипа)
     return w
 
 

@@ -102,7 +102,7 @@ def test_profile_digest_decisions_plan(client):
     assert all(it["event"]["id"] != other["id"] for it in dg2["items"])
 
     plan = client.get(f"/api/plan/{TEST_USER}", headers=H, params={"today": "2026-10-24"}).json()
-    assert plan["days"][first["day"]][0]["event"]["slug"] == ev["slug"] and plan["text"].startswith("План на 23–25 октября")
+    assert plan["days"][first["day"]][0]["event"]["slug"] == ev["slug"] and plan["text"].startswith("План на 24–30 октября") and len(plan["weekend"]) == 7
 
     assert client.delete(f"/api/decisions/{TEST_USER}/{ev['slug']}", headers=H).json() == {"removed": True}
     assert client.post("/api/decisions", headers=H, json={"user_id": TEST_USER, "event": ev["slug"], "status": "хз"}).status_code == 422

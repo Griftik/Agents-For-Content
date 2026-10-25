@@ -17,6 +17,8 @@ describe("мок-режим MOCK_INVITES", () => {
     expect(mockEnabled()).toBe(true);
     vi.stubEnv("NODE_ENV", "production");
     expect(mockEnabled()).toBe(false);
+    vi.stubEnv("MOCK_FORCE", "1");
+    expect(mockEnabled()).toBe(true); // только для скриншотов production-сборки
   });
 
   it("GET приглашения: имя, скрытое имя и статусы", () => {

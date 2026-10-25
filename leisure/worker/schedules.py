@@ -1,20 +1,13 @@
-"""Расписание воркера (п. 8 спеки), APScheduler.
+"""Служебные задачи воркера (APScheduler). Рассылок больше нет (docs/PIVOT-PWA.md, версия 2): человек сам открывает приложение,
+лента всегда актуальна. Остаётся журнал показанного: по средам в 22:00 МСК собираются подборки на предстоящий уикенд для всех
+настроенных профилей (предпросмотр в админке, статистика «показано / открыто»). Сбор событий — отдельный процесс (collectors).
 
-- среда 22:00 МСК — пересчёт и сборка дайджестов для всех активных профилей (предпросмотр в админке);
-- каждый час :00 — отправка дайджеста тем, у кого по их tz наступило время (digest_day/digest_hour, по
-  умолчанию чт 19:00) и дайджест на этот уикенд ещё не отправлен — пропущенный час досылается позже;
-- каждый час :00 — «План на сегодня» (каждый день с 09:00 по tz, если на сегодня есть «иду») и «Как прошло?»
-  (с 12:00 по tz на следующий день после события, по каждому «иду» без оценки). Флаги стоят на самом решении
-  (Decision.reminded_at / feedback_asked_at), а не на дайджесте.
-
-Ошибка у одного пользователя не останавливает рассылку остальным.
-Запуск: python -m leisure.worker.schedules
+Ошибка у одного профиля не останавливает остальных. Запуск: python -m leisure.worker.schedules
 """
 from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta, timezone
-from html import escape
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -26,14 +19,8 @@ from leisure.api import services
 from leisure.core.timeutil import weekend_for, weekend_iso
 from leisure.db.models import Profile
 from leisure.db.session import session_factory
-from leisure.worker.messages import (card_keyboard, card_text, digest_head_keyboard, digest_head_text, how_was_it_text,
-                                     plan_item_keyboard, plan_today_text, rating_keyboard)
-from leisure.worker.send import SendResult, send_sync
 
 log = logging.getLogger("leisure.worker")
-MAX_MESSAGES_PER_DIGEST = 7  # заголовок + карточки
-PLAN_HOUR = 9        # «План на сегодня» — каждый день с 09:00 по tz
-FEEDBACK_HOUR = 12   # «Как прошло?» — с 12:00 по tz на следующий день после события
 
 
 def _local_now(tz: str, now_utc: datetime) -> datetime:
@@ -47,15 +34,9 @@ def _active_profiles(session):
     return session.scalars(select(Profile).where(Profile.active.is_(True), Profile.onboarded_at.is_not(None))).all()
 
 
-def _remindable_profiles(session):
-    """Кому идут «План на сегодня» и «Как прошло?»: активные с согласием, в том числе принявшие приглашение друга в вебе и ещё
-    не прошедшие онбординг (у них есть решения, подборки им пока не шлём)."""
-    return session.scalars(select(Profile).where(Profile.active.is_(True), Profile.consent_at.is_not(None))).all()
-
-
 def due_weekend(local_now: datetime, digest_day: int, digest_hour: int) -> list[str] | None:
-    """Уикенд, для которого дайджест уже пора отправить: последняя наступившая отметка (день ISO, час)
-    определяет уикенд; если он уже прошёл — None."""
+    """Уикенд, для которого отметка «показано» уже наступила: последняя наступившая отметка (день ISO, час) определяет уикенд;
+    если он уже прошёл — None. Оставлено для журнала и симулятора."""
     delta = (local_now.isoweekday() - digest_day) % 7
     due = (local_now - timedelta(days=delta)).replace(hour=digest_hour, minute=0, second=0, microsecond=0)
     if due > local_now:
@@ -67,7 +48,7 @@ def due_weekend(local_now: datetime, digest_day: int, digest_hour: int) -> list[
 
 
 def _for_each_profile(session, now_utc: datetime, fn, profiles=None) -> int:
-    """fn(profile, local_now) → bool; исключения логируются по пользователю и не валят остальных."""
+    """fn(profile, local_now) → bool; исключения логируются по профилю и не валят остальных."""
     n = 0
     for p in (_active_profiles(session) if profiles is None else profiles(session)):
         try:
@@ -75,204 +56,31 @@ def _for_each_profile(session, now_utc: datetime, fn, profiles=None) -> int:
                 n += 1
         except Exception:  # noqa: BLE001
             session.rollback()
-            log.exception("пользователь %s: ошибка, пропускаю", p.user_id)
+            log.exception("профиль %s: ошибка, пропускаю", p.user_id)
     return n
 
 
 def job_build_digests(now_utc: datetime | None = None) -> int:
-    """Среда: собрать дайджесты на предстоящий уикенд, не отправляя."""
+    """Среда: собрать подборки на предстоящий уикенд в журнал (Digest), ничего не отправляя."""
     now_utc = now_utc or datetime.now(timezone.utc)
     with session_factory()() as s:
         def build(p, local):
             row = services.digest_row(s, p, date.fromisoformat(weekend_iso(local.date())[0]))
             if row.sent_at is not None:
-                return False  # уже отправлено (например, при онбординге): журнал «что показывали» не трогаем
+                return False  # уже зафиксировано как показанное: журнал не трогаем
             dg, _, _ = services.core_digest(s, p, local.date(), now=now_utc)
             services.save_digest(s, p, dg, sent=False)
             return True
         n = _for_each_profile(s, now_utc, build)
-    log.info("собрано дайджестов: %d", n)
+    log.info("собрано подборок в журнал: %d", n)
     return n
-
-
-def digest_messages(p: Profile, view: dict, first: bool = False) -> list[tuple[int, str, list | None]]:
-    """Заголовок с кнопками («Весь дайджест», «Мой план», у первой подборки «Уточнить под себя») + карточки.
-
-    Пустая подборка — один заголовок с текстом T-DIGEST-EMPTY. При WEB_BASE_URL=localhost URL-кнопок нет:
-    «Весь дайджест» и ссылки карточек уходят текстом."""
-    items = (view["items"] + view["horizon"])[: MAX_MESSAGES_PER_DIGEST - 1]
-    n_main = min(len(view["items"]), len(items))
-    web_ok = services.web_links_enabled()
-    web = f"{settings.WEB_BASE_URL.rstrip('/')}/digest"
-    head = digest_head_text(view["title"], n_main, len(items) - n_main, p.name, first)
-    if not web_ok:
-        head += f"\nВесь дайджест: {escape(web)}"
-    msgs = [(p.user_id, head, digest_head_keyboard(web, first=first, empty=not items, url_buttons=web_ok))]
-    for it in items:
-        msgs.append((p.user_id, card_text(it, view["weekend"], plain_links=not web_ok), card_keyboard(it, url_buttons=web_ok)))
-    return msgs
-
-
-def _handle_blocked(s, res: SendResult) -> None:
-    """Заблокировавшим бота выключаем рассылки (вернутся по /start)."""
-    for uid in res.blocked:
-        if services.mark_blocked(s, uid):
-            log.info("пользователь %s заблокировал бота — рассылки выключены", uid)
-
-
-def _mark_undelivered(row, undelivered: list[int]) -> None:
-    """Недоставленные карточки (индекс сообщения i ≥ 1 ↔ элемент items[i - 1]) помечаются флагом: следующий проход их дошлёт."""
-    if not any(i >= 1 for i in undelivered):
-        return
-    items = [dict(it) for it in row.items or []]
-    for i in undelivered:
-        if 1 <= i <= len(items):
-            items[i - 1]["undelivered"] = True
-    row.items = items
-
-
-def _resend_missing(s, p, row, weekend: list[str]) -> bool:
-    """Дослать карточки уже отправленной подборки, не дошедшие после повторов. True — что-то доставлено."""
-    pending = [it for it in row.items or [] if it.get("undelivered")]
-    if not pending:
-        return False
-    web_ok = services.web_links_enabled()
-    msgs, ids = [], []
-    for it in pending:
-        ev = services.get_event(s, str(it.get("event_id")))
-        if ev is None or ev.status != "published":
-            continue                                       # события больше нет: досылать нечего, флаг снимем ниже
-        item = services.card_item(s, p, ev, it.get("day"), weekend)
-        msgs.append((p.user_id, card_text(item, weekend, plain_links=not web_ok), card_keyboard(item, url_buttons=web_ok)))
-        ids.append(str(it.get("event_id")))
-    res = send_sync(msgs) if msgs else SendResult(0, [], [])
-    _handle_blocked(s, res)
-    still = {ids[i] for i in res.undelivered}
-    row.items = [{k: v for k, v in it.items() if not (k == "undelivered" and str(it.get("event_id")) not in still)}
-                 for it in row.items or []]
-    s.commit()
-    if still:
-        log.warning("пользователю %s по-прежнему не доставлено карточек: %d", p.user_id, len(still))
-    return res.sent > 0
-
-
-def job_send_digests(now_utc: datetime | None = None) -> int:
-    """Каждый час: кому пора и ещё не отправлено — собрать свежий дайджест, отправить, отметить."""
-    now_utc = now_utc or datetime.now(timezone.utc)
-    with session_factory()() as s:
-        def send(p, local):
-            weekend = due_weekend(local, p.digest_day, p.digest_hour)
-            if weekend is None:
-                return False
-            row = services.digest_row(s, p, date.fromisoformat(weekend[0]))
-            if row.sent_at is not None:
-                return _resend_missing(s, p, row, weekend)   # досылка карточек, не дошедших при прошлой отправке
-            dg, _, _ = services.core_digest(s, p, local.date(), weekend, now=now_utc)
-            view = services.digest_view(p, dg, services.decision_map(s, p.user_id))
-            if not dg.items():
-                log.info("пользователю %s нечего отправить на %s: шлю сообщение о пустой подборке", p.user_id, weekend[0])
-            msgs = digest_messages(p, view)
-            res = send_sync(msgs)
-            _handle_blocked(s, res)
-            # подборка отправлена, если ушёл заголовок и хотя бы одна карточка (пустая — если ушло её единственное сообщение)
-            ok = 0 not in res.undelivered and (res.sent >= 2 or len(msgs) == 1)
-            if not ok:
-                return False
-            if res.undelivered:
-                log.warning("пользователю %s не доставлены карточки подборки %s: сообщения %s из %d", p.user_id, weekend[0],
-                            res.undelivered, len(msgs))
-            row = services.save_digest(s, p, dg, sent=True)
-            _mark_undelivered(row, res.undelivered)
-            s.commit()
-            return True
-        n = _for_each_profile(s, now_utc, send)
-    log.info("дайджесты отправлены: %d", n)
-    return n
-
-
-def job_plan_today(now_utc: datetime | None = None) -> int:
-    """Каждый день с 09:00 по tz: «План на сегодня» тем, у кого на сегодня есть «иду» без напоминания (в том числе
-    в будни и на события «на горизонте»). Флаг — на решении; «иду», нажатое позже, получит напоминание на следующем запуске."""
-    now_utc = now_utc or datetime.now(timezone.utc)
-    with session_factory()() as s:
-        def send(p, local):
-            if local.hour < PLAN_HOUR:
-                return False
-            decs = services.decisions_to_remind(s, p.user_id, local.date())
-            plan = services.day_plan(decs, local.date(), s)
-            today = local.date().isoformat()
-            items = plan["days"][today]
-            text = plan_today_text(plan, today)
-            if not text:
-                return False
-            msgs = [(p.user_id, text, None)]
-            for it in items:
-                msgs.append((p.user_id, f"<b>{escape(it['event']['title'])}</b>", plan_item_keyboard(it)))
-            res = send_sync(msgs)
-            _handle_blocked(s, res)
-            if 0 in res.undelivered and not res.blocked:
-                return False
-            shown = {it["event"]["id"] for it in items}   # Forbidden: молча пропускаем (человек из Mini App не писал боту), повторять каждый час нечего
-            for d in decs:
-                if str(d.event_id) in shown:
-                    d.reminded_at = now_utc
-            s.commit()
-            return res.sent > 0
-        n = _for_each_profile(s, now_utc, send, _remindable_profiles)
-    log.info("планов на сегодня отправлено: %d", n)
-    return n
-
-
-def job_how_was_it(now_utc: datetime | None = None) -> int:
-    """С 12:00 по tz на следующий день после события: «Как прошло?» по каждому «иду» без оценки; один раз на решение."""
-    now_utc = now_utc or datetime.now(timezone.utc)
-    with session_factory()() as s:
-        def send(p, local):
-            if local.hour < FEEDBACK_HOUR:
-                return False
-            decs = [d for d in services.decisions_to_ask(s, p.user_id, local.date() - timedelta(days=1))
-                    if d.event is not None]
-            if not decs:
-                return False
-            msgs = [(p.user_id, how_was_it_text(d.event.as_core(), d.day.isoformat() if d.day else None), rating_keyboard(str(d.event_id)))
-                    for d in decs]
-            res = send_sync(msgs)
-            _handle_blocked(s, res)
-            for i, d in enumerate(decs):
-                if i not in res.undelivered or res.blocked:
-                    d.feedback_asked_at = now_utc
-            s.commit()
-            return res.sent > 0
-        n = _for_each_profile(s, now_utc, send, _remindable_profiles)
-    log.info("«как прошло» отправлено: %d", n)
-    return n
-
-
-def job_invite_notifications(now_utc: datetime | None = None) -> int:
-    """Страховка: пригласивший узнаёт, что друг идёт с ним, даже если мгновенная отправка из API не удалась (бот был недоступен).
-    Уведомление уходит один раз; удалившему профиль и заблокировавшему бота больше не пытаемся."""
-    from leisure.api import invites as inv_service
-
-    sent = 0
-    with session_factory()() as s:
-        for acc in inv_service.pending_notifications(s):
-            if inv_service.notify_inviter(s, acc.invite, acc.user_id):
-                sent += 1
-        sent += inv_service.notify_many(s, now_utc or datetime.now(timezone.utc))
-    log.info("уведомлений о принятых приглашениях: %d", sent)
-    return sent
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    services.warn_local_web_url()
     tz = ZoneInfo(settings.DEFAULT_TZ)
     sched = BlockingScheduler(timezone=tz, job_defaults={"coalesce": True, "max_instances": 1, "misfire_grace_time": 3600})
     sched.add_job(job_build_digests, CronTrigger(day_of_week="wed", hour=22, minute=0, timezone=tz), id="build_digests")
-    sched.add_job(job_send_digests, CronTrigger(minute=0, timezone=tz), id="send_digests")
-    sched.add_job(job_plan_today, CronTrigger(minute=0, timezone=tz), id="plan_today")
-    sched.add_job(job_how_was_it, CronTrigger(minute=0, timezone=tz), id="how_was_it")
-    sched.add_job(job_invite_notifications, CronTrigger(minute="*", timezone=tz), id="invite_notifications")
     log.info("воркер запущен, tz=%s", settings.DEFAULT_TZ)
     sched.start()
 

@@ -5,7 +5,8 @@ import type { AccountProfile, Catalog, Decision, Digest, DigestItem, EventT, Pla
 import { addDays } from "./feed";
 import { moscowToday } from "./format";
 
-export const mockEnabled = () => process.env.MOCK_INVITES === "1" && process.env.NODE_ENV !== "production";
+/** В production-сборке мок включается только с двумя флагами (MOCK_INVITES=1 и MOCK_FORCE=1): для скриншотов через `npm run start`, не для сервера. */
+export const mockEnabled = () => process.env.MOCK_INVITES === "1" && (process.env.NODE_ENV !== "production" || process.env.MOCK_FORCE === "1");
 
 export class MockError extends Error {
   constructor(public status: number, message: string) {

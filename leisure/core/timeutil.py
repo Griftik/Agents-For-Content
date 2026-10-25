@@ -201,14 +201,14 @@ def _minutes(t) -> int | None:
     return t.hour * 60 + t.minute
 
 
-def _gone_today(ev: Mapping, now_min: int) -> bool:
-    """Сегодняшняя дата события уже не годится для подборки: началось или начнётся меньше чем через LEAD_MIN минут;
-    для выставок и мест — только если end_time уже прошёл."""
+def _gone_today(ev: Mapping, now_min: int, lead: int = LEAD_MIN) -> bool:
+    """Сегодняшняя дата события уже не годится: началось или начнётся меньше чем через lead минут (по умолчанию LEAD_MIN —
+    подборка; лента берёт время в пути из профиля); для выставок и мест — только если end_time уже прошёл."""
     if ev.get("kind") in OPEN_KINDS:
         end = _minutes(ev.get("end_time"))
         return end is not None and now_min >= end
     start = _minutes(ev.get("start_time"))
-    return start is not None and start < now_min + LEAD_MIN
+    return start is not None and start < now_min + lead
 
 
 def trim_past(events: Iterable[Mapping], today_iso: str, now: datetime | None = None) -> list[dict]:
