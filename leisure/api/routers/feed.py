@@ -15,11 +15,14 @@ router = APIRouter(prefix="/api", tags=["лента"], dependencies=[Depends(req
 
 @router.get("/feed", response_model=FeedOut)
 def feed(user_id: int | None = None, date_: str = Query(default="today", alias="date"), segment: str = "all",
-         limit: int | None = None, today: date | None = None, now: datetime | None = None, include_missed: bool = False,
+         limit: int | None = None, offset: int = 0, per_day: int | None = Query(default=None, ge=1, le=50),
+         today: date | None = None, now: datetime | None = None, include_missed: bool = False,
          x_user_id: str | None = Header(default=None), session: Session = Depends(get_session)) -> dict:
     """date: today | tomorrow | week | YYYY-MM-DD; segment: leisure | business | all. Для сегодня исключается всё, что начинается
     раньше now + params.travel_minutes профиля (по умолчанию 40); include_missed=true добавляет такие события в конец с
     can_make_it=false. today и now (местное время без пояса) — для тестов и симулятора; без них берётся время профиля.
+    На период (tomorrow, week, дата) не больше per_day карточек на день (по умолчанию 5); offset/limit — страница, в ответе total
+    и next_offset для догрузки. Профиль kind=child не видит взрослое (audience_child в scoring.yaml).
     Профиль должен быть настроен (онбординг), иначе 409 not_onboarded."""
     uid = resolve_user_id(None, x_user_id, user_id)
     p = services.get_profile(session, uid)
@@ -30,6 +33,7 @@ def feed(user_id: int | None = None, date_: str = Query(default="today", alias="
     if segment not in SEGMENTS:
         raise HTTPException(422, f"segment: одно из {', '.join(SEGMENTS)}")
     try:
-        return services.feed(session, p, date_, segment, limit, today=today, now=now, include_missed=include_missed)
+        return services.feed(session, p, date_, segment, limit, today=today, now=now, include_missed=include_missed,
+                             offset=offset, per_day=per_day)
     except ValueError as e:
         raise HTTPException(422, str(e))

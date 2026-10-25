@@ -405,6 +405,9 @@ class FeedOut(BaseModel):
     segment: str
     travel_minutes: int
     items: list[FeedItemOut]
+    offset: int = 0
+    total: int = 0                    # всего карточек после фильтров и лимита на день
+    next_offset: int | None = None    # передать offset= для догрузки; null — это всё
 
 
 class EmailAuthIn(BaseModel):

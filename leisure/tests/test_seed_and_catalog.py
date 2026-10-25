@@ -1,8 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from leisure.core.catalog import (ALL_CATS, CATEGORY_TAGS, CATS, KNOWN_TAGS, REASONS, VALUE_CLUSTERS, VALUE_MAP, VALUE_SHORT,
-                                  VALUES, default_profile, interests_from_values, values_average)
+from leisure.core.catalog import (ALL_CATS, BUSINESS_CATS, CATEGORY_TAGS, CATS, KNOWN_TAGS, REASONS, VALUE_CLUSTERS, VALUE_MAP,
+                                  VALUE_SHORT, VALUES, default_profile, interests_from_values, values_average)
 from leisure.core.timeutil import weekend_days
 from leisure.normalize.schema import EventIn
 
@@ -42,7 +42,8 @@ def test_seed_validates(seed_raw, seed_events, weekend):
     assert all(e["url"] for e in seed_events) and all(e["status"] == "published" for e in seed_events)
     on_weekend = [e for e in seed_events if weekend_days(e, weekend)]
     assert len(on_weekend) >= 30  # цель спеки: 30–50 событий на выходные
-    assert {e["category"] for e in seed_events} == set(CATS)
+    cats = {e["category"] for e in seed_events}
+    assert set(CATS) <= cats <= set(ALL_CATS) and set(BUSINESS_CATS) <= cats      # деловые категории заполняет seed/retag.py
 
 
 def test_schema_rejects_unknown_tag_and_bad_slug():

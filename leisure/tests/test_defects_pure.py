@@ -58,8 +58,10 @@ def test_kids_params_change_score_and_defaults_do_not():
     kid = make_event(audience_kids=True, tags=["музыка", "семья"])
     night = make_event(tags=["музыка", "ночь"])
     base_kid, base_night = _score(kid), _score(night)
+    plain_kid = make_event(audience_kids=True, tags=["музыка"])
     for params in ({"kids": True}, {"company": "с детьми"}):
-        assert _score(kid, **params).raw == pytest.approx(base_kid.raw + 6)
+        assert _score(kid, **params).raw == pytest.approx(base_kid.raw + 12)          # +6 аудитория, +6 тег «семья» (v2)
+        assert _score(plain_kid, **params).raw == pytest.approx(_score(plain_kid).raw + 6)
         assert _score(night, **params).raw == pytest.approx(base_night.raw - 8)
     assert _score(make_event(tags=["музыка", "шумно"]), kids=True).raw < _score(make_event(tags=["музыка", "шумно"])).raw
     assert any(w.text == "подходит с детьми" for w in _score(kid, kids=True).why)

@@ -96,7 +96,7 @@ def test_profiles_per_account_have_own_decisions_feed_and_plan(client, db):
     assert client.get("/api/feed", headers=H, params={"user_id": mom, "today": TODAY}).status_code == 409   # сначала онбординг
     _onboard(client, mom, values={"Забота": 5, "Семья": 5, "Покой": 5, "Здоровье": 5, "Близость": 5})
     # решения раздельные
-    ev = client.get("/api/events", params={"today": TODAY}).json()[0]
+    ev = next(e for e in client.get("/api/events", params={"today": TODAY}).json() if TODAY in e["dates"])
     client.post("/api/decisions", headers=H, json={"user_id": mom, "event": ev["slug"], "status": "иду", "day": TODAY})
     assert client.get(f"/api/decisions/{A}", headers=H).json() == [] and len(client.get(f"/api/decisions/{mom}", headers=H).json()) == 1
     assert client.get(f"/api/plan/{mom}", headers=H, params={"today": TODAY}).json()["days"][TODAY][0]["event"]["slug"] == ev["slug"]
@@ -224,3 +224,46 @@ def test_magic_link_503_without_smtp_then_binds_and_moves(client, db, monkeypatc
     for _ in range(5):
         client.post("/api/auth/email", headers=H, json={"user_id": B, "email": "b@example.org"})
     assert client.post("/api/auth/email", headers=H, json={"user_id": B, "email": "b@example.org"}).status_code == 429
+
+
+# ── ТЗ-13: сегмент «Дело» на seed, лента ребёнка, догрузка ──
+def test_business_segment_has_events_on_seed(client):
+    _onboard(client, A)
+    biz = client.get("/api/feed", headers=H, params={"user_id": A, "today": "2026-10-26", "date": "week", "segment": "business",
+                                                      "limit": 100}).json()
+    from leisure.core.catalog import BUSINESS_CATS
+    assert len(biz["items"]) >= 10 and all(it["event"]["category"] in BUSINESS_CATS for it in biz["items"])
+    assert biz["total"] >= 10 and biz["next_offset"] is None
+
+
+def test_child_profile_feed_has_no_adult_events(client, db):
+    _onboard(client, A)
+    kid = client.post("/api/profiles", headers=H, json={"user_id": A, "name": "Сын", "kind": "child"}).json()["profiles"][-1]["user_id"]
+    client.created.append(kid)
+    _onboard(client, kid, name="Сын", values={"Веселье": 5, "Азарт": 5, "Природа": 5, "Семья": 5, "Удовольствие": 5})
+    for spec in ("today", "week"):
+        feed = client.get("/api/feed", headers=H, params={"user_id": kid, "today": TODAY, "date": spec, "limit": 100}).json()
+        cats = {it["event"]["category"] for it in feed["items"]}
+        titles = " ".join(it["event"]["title"].lower() for it in feed["items"])
+        assert feed["items"] and not cats & {"Винные бары", "Вечеринки"}
+        assert "бурлеск" not in titles and "сатан" not in titles and "стендап" not in titles
+        assert not any(set(it["event"]["tags"]) & {"18+", "ночь", "вкус"} for it in feed["items"])
+    adult = client.get("/api/feed", headers=H, params={"user_id": A, "today": TODAY, "date": "week", "limit": 100}).json()
+    assert {it["event"]["category"] for it in adult["items"]} & {"Винные бары", "Вечеринки"}      # у взрослого остаются
+
+
+def test_week_feed_is_spread_by_day_and_paged(client):
+    _onboard(client, A)
+    full = client.get("/api/feed", headers=H, params={"user_id": A, "today": TODAY, "date": "week", "limit": 100}).json()
+    per_day: dict[str, int] = {}
+    for it in full["items"]:
+        per_day[it["day"]] = per_day.get(it["day"], 0) + 1
+    assert full["items"] and max(per_day.values()) <= 5 and len(per_day) >= 3
+    assert full["total"] == len(full["items"]) and full["next_offset"] is None
+    p1 = client.get("/api/feed", headers=H, params={"user_id": A, "today": TODAY, "date": "week", "limit": 4}).json()
+    assert len(p1["items"]) == 4 and p1["offset"] == 0 and p1["next_offset"] == 4 and p1["total"] == full["total"]
+    p2 = client.get("/api/feed", headers=H, params={"user_id": A, "today": TODAY, "date": "week", "limit": 4, "offset": 4}).json()
+    assert [i["event"]["id"] for i in p1["items"] + p2["items"]] == [i["event"]["id"] for i in full["items"][:8]]
+    narrow = client.get("/api/feed", headers=H, params={"user_id": A, "today": TODAY, "date": "week", "limit": 100, "per_day": 2}).json()
+    assert max(sum(1 for i in narrow["items"] if i["day"] == d) for d in per_day) <= 2
+    assert client.get("/api/feed", headers=H, params={"user_id": A, "today": TODAY, "date": "week", "per_day": 0}).status_code == 422

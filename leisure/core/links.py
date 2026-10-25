@@ -149,34 +149,49 @@ def tg_share_url(ev: Mapping, day: str | None = None, url: str | None = None, ma
 SHARE_TEXT_MAX = 300      # T-INVITE-SHARE: целиком, вместе со ссылкой
 
 
+def cut_words(text: str, limit: int) -> str:
+    """Не длиннее limit знаков, обрыв по границе слова с многоточием («Маяковск…» → «Театр им.…» не бывает: режем до пробела)."""
+    t = " ".join((text or "").split())
+    if len(t) <= limit:
+        return t
+    head = t[: limit - 1]
+    if " " in head and head.rfind(" ") >= limit // 2:
+        head = head[: head.rfind(" ")]
+    return head.rstrip(" ,;:—-«(") + "…"
+
+
 def _first_sentence(text: str, limit: int) -> str:
     t = " ".join((text or "").split())
     cut = t.find(". ")
     t = t[: cut + 1] if cut > 0 else t
-    if len(t) > limit:
-        t = t[: limit - 1].rstrip(" ,;:—-") + "…"
-    return t
+    return cut_words(t, limit)
+
+
+def quoted_title(title: str) -> str:
+    """Название в «ёлочках», если внутри их ещё нет; иначе как есть — без вложенных «««»»»."""
+    return title if "«" in title or "»" in title else f"«{title}»"
 
 
 def invite_text(ev: Mapping, day: str | None, link: str, why: str | None = None) -> str:
     """Приглашение от первого лица (T-INVITE-SHARE, web/COPY.md): «Иду на «…»: день, время, площадка. Почему стоит.» и строка
     «Пойдёшь со мной? ссылка». Не длиннее 300 знаков вместе со ссылкой: название — до 60, площадка — до 40, подсказка — первое
-    предложение до 70; не влезло — подсказка уходит первой."""
-    title = ev.get("title") or ""
-    title = title if len(title) <= 60 else title[:59].rstrip() + "…"
+    предложение до 70, всё режется по границе слова; не влезло — подсказка уходит первой. Название с «ёлочками» внутри не
+    оборачивается в ещё одни."""
+    title = cut_words(ev.get("title") or "", 60)
     d = day or (event_dates(ev)[0] if event_dates(ev) else "")
-    venue = ev.get("venue") or ""
-    venue = venue if len(venue) <= 40 else venue[:39].rstrip() + "…"
+    venue = cut_words(ev.get("venue") or "", 40)
     when = ", ".join(x for x in (day_phrase(d) if d else "", time_for_day(ev, d) if d else "", venue) if x)
     hint = _first_sentence(why or ev.get("why_fit_hint") or "", 70)
     if hint and not hint.endswith((".", "…", "!", "?")):
         hint += "."
     tail = f"\nПойдёшь со мной? {link}"
-    head = f"Иду на «{title}»" + (f": {when}." if when else ".")
+    head = f"Иду на {quoted_title(title)}" + (f": {when}." if when else ".")
     text = head + (f" {hint}" if hint else "") + tail
     if len(text) > SHARE_TEXT_MAX:
         text = head + tail
-    return text[:SHARE_TEXT_MAX] if len(text) > SHARE_TEXT_MAX else text
+    if len(text) > SHARE_TEXT_MAX:                     # и без подсказки не влезло: режем шапку по словам, ссылку не трогаем
+        text = cut_words(head, SHARE_TEXT_MAX - len(tail)) + tail
+    return text
 
 
 def _ics_fold(line: str, limit: int = 75) -> str:

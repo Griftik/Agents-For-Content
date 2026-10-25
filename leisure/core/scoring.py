@@ -127,6 +127,8 @@ def score(ev: Mapping, profile: Mapping, aff: Mapping | None = None, cfg: dict |
         if set(ev.get("tags") or []) & set(K["night_noisy_tags"]):
             s += float(K["night_noisy_penalty"])
             why.append(Why("поздно или шумно для детей", "neg"))
+        if set(ev.get("tags") or []) & set(K.get("family_tags") or ()):
+            s += float(K.get("family_bonus") or 0)
 
     # бюджет (бесплатное никогда не «выше бюджета»)
     budget = float(params.get("budget") or 0)

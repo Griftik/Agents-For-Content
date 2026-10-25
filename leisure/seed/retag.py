@@ -1,4 +1,5 @@
-"""Доразметка seed новыми тегами по детерминированным правилам (без модели): VALUES-AUDIT.md, разделы 3–4.
+"""Доразметка seed по детерминированным правилам (без модели): теги по VALUES-AUDIT.md, разделы 3–4, и переклассификация деловых
+событий в четыре бизнес-категории каталога (сегмент «Дело» ленты, docs/PIVOT-PWA.md v2).
 
     python -m leisure.seed.retag             # переписывает seed/events_2026-10-23.json и seed/RETAG.md
     python -m leisure.seed.retag --check     # ничего не пишет; код 1, если файл не совпадает с результатом правил
@@ -17,7 +18,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from leisure.core.catalog import KNOWN_TAGS, VALUE_MAP, VALUES
+from leisure.core.catalog import BUSINESS_CATS, KNOWN_TAGS, VALUE_MAP, VALUES
 
 HERE = Path(__file__).parent
 SEED = HERE / "events_2026-10-23.json"
@@ -86,6 +87,75 @@ RULES: tuple[Rule, ...] = (
 assert all(t in KNOWN_TAGS for r in RULES for t in r.tags), "правило ссылается на неизвестный тег"
 
 
+# ─── Переклассификация в деловые категории (сегмент «Дело») ───
+@dataclass(frozen=True)
+class CategoryRule:
+    id: str
+    what: str                         # для отчёта куратору
+    target: str                       # одна из BUSINESS_CATS
+    pattern: str                      # формат события по тексту
+    require: str | None = None        # деловой признак, без которого правило не срабатывает
+    exclude: str | None = None
+
+
+# Откуда забираем: только категории, где деловые события прятались среди досуга. Театр, вечеринки, джаз и спорт не трогаем
+# («клуб» там значит площадку, а не бизнес-клуб).
+BUSINESS_SOURCE = ("Управление и стратегия", "Предприниматели и клубы", "ИИ и технологии", "Нетривиальное")
+BUSINESS_SIGNAL = (r"бизнес|компани|корпоратив|руководител|предпринимат|\bb2b|\bceo\b|\bcfo\b|индустри|отрасл|рынк|стартап|инвест|"
+                   r"менеджер|управленц|управля|директор|основател|фаундер|маркетинг|финанс|кредит|грант|стратеги|нетворкинг")
+CATEGORY_RULES: tuple[CategoryRule, ...] = (
+    CategoryRule("biz-breakfast", "бизнес-завтрак, деловой завтрак, утро основателей", "Бизнес-завтраки",
+                 r"бизнес-завтрак|деловой завтрак|утро основателей|founders coffee|завтрак (для )?предпринимат"),
+    CategoryRule("biz-conference", "конференция, форум, саммит, симпозиум, демодень, митап, круглый стол, открытые дни — с деловым "
+                 "признаком в тексте; лекции не трогаем", "Конференции и форумы",
+                 r"конференц|\bфорум|саммит|симпозиум|демодень|демо-день|митап|круглый стол|открытые дни|открытие технологического центра",
+                 require=BUSINESS_SIGNAL, exclude=r"\bлекци"),
+    CategoryRule("biz-education", "мастер-класс, деловая игра, интенсив, практикум, программа для руководителей и управленцев",
+                 "Образование для управленцев",
+                 r"мастер-класс|деловая игра|интенсив|практикум|для руководител|для управленц|как управлять|программ[аы] .{0,40}(сколково|mba)",
+                 require=r"руководител|управленц|управля|переговор|предпринимат|менеджер|лидер|основател"),
+    CategoryRule("biz-club", "бизнес-клуб, закрытый деловой вечер, нетворкинг предпринимателей, вечер историй клуба", "Закрытые клубы",
+                 r"бизнес-клуб|деловой вечер|нетворкинг|клуб предпринимат|вечер историй", require=BUSINESS_SIGNAL),
+)
+assert all(r.target in BUSINESS_CATS for r in CATEGORY_RULES)
+
+
+def category_rule_for(ev: dict) -> CategoryRule | None:
+    """Первое правило, подходящее событию по тексту (без учёта текущей категории) — для отчёта и переклассификации."""
+    text = event_text(ev)
+    for rule in CATEGORY_RULES:
+        if not re.search(rule.pattern, text):
+            continue
+        if rule.require and not re.search(rule.require, text):
+            continue
+        if rule.exclude and re.search(rule.exclude, text):
+            continue
+        return rule
+    return None
+
+
+def reclassify_event(ev: dict) -> tuple[dict, CategoryRule | None]:
+    """Событие из досуговой категории-источника, по тексту деловое → бизнес-категория. Уже деловое не трогаем (идемпотентно)."""
+    if ev.get("category") not in BUSINESS_SOURCE:
+        return ev, None
+    rule = category_rule_for(ev)
+    if rule is None:
+        return ev, None
+    return {**ev, "category": rule.target}, rule
+
+
+def homepage_links(events: list[dict]) -> list[dict]:
+    """Ссылки «К билетам», ведущие на главную сайта источника (путь пустой, без запроса и якоря) — проверить куратору."""
+    from urllib.parse import urlparse
+
+    out = []
+    for ev in events:
+        u = urlparse(ev.get("url") or "")
+        if u.scheme and not u.path.strip("/") and not u.query and not u.fragment:
+            out.append(ev)
+    return out
+
+
 def event_text(ev: dict) -> str:
     return " ".join(str(ev.get(k) or "") for k in ("title", "subcategory", "description", "why_fit_hint")).lower()
 
@@ -141,8 +211,11 @@ def multi_value_stats(events: list[dict]) -> float:
 
 
 def retag(events: list[dict]) -> tuple[list[dict], dict]:
-    out, info = [], {"fired": defaultdict(list), "tagged": 0, "added": Counter()}
+    out, info = [], {"fired": defaultdict(list), "tagged": 0, "added": Counter(), "moved": defaultdict(list)}
     for ev in events:
+        ev, crule = reclassify_event(ev)
+        if crule is not None:
+            info["moved"][crule.id].append(ev)
         new, fired = retag_event(ev)
         out.append(new)
         if fired:
@@ -200,6 +273,33 @@ def render_report(before: list[dict], after: list[dict], info: dict) -> str:
         for ev in evs:
             L.append(f"- {ev['title'][:90]} · {ev['category']} · `{ev['slug']}`")
         L.append("")
+    L += ["## Деловые категории (сегмент «Дело»)", "",
+          "События из категорий " + ", ".join(f"«{c}»" for c in BUSINESS_SOURCE) + " переносятся в бизнес-категории каталога по "
+          "формату (конференция, завтрак, мастер-класс, клуб) и деловому признаку в тексте. Театр, вечеринки, джаз и спорт правила "
+          "не трогают. Ошибочный перенос правится в `seed/events_2026-10-23.json` и исключением в `CATEGORY_RULES`.", ""]
+    by_cat: dict[str, list[dict]] = {c: [] for c in BUSINESS_CATS}
+    for ev in after:
+        if ev.get("category") in by_cat:
+            by_cat[ev["category"]].append(ev)
+    L.append("| Категория | Событий | Правило |")
+    L.append("|---|---|---|")
+    for rule in CATEGORY_RULES:
+        L.append(f"| {rule.target} | {len(by_cat[rule.target])} | `{rule.id}`: {rule.what} |")
+    L.append("")
+    for cat, evs in by_cat.items():
+        L.append(f"### {cat} ({len(evs)})")
+        L.append("")
+        for ev in sorted(evs, key=lambda e: (e.get('dates') or [''])[0]):
+            rule = category_rule_for(ev)
+            L.append(f"- {ev['title'][:90]} · {(ev.get('dates') or ['—'])[0]} · `{ev['slug']}` · {('`' + rule.id + '`') if rule else 'без правила'}")
+        L.append("")
+    home = homepage_links(after)
+    L += [f"## Проверить куратору: ссылка «К билетам» ведёт на главную источника ({len(home)})", "",
+          "Это данные, а не код: у этих событий `url` — корень сайта, человек не попадает на страницу события или билетов. "
+          "Нужна прямая ссылка от источника или пометка «билеты на сайте».", ""]
+    for ev in home:
+        L.append(f"- {ev['title'][:90]} · `{ev['slug']}` · {ev['url']}")
+    L.append("")
     L += ["## Что проверить в первую очередь", "",
           "Правила со словом-подстрокой, где возможны ложные срабатывания: `kw-meaning` («смысл» встречается и в научных "
           "лекциях), `kw-quiet` и `kw-calm` (слово в описании не всегда значит спокойное событие), `kw-nostalgia` "
@@ -218,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
     after, _ = retag(current)
     before = baseline(current)
     _, info = retag(before)
+    info["moved"] = retag(current)[1]["moved"]
     text = json.dumps(after, ensure_ascii=False, indent=1) + "\n"
     if args.check:
         same = text == args.seed.read_text(encoding="utf-8")
@@ -225,8 +326,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if same else 1
     args.seed.write_text(text, encoding="utf-8")
     args.report.write_text(render_report(before, after, info), encoding="utf-8")
-    changed = sum(a["tags"] != c["tags"] for a, c in zip(after, current))
-    print(f"размечено событий (от исходной разметки): {info['tagged']}; изменено сейчас в файле: {changed}; отчёт: {args.report}")
+    changed = sum(a["tags"] != c["tags"] or a["category"] != c["category"] for a, c in zip(after, current))
+    moved = sum(len(v) for v in info["moved"].values())
+    print(f"размечено событий (от исходной разметки): {info['tagged']}; перенесено в деловые категории сейчас: {moved}; "
+          f"изменено сейчас в файле: {changed}; отчёт: {args.report}")
     return 0
 
 

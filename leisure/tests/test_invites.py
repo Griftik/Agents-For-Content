@@ -525,3 +525,37 @@ def test_ref_link_sets_source_via_put_and_consent_counts_as_joined(client, db):
     client.put(f"/api/profile/{F3}", headers=H, json={"ref_code": "NOSUCH00"})
     db.expire_all()
     assert db.get(Profile, INVITER).source == "organic" and db.get(Profile, F3).source == "organic"
+
+
+def test_share_text_cuts_by_word_and_does_not_nest_quotes():
+    from leisure.core.links import invite_text
+
+    ev = {"title": "«Каренина. Том второй» — Егор Перегудов, Театр им. Маяковского, Основная сцена и ещё длинный хвост названия",
+          "venue": "Театр им. Вл. Маяковского, Основная сцена", "dates": [DAY], "time_text": "17:00",
+          "why_fit_hint": "Большая классика в современном прочтении с живой музыкой и сильным актёрским составом на сцене."}
+    t = invite_text(ev, DAY, "http://localhost:3000/e/x?inv=AAAAAAAA")
+    assert "«««" not in t and "Иду на «Каренина. Том второй»" in t and t.count("«") == t.count("»")
+    assert "Маяковск…" not in t and "сце…" not in t
+    for piece in t.replace("…", " …").split():
+        assert not (piece.endswith("…") and len(piece) > 1 and piece[-2].isalpha() and piece[:-1] not in ev["title"] + ev["venue"] + ev["why_fit_hint"])
+    assert len(t) <= 300 and t.endswith("Пойдёшь со мной? http://localhost:3000/e/x?inv=AAAAAAAA")
+    plain = invite_text({"title": "Джаз в саду", "venue": "Сад", "dates": [DAY]}, DAY, "http://x")
+    assert plain.startswith("Иду на «Джаз в саду»")
+    long_word = invite_text({"title": "Слово" * 30, "dates": [DAY]}, DAY, "http://x")          # одно слово длиннее лимита — режем его
+    assert long_word.startswith("Иду на «Слово") and len(long_word.split("»")[0]) <= len("Иду на «") + 60
+
+
+def test_growth_denominators_keep_going_after_event_passes(client, db, event):
+    from datetime import datetime, timezone
+
+    since = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    code = _create(client, event)["code"]
+    services.set_decision(db, INVITER, event, "иду", day=date.fromisoformat(DAY))
+    assert _accept(client, code, F1).status_code == 200
+    before = client.get("/api/metrics/growth", headers=H, params={"since": since.isoformat()}).json()["metrics"]
+    # событие прошло: пригласивший отметил «сходил», друг — «не сходил»
+    services.set_decision(db, INVITER, event, "сходил", day=date(2026, 10, 20), rating=5)
+    services.set_decision(db, F1, event, "не сходил", day=date(2026, 10, 20))
+    after = client.get("/api/metrics/growth", headers=H, params={"since": since.isoformat()}).json()["metrics"]
+    for k in ("invite_share", "together_going"):
+        assert after[k]["denominator"] == before[k]["denominator"] and after[k]["numerator"] == before[k]["numerator"]

@@ -539,7 +539,8 @@ def plan(session: Session, p: Profile, today: date | None = None) -> dict:
 
 
 def feed(session: Session, p: Profile, spec: str = "today", segment: str = "all", limit: int | None = None,
-         today: date | None = None, now: datetime | None = None, include_missed: bool = False) -> dict:
+         today: date | None = None, now: datetime | None = None, include_missed: bool = False, offset: int = 0,
+         per_day: int | None = None) -> dict:
     """GET /api/feed: лента профиля на день или период (core.feed.build_feed). now — местное время профиля без пояса (тесты,
     симулятор); без now и today берётся текущее время профиля, с одним today время суток не учитывается."""
     from leisure.core.feed import build_feed, parse_window
@@ -551,8 +552,9 @@ def feed(session: Session, p: Profile, spec: str = "today", segment: str = "all"
     events = upcoming_events(session, p.city, today)
     decs = [d.as_core() for d in user_decisions(session, p.user_id)]
     travel = (p.params or {}).get("travel_minutes")
-    items = build_feed(events, p.as_core(), decs, days, today, now=now, segment=segment, travel_minutes=travel, limit=limit,
-                       include_missed=include_missed)
+    page = build_feed(events, p.as_core(), decs, days, today, now=now, segment=segment, travel_minutes=travel, limit=limit,
+                      include_missed=include_missed, offset=offset, per_day=per_day)
+    items = page.items
     dm = decision_map(session, p.user_id)
     why_limit = int(scoring_config()["why"]["max_total"])
     out = [{"event": event_view(it.event), "day": it.day, "days": it.days, "score": it.result.score,
@@ -561,7 +563,8 @@ def feed(session: Session, p: Profile, spec: str = "today", segment: str = "all"
            for it in items]
     travel_out = int(travel) if travel is not None else int(scoring_config()["feed"]["travel_minutes"])
     return {"user_id": p.user_id, "date": spec, "days": [d.isoformat() for d in days], "today": today.isoformat(),
-            "segment": segment, "travel_minutes": travel_out, "items": out}
+            "segment": segment, "travel_minutes": travel_out, "items": out,
+            "offset": page.offset, "total": page.total, "next_offset": page.next_offset}
 
 
 def ics_for(ev: dict, day: date | str | None) -> str:

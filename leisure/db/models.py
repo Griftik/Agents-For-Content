@@ -167,7 +167,7 @@ class Profile(Base, TimestampMixin):
 
     def as_core(self) -> dict:
         return {
-            "user_id": self.user_id, "city": self.city, "values": dict(self.values or {}),
+            "user_id": self.user_id, "kind": self.kind, "city": self.city, "values": dict(self.values or {}),
             "interests": dict(self.interests or {}), "params": dict(self.params or {}), "notes": self.notes,
             "tz": self.tz, "plan": self.plan, "affinity": dict(self.affinity or {}),
         }

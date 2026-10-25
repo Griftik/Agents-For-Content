@@ -19,6 +19,7 @@ CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"   # без 0 1 I L O U: код 
 CODE_LEN = 8
 HIDDEN_NAME = "другом"        # как называем человека, скрывшего имя («вдвоём с другом»)
 REF_ASK_EVERY = timedelta(days=14)
+GOING_EVER = ("иду", "сходил", "не сходил")   # статусы, через которые проходит решение «иду» после даты события
 
 
 def new_code(session: Session) -> str:
@@ -176,7 +177,8 @@ def growth_metrics(session: Session, since: datetime | None = None) -> dict:
     """Метрики таблицы §4 одним словарём: {имя: {value, numerator, denominator, target}} + сырые счётчики."""
     since = since or datetime(1970, 1, 1, tzinfo=timezone.utc)
     c = lambda q: int(session.scalar(q) or 0)   # noqa: E731
-    going = c(select(func.count()).select_from(Decision).where(Decision.status == "иду", Decision.created_at >= since))
+    # «иду когда-либо»: после даты события «иду» становится «сходил» / «не сходил», знаменатели от этого не худеют
+    going = c(select(func.count()).select_from(Decision).where(Decision.status.in_(GOING_EVER), Decision.created_at >= since))
     invites_made = c(select(func.count()).select_from(Invite).where(Invite.kind == "event", Invite.created_at >= since))
     # открывшие без согласия (строки invite_open / invite_declined, по одной на человека и ссылку) входят в знаменатели как все открывшие
     anon_event = c(select(func.count()).select_from(GrowthEvent).join(Invite, Invite.code == GrowthEvent.invite_code).where(
