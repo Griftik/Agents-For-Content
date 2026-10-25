@@ -127,8 +127,27 @@ try {
   check(no?.ok === true, "«Не моё» записано", second.event.slug);
   const decs = (await api(`/api/decisions/${uid}`)).body ?? [];
   check(decs.some((d) => d.event_slug === first.event.slug && d.status === "иду") && decs.some((d) => d.event_slug === second.event.slug && d.status === "не моё"), "API: решения «иду» и «не моё»");
+  const undo = parseRow((await act("undoDecisionAction", [second.event.slug], CK)).text);
+  const feedUndo = (await api(`/api/feed?user_id=${uid}&date=week&segment=all`)).body;
+  check(undo?.ok === true && feedUndo.items.some((i) => i.event.slug === second.event.slug), "«Отменить» снимает «не моё», событие снова в ленте");
+  await act("feedDecideAction", [second.event.slug, second.day, "не моё"], CK);
   const feedAfter = (await api(`/api/feed?user_id=${uid}&date=week&segment=all`)).body;
   check(!feedAfter.items.some((i) => i.event.slug === second.event.slug), "«не моё» больше не показывается в ленте");
+  const third = feeds.week.items.find((i) => ![first.event.slug, second.event.slug].includes(i.event.slug));
+  if (third) {
+    await act("feedDecideAction", [third.event.slug, third.day, "иду"], CK);
+    const rm = await act("removeFromPlan", [], CK, { slug: third.event.slug });
+    const decsRm = (await api(`/api/decisions/${uid}`)).body ?? [];
+    check(rm.status === 200 && !decsRm.some((d) => d.event_slug === third.event.slug), "«Убрать» в плане снимает решение", third.event.slug);
+  }
+  const affBefore = Number(((await api(`/api/profile/${uid}`)).body?.affinity?.cat ?? {})[first.event.category] ?? 0);
+  const more = parseRow((await act("tweakLearnedAction", ["cat", first.event.category, "more"], CK)).text);
+  const affMore = Number(((await api(`/api/profile/${uid}`)).body?.affinity?.cat ?? {})[first.event.category] ?? 0);
+  await act("tweakLearnedAction", ["cat", first.event.category, "reset"], CK);
+  const affReset = Number(((await api(`/api/profile/${uid}`)).body?.affinity?.cat ?? {})[first.event.category] ?? 0);
+  check(more?.ok === true && affMore === affBefore + 1 && affReset === 0, "«Что я о тебе узнал»: Больше → +1, Сбросить → 0 по категории", `${affBefore} → ${affMore} → ${affReset}`);
+  const webProfile = await page("/profile", CK);
+  check(webProfile.text.includes("Что я о тебе узнал") && webProfile.text.includes("Удалить мои данные"), "веб: профиль с блоками «узнал» и «Удалить мои данные»");
 
   // 5. план и прошедшее: «сходил» + оценка 5 → ref_ask
   const plan = (await api(`/api/plan/${uid}`)).body;
@@ -138,7 +157,8 @@ try {
   check(webPlan.text.includes(first.event.title) && webPlan.text.includes("Календарь"), "веб: план показывает событие с кнопками");
   const yday = new Date(Date.parse(plan.today) - 86400_000).toISOString().slice(0, 10);
   const pastFeed = (await api(`/api/feed?user_id=${uid}&date=${yday}&today=${yday}&segment=all`)).body;
-  const pastEv = pastFeed?.items?.[0];
+  // не то же событие, что «иду» сегодня, и не идущее сегодня: одно решение на событие
+  const pastEv = pastFeed?.items?.find((i) => ![first.event.slug, second.event.slug].includes(i.event.slug) && !i.event.dates.includes(feeds.today.today));
   check(!!pastEv, "есть событие на вчера (для отметки «сходил»)", pastEv?.event?.slug);
   if (pastEv) {
     const d0 = await api("/api/decisions", { method: "POST", body: JSON.stringify({ user_id: uid, event: pastEv.event.slug, status: "иду", day: yday }) });
@@ -191,6 +211,13 @@ try {
   const inv = parseRow((await act("createInviteAction", [first.event.slug, first.day], CK)).text);
   check(inv?.ok === true && /\/e\/.+\?inv=[A-Z0-9]{8}/.test(inv.url) && inv.shareText.includes(inv.url), "«Позвать друга»: код, обычная ссылка приложения, текст от первого лица", inv?.url);
   const invPath = new URL(inv.url).pathname + new URL(inv.url).search;
+  const badInv = await page(`/e/${first.event.slug}?inv=BADCODE00`, CK);
+  check(badInv.text.includes("Эта ссылка не работает") && badInv.text.includes("К событию"), "битый код на существующем событии: явный экран и «К событию»");
+  const badRef = await page("/r/BADCODE00", CK);
+  const tmpSess = await fetch(`${WEB}/api/session`, { method: "POST" });
+  const tmpTok = /leisure_session=([^;]+)/.exec(tmpSess.headers.get("set-cookie") ?? "")?.[1];
+  const badRefPage = await page("/profile?onboarding=welcome&bad_ref=1", `leisure_session=${tmpTok}`);
+  check(badRef.status === 303 && /bad_ref=1/.test(badRef.location ?? "") && badRefPage.text.includes("Ссылка не работает"), "битая ссылка-рекомендация: приветствие с пометкой", badRef.location);
   const guest = await page(invPath);
   check(guest.status === 200 && guest.text.includes("Вера зовёт тебя") && guest.text.includes("Иду вместе") && guest.text.includes("Даю согласие"), "страница приглашения без сессии: шапка, галочка, «Иду вместе»");
   const fsess = await fetch(`${WEB}/api/session`, { method: "POST" });
@@ -219,6 +246,14 @@ try {
   const mail = parseRow((await act("linkEmailAction", [{ phase: "idle" }], CK, { email: "vera@example.com" })).text);
   check(mail?.phase === "later", "почта без SMTP: «почта пока не подключена»", JSON.stringify(mail));
   check((await api("/api/auth/email", { method: "POST", body: JSON.stringify({ user_id: uid, email: "vera@example.com" }) })).status === 503, "API: POST /api/auth/email → 503");
+
+  // 9. «Удалить мои данные» у друга и у основного аккаунта (с профилем «Мама»)
+  const delF = await act("deleteDataAction", [], CKF);
+  check(delF.redirect?.startsWith("/?deleted=1") && /leisure_session=;/.test(delF.setCookie) && (await api(`/api/profile/${fuid}`)).status === 404, "«Удалить мои данные» у друга: профиль стёрт, сессия сброшена", delF.redirect);
+  const delM = await act("deleteDataAction", [], CK);
+  check(delM.redirect?.startsWith("/?deleted=1") && (await api(`/api/profile/${uid}`)).status === 404 && (await api(`/api/profile/${mama.user_id}`)).status === 404, "«Удалить мои данные» у основного: аккаунт и профиль «Мама» стёрты");
+  const deletedPage = await page("/?deleted=1");
+  check(deletedPage.text.includes("Данные удалены"), "экран «Данные удалены»");
 } finally {
   for (const f of cleanup) await f().catch(() => {});
 }

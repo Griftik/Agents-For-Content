@@ -85,7 +85,11 @@ export function InviteFlow(p: InviteFlowProps) {
 
   if (state.phase === "done") return <Done {...p} state={state} />;
 
-  const choose = (s: InviteAcceptStatus) => setWanted(s);
+  const busy = pending || wanted != null;
+  const choose = (s: InviteAcceptStatus) => {
+    if (busy && (consentNeeded ? consent : true)) return; // запрос уже идёт: второго POST не будет
+    setWanted(s);
+  };
   const names = p.gone ? { going: "Иду", title: "Тебя зовут на событие" } : { going: "Иду вместе", title: `${p.inviterName ?? "Друг"} зовёт тебя` };
 
   return (
@@ -121,8 +125,8 @@ export function InviteFlow(p: InviteFlowProps) {
             </label>
           ) : null}
           <div className="stickybar" style={{ padding: "4px 0 0" }}>
-            <button type="button" className="btn" onClick={() => choose("maybe")}>Может быть</button>
-            <button type="button" className="btn primary" onClick={() => choose("going")} aria-busy={pending || undefined}>{names.going}</button>
+            <button type="button" className="btn" onClick={() => choose("maybe")} aria-disabled={pending || undefined}>Может быть</button>
+            <button type="button" className="btn primary" onClick={() => choose("going")} aria-busy={pending || undefined} aria-disabled={pending || undefined}>{names.going}</button>
           </div>
           <form action={declineInviteAction} className="row" style={{ justifyContent: "center" }}>
             <input type="hidden" name="code" value={p.code} />
@@ -146,24 +150,15 @@ export function InviteFlow(p: InviteFlowProps) {
 function Done(p: InviteFlowProps & { state: Extract<AcceptState, { phase: "done" }> }) {
   const { state } = p;
   const going = state.status === "going";
-  const who = state.togetherWith ?? p.inviterName;
   const [later, setLater] = useState(false);
 
   const day = p.dayText;
-  const lead = p.gone
-    ? going ? "Событие в плане." : "Передумать можно в плане."
-    : going
-      ? `${who ?? "Друг"} увидит, что ты идёшь. Событие в плане.`
-      : `${who ?? "Друг"} об этом не узнает. Передумать можно в плане.`;
-
-
   return (
     <div className="wrap">
       <main id="main" className="public done reveal">
         <section className="stack" aria-labelledby="done-h">
           <h1 id="done-h">{going ? (p.gone ? "Ты идёшь" : "Вы идёте вместе") : "Записано в «может быть»"}</h1>
           <p>«{p.title}», {day}{going && p.timeText ? `, ${p.timeText}` : ""}.</p>
-          <p className="muted">{lead}</p>
         </section>
 
         <div className="row">
@@ -183,7 +178,6 @@ function Done(p: InviteFlowProps & { state: Extract<AcceptState, { phase: "done"
           ) : (
             <section className="offer" aria-labelledby="offer-h">
               <h2 id="offer-h">Свои рекомендации?</h2>
-              <p>Два шага, около минуты.</p>
               <div className="row">
                 <a className="btn primary" href="/profile?onboarding=1">Давай</a>
                 <button

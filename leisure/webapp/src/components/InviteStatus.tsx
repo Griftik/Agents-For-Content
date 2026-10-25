@@ -7,7 +7,7 @@ const TEXT: Record<Kind, { guest: string; member: string }> = {
 };
 
 /** Приглашение не действует (T-INVITE-PAST / -UNPUBLISHED / -BAD): понятный экран вместо шапки и кнопок решения, выход в «Дайджест». */
-export function InviteStatus({ kind, hasProfile, title }: { kind: Kind; hasProfile: boolean; title?: string }) {
+export function InviteStatus({ kind, hasProfile, title, eventHref }: { kind: Kind; hasProfile: boolean; title?: string; eventHref?: string }) {
   return (
     <div className="wrap">
       <main id="main" className="public">
@@ -16,10 +16,11 @@ export function InviteStatus({ kind, hasProfile, title }: { kind: Kind; hasProfi
           <p>{hasProfile ? TEXT[kind].member : TEXT[kind].guest}</p>
         </div>
         <div className="row">
+          {eventHref ? <a className="btn primary" href={eventHref}>К событию</a> : null}
           {hasProfile ? (
-            <a className="btn primary" href="/digest">Рекомендации</a>
+            <a className={eventHref ? "btn" : "btn primary"} href="/digest">Рекомендации</a>
           ) : (
-            <a className="btn primary" href="/profile?onboarding=welcome">Другие события под меня</a>
+            <a className={eventHref ? "btn" : "btn primary"} href="/profile?onboarding=welcome">Другие события под меня</a>
           )}
         </div>
         <p className="foot"><a href="/policy">Политика обработки данных</a></p>

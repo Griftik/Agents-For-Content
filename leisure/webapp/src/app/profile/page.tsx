@@ -51,7 +51,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
     const eff = prof?.has_consent ? (step === "welcome" || !step ? "1" : step) : "welcome";
     const cat = await load(() => api.catalog());
     if (cat.kind !== "ok") return <ApiDown message={cat.kind === "down" ? cat.message : undefined} />;
-    return <Onboarding step={eff} profile={prof} catalog={cat.data} error={first(sp.error)} needConsent={first(sp.need) === "consent"} />;
+    return <Onboarding step={eff} profile={prof} catalog={cat.data} error={first(sp.error)} needConsent={first(sp.need) === "consent"} badRef={first(sp.bad_ref) === "1"} />;
   }
 
   const loaded = await load(() => Promise.all([api.catalog(), api.decisions(pid), api.profiles(uid).catch((): AccountProfiles | null => null)]));

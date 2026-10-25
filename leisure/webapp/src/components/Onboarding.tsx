@@ -1,17 +1,18 @@
 import { finishOnboardingAction, startOnboardingAction } from "@/app/actions";
 import type { Catalog, Profile } from "@/lib/api-types";
 import { BUDGETS, PROPOSED_N, TOP_VALUES, clusters, rankCategories, type OnboardingStep } from "@/lib/onboarding";
+import { SubmitButton } from "./SubmitButton";
 import { ValuePicker } from "./ValuePicker";
 
 /**
  * Первый вход (FLOW-APP, А1 → Э1 → Э2): приветствие с согласием (T-APP-WELCOME, T-APP-CONSENT) → «Шаг 1 / 2» пять ценностей
  * (пятая сразу открывает шаг 2) → «Шаг 2 / 2» восемь направлений и бюджет → лента на сегодня.
  */
-export function Onboarding({ step, profile, catalog, error, needConsent }: { step: OnboardingStep; profile: Profile | null; catalog: Catalog; error?: string; needConsent?: boolean }) {
+export function Onboarding({ step, profile, catalog, error, needConsent, badRef }: { step: OnboardingStep; profile: Profile | null; catalog: Catalog; error?: string; needConsent?: boolean; badRef?: boolean }) {
   return (
     <div className="wrap">
       <main id="main" className="onb reveal">
-        {step === "welcome" ? <Welcome hasConsent={!!profile?.has_consent} error={error} needConsent={needConsent} /> : null}
+        {step === "welcome" ? <Welcome hasConsent={!!profile?.has_consent} error={error} needConsent={needConsent} badRef={badRef} /> : null}
         {step === "1" ? <StepValues catalog={catalog} profile={profile} error={error} /> : null}
         {step === "2" && profile ? <StepInterests catalog={catalog} profile={profile} error={error} /> : null}
         {step === "welcome" ? <p className="foot"><a href="/policy">Политика обработки данных</a></p> : null}
@@ -20,12 +21,12 @@ export function Onboarding({ step, profile, catalog, error, needConsent }: { ste
   );
 }
 
-function Welcome({ hasConsent, error, needConsent }: { hasConsent: boolean; error?: string; needConsent?: boolean }) {
+function Welcome({ hasConsent, error, needConsent, badRef }: { hasConsent: boolean; error?: string; needConsent?: boolean; badRef?: boolean }) {
   return (
     <>
       <p className="svc fg">Catch</p>
       <h1>Ничего интересного мимо тебя не пройдёт</h1>
-      <p style={{ maxWidth: "60ch" }}>Два шага, около минуты: что для тебя важно и что интересно. Регистрации нет.</p>
+      {badRef ? <p role="alert" className="field-error">Ссылка не работает. Начать можно и так.</p> : null}
       <form action={startOnboardingAction} className="stack">
         {!hasConsent ? (
           <label className="consent">
@@ -46,7 +47,7 @@ function Welcome({ hasConsent, error, needConsent }: { hasConsent: boolean; erro
         ) : null}
         {needConsent ? <p id="need" role="alert" className="field-error">Отметь согласие, чтобы продолжить.</p> : null}
         {error ? <p role="alert" className="field-error">Не получилось сохранить, попробуй ещё раз.</p> : null}
-        <div className="row"><button type="submit" className="btn primary">Начать</button></div>
+        <div className="row"><SubmitButton>Начать</SubmitButton></div>
       </form>
     </>
   );
@@ -62,7 +63,8 @@ function StepValues({ catalog, profile, error }: { catalog: Catalog; profile: Pr
         <h1>{profile && profile.kind && profile.kind !== "self" && profile.name ? `Что важно для ${profile.name}` : "Что для тебя важно"}</h1>
       </div>
       {error ? <p role="alert" className="field-error">{error === "save" ? "Не получилось сохранить, попробуй ещё раз." : `Нужно выбрать ровно ${TOP_VALUES}.`}</p> : null}
-      <ValuePicker groups={groups} short={catalog.value_short ?? {}} initial={fives.length === TOP_VALUES ? fives : []} />
+      {/* в онбординге старт с пустого выбора: демо-веса профиля по умолчанию не считаются выбором человека */}
+      <ValuePicker groups={groups} short={catalog.value_short ?? {}} initial={profile?.onboarded && fives.length === TOP_VALUES ? fives : []} />
     </>
   );
 }
@@ -101,7 +103,7 @@ function StepInterests({ catalog, profile, error }: { catalog: Catalog; profile:
       </fieldset>
       <div className="row">
         <a className="btn quiet" href="/profile?onboarding=1" style={{ minHeight: 48 }}>Назад</a>
-        <button type="submit" className="btn primary">Показать рекомендации</button>
+        <SubmitButton>Показать рекомендации</SubmitButton>
       </div>
     </form>
   );

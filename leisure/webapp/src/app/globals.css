@@ -35,7 +35,8 @@ body {
   margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 var(--body); touch-action: manipulation; -webkit-font-smoothing: antialiased;
   padding: 0 var(--gutter) calc(56px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-right, 0px));
 }
-h1, h2, h3, h4 { font-family: var(--display); font-weight: 800; margin: 0; line-height: 1.1; letter-spacing: -0.02em; text-wrap: balance; }
+h1, h2, h3, h4 { font-family: var(--display); font-weight: 800; margin: 0; line-height: 1.1; letter-spacing: -0.02em; text-wrap: balance; overflow-wrap: anywhere; }
+p, dd, .place, .desc, .pitem .n, .pitem .v, .sheet-text { overflow-wrap: anywhere; }
 p { text-wrap: pretty; }
 p { margin: 0; }
 a { color: var(--accent); }
@@ -245,8 +246,8 @@ body:has(.bottom-nav) { padding-bottom: calc(var(--nav-h) + 16px + env(safe-area
 
 /* лента: дни и направление */
 .dayrow { display: flex; align-items: center; gap: 8px; }
-.daystrip { display: flex; gap: 8px; align-items: center; overflow-x: auto; scrollbar-width: none; padding: 2px 0; flex: 1 1 auto; min-width: 0;
-  mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent); }
+.daystrip { display: flex; gap: 8px; align-items: center; overflow-x: auto; scrollbar-width: none; padding: 2px 4px 2px 0; flex: 1 1 auto; min-width: 0; scroll-padding-inline: 4px; }
+.daystrip .chip { scroll-snap-align: center; }
 .daystrip::-webkit-scrollbar { display: none; }
 .daystrip .chip { min-height: 40px; padding: 8px 12px; }
 .daystrip .chip[aria-current="true"] { background: var(--fg); border-color: var(--fg); color: var(--bg); }

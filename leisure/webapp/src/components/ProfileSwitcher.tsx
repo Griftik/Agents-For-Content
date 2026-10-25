@@ -12,15 +12,16 @@ export function ProfileSwitcher({ profiles, activeId, compact = false }: { profi
   const dlg = useRef<HTMLDialogElement>(null);
   const newDlg = useRef<HTMLDialogElement>(null);
   const active = profiles.find((p) => p.user_id === activeId) ?? profiles[0];
-  const name = active?.name || "я";
+  const name = (active?.name || "").trim();
+  const label = name && name.toLowerCase() !== "я" ? name : "";
   return (
     <>
       {compact ? (
         <button type="button" className="chip" onClick={() => newDlg.current?.showModal()} aria-haspopup="dialog" aria-label="Новый профиль">+</button>
       ) : (
-        <button type="button" className="pswitch" onClick={() => dlg.current?.showModal()} aria-haspopup="dialog" aria-label={`Профиль: ${name}`}>
-          <span className="ava" aria-hidden="true">{initial(name)}</span>
-          <span className="nm">{name}</span>
+        <button type="button" className="pswitch" onClick={() => dlg.current?.showModal()} aria-haspopup="dialog" aria-label={`Профиль: ${label || "я"}`} style={label ? undefined : { padding: 4 }}>
+          <span className="ava" aria-hidden="true">{initial(name || "я")}</span>
+          {label ? <span className="nm">{label}</span> : null}
         </button>
       )}
       <dialog ref={dlg} className="sheet" aria-labelledby="psw-h">

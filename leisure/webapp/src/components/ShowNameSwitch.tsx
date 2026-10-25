@@ -24,14 +24,11 @@ export function ShowNameSwitch({ initial }: { initial: boolean }) {
     <div className="prow" style={{ flexWrap: "wrap" }}>
       <div className="nm">
         <span id="shn-l">Показывать имя друзьям</span>
-        <p id="shn-d" className="muted" style={{ fontSize: 13.5 }}>
-          Друг, которого ты позвал, увидит на странице события «{`{Имя}`} зовёт тебя». Если выключить, будет «Друг зовёт тебя».
-        </p>
       </div>
       <span className="sw-row">
         <span className="muted" style={{ fontSize: 13.5 }}>{on ? "Показывается" : "Скрыто"}</span>
         <span className="sw">
-          <input type="checkbox" role="switch" checked={on} onChange={toggle} disabled={pending} aria-labelledby="shn-l" aria-describedby="shn-d" />
+          <input type="checkbox" role="switch" checked={on} onChange={toggle} disabled={pending} aria-labelledby="shn-l" />
           <i />
         </span>
       </span>

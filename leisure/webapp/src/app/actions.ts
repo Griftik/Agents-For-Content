@@ -162,7 +162,8 @@ export async function markPastAction(slug: string, went: boolean, rating?: numbe
       ref_ask?: { url?: string | null; share_text?: string } | null;
       ask_reason?: boolean;
     };
-    revalidatePath("/plan");
+    // revalidatePath("/plan") здесь нарочно нет: иначе список «Прошли» пересортируется под пальцем и звёзды уедут (QA, дефект 4);
+    // страница динамическая, при следующем заходе порядок обновится сам
     const ra = r.ref_ask;
     return { ok: true, refAsk: ra?.share_text ? { url: ra.url || "", shareText: ra.share_text } : null, askReason: !!r.ask_reason };
   } catch (e) {

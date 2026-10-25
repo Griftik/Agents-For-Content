@@ -75,9 +75,9 @@ export default async function EventPage({ params, searchParams }: Props) {
   const view = await viewer(uid);
 
   if (code && !invite) {
-    // Код неизвестен: показываем событие по слагу, если оно есть, иначе «Эта ссылка не работает».
+    // Код неизвестен: явный экран «ссылка не работает»; если событие по слагу есть — с кнопкой «К событию»
     const { ev } = await getEvent(slug);
-    if (!ev) return <InviteStatus kind="bad" hasProfile={!!view.profile?.has_consent} />;
+    return <InviteStatus kind="bad" hasProfile={!!view.profile?.has_consent} title={ev?.title} eventHref={ev ? `/e/${ev.slug}` : undefined} />;
   }
   if (invite) {
     const ev = invite.event?.event ?? null;

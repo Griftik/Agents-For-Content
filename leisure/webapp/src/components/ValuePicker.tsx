@@ -1,22 +1,46 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { saveOnboardingValuesAction } from "@/app/actions";
 import { TOP_VALUES } from "@/lib/onboarding";
 
-/** Шаг 1 из 2: пять главных ценностей из 19 в четырёх группах. Счётчик «Выбрано N из 5»; шестую выбрать нельзя; «Дальше» появляется на пятой. */
+const DRAFT = "leisure:draft:top";
+
 /**
- * Пять ценностей из 19 по группам. В онбординге (inline=false) пятая сразу отправляет форму (авто-переход на Шаг 2, FLOW-APP);
- * внутри формы профиля (inline=true) только чипы и счётчик.
+ * Пять ценностей из 19 по группам. Все чипы активны; шестая не выбирается (счётчик остаётся 5 / 5). В онбординге (inline=false)
+ * старт с пустого выбора, пятая сразу отправляет форму (авто-переход на Шаг 2), черновик переживает перезагрузку (sessionStorage).
+ * Внутри формы профиля (inline=true) только чипы и счётчик.
  */
 export function ValuePicker({ groups, short, initial, inline = false }: { groups: [string, string[]][]; short: Record<string, string>; initial: string[]; inline?: boolean }) {
   const [sel, setSel] = useState<string[]>(initial.slice(0, TOP_VALUES));
+  const [busy, setBusy] = useState(false);
   const form = useRef<HTMLFormElement>(null);
+  const known = groups.flatMap(([, v]) => v);
   const full = sel.length >= TOP_VALUES;
+
+  useEffect(() => {
+    if (inline) return;
+    try {
+      const raw = sessionStorage.getItem(DRAFT);
+      const draft = raw ? (JSON.parse(raw) as string[]).filter((v) => known.includes(v)).slice(0, TOP_VALUES) : null;
+      if (draft?.length) setSel(draft);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inline]);
+
   const toggle = (v: string) => {
+    if (busy) return;
     setSel((cur) => {
       const next = cur.includes(v) ? cur.filter((x) => x !== v) : cur.length >= TOP_VALUES ? cur : [...cur, v];
-      if (!inline && next.length === TOP_VALUES && !cur.includes(v)) setTimeout(() => form.current?.requestSubmit(), 150);
+      if (!inline) {
+        try {
+          sessionStorage.setItem(DRAFT, JSON.stringify(next));
+        } catch {}
+        if (next.length === TOP_VALUES && !cur.includes(v)) {
+          setBusy(true);
+          setTimeout(() => form.current?.requestSubmit(), 150);
+        }
+      }
       return next;
     });
   };
@@ -31,7 +55,7 @@ export function ValuePicker({ groups, short, initial, inline = false }: { groups
               const on = sel.includes(v);
               return (
                 <label key={v}>
-                  <input type="checkbox" name="top" value={v} checked={on} disabled={!on && full} onChange={() => toggle(v)} />
+                  <input type="checkbox" name="top" value={v} checked={on} onChange={() => toggle(v)} aria-disabled={!on && full ? true : undefined} />
                   <span>{short[v] ?? v}</span>
                 </label>
               );
@@ -43,10 +67,21 @@ export function ValuePicker({ groups, short, initial, inline = false }: { groups
   );
   if (inline) return <div className="stack" style={{ gap: 14 }}>{body}</div>;
   return (
-    <form ref={form} action={saveOnboardingValuesAction} className="stack" style={{ gap: 18 }}>
+    <form
+      ref={form}
+      action={saveOnboardingValuesAction}
+      className="stack"
+      style={{ gap: 18 }}
+      onSubmit={() => {
+        setBusy(true);
+        try {
+          sessionStorage.removeItem(DRAFT);
+        } catch {}
+      }}
+    >
       {body}
       <div className="row">
-        {full ? <button type="submit" className="btn primary">Дальше</button> : null}
+        {full ? <button type="submit" className="btn primary" aria-disabled={busy || undefined} disabled={busy}>Дальше</button> : null}
       </div>
     </form>
   );

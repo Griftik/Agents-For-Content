@@ -1,6 +1,6 @@
 import type { DayKey, Segment } from "@/lib/feed";
 import { SEGMENTS, dayLabel } from "@/lib/feed";
-import { DateInput } from "./DateInput";
+import { DateInput, ScrollToCurrent } from "./DateInput";
 
 const KEYS: DayKey[] = ["today", "tomorrow", "day2", "week"];
 
@@ -16,6 +16,7 @@ export function DayStrip({ day, segment, today }: { day: DayKey; segment: Segmen
             <a key={k} className="chip day" href={href(k, segment)} aria-current={day === k ? "true" : undefined}>{dayLabel(k)}</a>
           ))}
           {custom ? <a className="chip day" href={href(day, segment)} aria-current="true">{dayLabel(day)}</a> : null}
+          <ScrollToCurrent />
         </div>
         <form method="get" action="/digest" className="chip cal" aria-label="Выбрать дату">
           <input type="hidden" name="seg" value={segment} />
